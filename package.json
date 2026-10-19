@@ -4,6 +4,7 @@
   "description": "Корневые задачи репозитория. Зависимостей нет, клиент живёт в app/.",
   "scripts": {
     "dev-server": "cargo run --manifest-path server/Cargo.toml",
+    "seed": "cargo run --manifest-path server/Cargo.toml --bin seed --",
     "dev-app": "npm --prefix app run tauri dev",
     "dev-app-web": "npm --prefix app run dev",
     "build-server": "cargo build --release --manifest-path server/Cargo.toml",
