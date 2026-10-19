@@ -179,6 +179,9 @@ async fn wiki_tree_and_files_are_linked(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(size, 1_258_291, "1,2 МБ");
+
+    let folders: Vec<String> = db::folders::list(&pool).await.unwrap().into_iter().map(|f| f.name).collect();
+    assert_eq!(folders, ["Дизайн", "Договорённости", "Скриншоты", "Вложения"], "папки в порядке макета");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

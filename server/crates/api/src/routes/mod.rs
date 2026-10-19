@@ -5,12 +5,15 @@ use crate::state::AppState;
 pub mod auth;
 pub mod columns;
 pub mod dto;
+pub mod files;
+pub mod library_dto;
 pub mod modules;
 pub mod projects;
 pub mod releases;
 pub mod tags;
 pub mod tasks;
 pub mod users;
+pub mod wiki;
 
 /// Все ручки под `/api/v1`
 pub fn v1() -> OpenApiRouter<AppState> {
@@ -23,4 +26,6 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(tags::router())
         .merge(modules::router())
         .merge(releases::router())
+        .merge(wiki::router())
+        .merge(files::router())
 }

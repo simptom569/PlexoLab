@@ -1,5 +1,10 @@
 #![allow(dead_code)] // каждый тестовый файл использует свою часть помощников
 
+use std::path::{Path, PathBuf};
+
+mod multipart;
+pub use multipart::multipart_body;
+
 use api::{AppState, router};
 use axum::{
     Router,
@@ -22,6 +27,34 @@ pub const SECRET: &str = "integration-test-secret-integration-test";
 
 pub fn app(pool: PgPool) -> Router {
     router(AppState::new(pool, SECRET))
+}
+
+/// Приложение с отдельной папкой данных и лимитом загрузки
+pub fn app_with_storage(pool: PgPool, dir: &Path, max_upload_bytes: u64) -> Router {
+    router(AppState::new(pool, SECRET).with_data_dir(dir).with_max_upload_bytes(max_upload_bytes))
+}
+
+/// Временная папка данных: у каждого теста своя, после теста удаляется
+pub struct TestDir(pub PathBuf);
+
+impl TestDir {
+    pub fn new() -> TestDir {
+        TestDir(std::env::temp_dir().join(format!("plexolab-test-{}", Uuid::new_v4())))
+    }
+
+    /// Имена файлов, лежащих сейчас в `files/`
+    pub fn stored(&self) -> Vec<String> {
+        let Ok(dir) = std::fs::read_dir(self.0.join("files")) else { return Vec::new() };
+        let mut names: Vec<String> = dir.map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// Приложение без базы: подходит для проверок, которые до базы не доходят (401, 404, CORS)
@@ -107,15 +140,21 @@ pub struct Ctx {
     pub pool: PgPool,
     pub token: String,
     pub user: User,
+    pub dir: TestDir,
 }
 
 impl Ctx {
     pub async fn new(pool: PgPool) -> Ctx {
+        Ctx::with_upload_limit(pool, domain::files::DEFAULT_MAX_UPLOAD_BYTES).await
+    }
+
+    pub async fn with_upload_limit(pool: PgPool, max_upload_bytes: u64) -> Ctx {
         let user = make_user(&pool, "tester@example.com", "Тестер Т.", "test-password").await;
-        let app = app(pool.clone());
+        let dir = TestDir::new();
+        let app = app_with_storage(pool.clone(), &dir.0, max_upload_bytes);
         let tokens = login_ok(&app, "tester@example.com", "test-password").await;
         let token = str_field(&tokens, "access_token").to_owned();
-        Ctx { app, pool, token, user }
+        Ctx { app, pool, token, user, dir }
     }
 
     pub async fn get(&self, uri: &str) -> Reply {
@@ -129,6 +168,32 @@ impl Ctx {
     }
     pub async fn delete(&self, uri: &str) -> Reply {
         send(&self.app, Method::DELETE, uri, None, Some(&self.token)).await
+    }
+
+    /// Загрузка файлов формой multipart/form-data
+    pub async fn upload(&self, uri: &str, parts: &[Part]) -> Reply {
+        let (content_type, body) = multipart_body(parts);
+        reply(self.raw(Method::POST, uri, Some((&content_type, body))).await).await
+    }
+
+    /// Скачивание: тело как есть, без разбора JSON
+    pub async fn download(&self, uri: &str) -> Raw {
+        let res = self.raw(Method::GET, uri, None).await;
+        let (parts, body) = res.into_parts();
+        Raw { status: parts.status, headers: parts.headers, bytes: body.collect().await.unwrap().to_bytes().to_vec() }
+    }
+
+    async fn raw(&self, method: Method, uri: &str, body: Option<(&str, Vec<u8>)>) -> axum::response::Response {
+        let mut req =
+            Request::builder().method(method).uri(uri).header(AUTHORIZATION, format!("Bearer {}", self.token));
+        let body = match body {
+            Some((content_type, bytes)) => {
+                req = req.header(CONTENT_TYPE, content_type);
+                Body::from(bytes)
+            }
+            None => Body::empty(),
+        };
+        self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap()
     }
 
     /// Ответ с ожидаемым статусом: при расхождении тест падает вместе с телом ответа
@@ -219,4 +284,32 @@ impl Fx {
 
 pub fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
     v[key].as_str().unwrap_or_else(|| panic!("нет строки «{key}» в {v}"))
+}
+
+/// Ответ с телом в байтах
+pub struct Raw {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub bytes: Vec<u8>,
+}
+
+/// Поле формы multipart
+pub struct Part {
+    name: &'static str,
+    filename: Option<String>,
+    data: Vec<u8>,
+}
+
+pub fn text_part(name: &'static str, value: impl ToString) -> Part {
+    Part { name, filename: None, data: value.to_string().into_bytes() }
+}
+
+/// Файл в поле `file`
+pub fn file_part(filename: &str, data: &[u8]) -> Part {
+    Part { name: "file", filename: Some(filename.to_owned()), data: data.to_vec() }
+}
+
+/// Поле `file` без имени файла (так браузер не шлёт, но сервер обязан отказать)
+pub fn nameless_file_part(data: &[u8]) -> Part {
+    Part { name: "file", filename: None, data: data.to_vec() }
 }

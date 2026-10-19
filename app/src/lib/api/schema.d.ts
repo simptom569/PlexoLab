@@ -73,6 +73,96 @@ export interface paths {
         patch: operations["update_column"];
         trace?: never;
     };
+    "/api/v1/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Файлы библиотеки (вложения задач сюда не входят), новые первыми */
+        get: operations["list_files"];
+        put?: never;
+        /**
+         * Загрузить файлы в библиотеку (multipart/form-data). Поле `file` можно повторять, `folder_id` и `wiki_page_id`
+         *     необязательны. Файл, прикреплённый к странице без указания папки, попадает в папку «Вложения».
+         */
+        post: operations["upload_files"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить файл (библиотеки или вложение задачи) вместе с содержимым на диске */
+        delete: operations["delete_file"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Скачать содержимое файла */
+        get: operations["download_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Папки в порядке создания, с числом файлов */
+        get: operations["list_folders"];
+        put?: never;
+        /** Новая папка. Названия не повторяются. */
+        post: operations["create_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить пустую папку */
+        delete: operations["delete_folder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me": {
         parameters: {
             query?: never;
@@ -396,6 +486,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/{id}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Прикрепить файлы к задаче (multipart/form-data, поле `file` можно повторять) */
+        post: operations["upload_task_files"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/{id}/subtasks": {
         parameters: {
             query?: never;
@@ -428,6 +535,46 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wiki": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Дерево страниц без текста, соседи в порядке `position` */
+        get: operations["list_pages"];
+        put?: never;
+        /** Новая страница в конец списка вложенных в `parent_id` (или в корень). В ленту пишется «создана». */
+        post: operations["create_page"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/wiki/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Страница вместе с текстом */
+        get: operations["get_page"];
+        put?: never;
+        post?: never;
+        /** Удалить страницу вместе с вложенными. Прикреплённые файлы остаются в библиотеке без страницы. */
+        delete: operations["delete_page"];
+        options?: never;
+        head?: never;
+        /**
+         * Название, текст или родитель страницы. Если `rev` не совпал с текущим, ответ 409 с актуальной версией.
+         *     Правки текста в ленту не пишутся: их много, и они не событие для команды.
+         */
+        patch: operations["update_page"];
         trace?: never;
     };
 }
@@ -481,6 +628,9 @@ export interface components {
         CreateComment: {
             body: string;
         };
+        CreateFolder: {
+            name: string;
+        };
         CreateMilestone: {
             /** Format: date */
             due_date: string;
@@ -518,6 +668,15 @@ export interface components {
             column_id?: string | null;
             title: string;
         };
+        CreateWikiPage: {
+            md?: string | null;
+            /**
+             * Format: uuid
+             * @description Родитель; не передано или `null` — страница в корне
+             */
+            parent_id?: string | null;
+            title?: string | null;
+        };
         ErrorBody: {
             /**
              * @description Машинный код ошибки: bad_request, unauthorized, invalid_credentials, ...
@@ -529,6 +688,51 @@ export interface components {
              * @example Неверный e-mail или пароль
              */
             message: string;
+        };
+        /** @description Файл библиотеки или вложение */
+        FileDto: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            folder_id?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @description img | pdf | doc | sheet | zip | other */
+            kind: string;
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /**
+             * Format: uuid
+             * @description Задача, к которой прикреплён файл
+             */
+            task_id?: string | null;
+            /** Format: uuid */
+            uploader_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Страница вики, к которой прикреплён файл
+             */
+            wiki_page_id?: string | null;
+        };
+        FileListDto: {
+            /** @description Подходящие под фильтр, новые первыми */
+            files: components["schemas"]["FileDto"][];
+            /**
+             * Format: int64
+             * @description Сколько файлов в библиотеке всего, независимо от фильтров
+             */
+            total: number;
+        };
+        FolderDto: {
+            /**
+             * Format: int64
+             * @description Файлов в папке, вложения страниц тоже считаются
+             */
+            file_count: number;
+            /** Format: uuid */
+            id: string;
+            name: string;
         };
         LoginRequest: {
             /** @example lena@example.com */
@@ -745,6 +949,11 @@ export interface components {
             /** Format: uuid */
             uploader_id?: string | null;
         };
+        /** @description Поля формы загрузки вложения задачи */
+        TaskUploadForm: {
+            /** @description Файлы; поле `file` можно повторять */
+            file: string[];
+        };
         TokenResponse: {
             /** @description JWT для заголовка `Authorization: Bearer ...`, живёт 12 часов */
             access_token: string;
@@ -837,6 +1046,33 @@ export interface components {
             tag_ids?: string[] | null;
             title?: string | null;
         };
+        /** @description Изменения страницы. `rev` — версия, которую клиент видел последней: если страницу успели изменить, ответ 409. */
+        UpdateWikiPage: {
+            md?: string | null;
+            /**
+             * Format: uuid
+             * @description Перенести под другую страницу; `null` — в корень
+             */
+            parent_id?: string | null;
+            /** Format: int32 */
+            rev: number;
+            title?: string | null;
+        };
+        /** @description Поля формы загрузки (multipart/form-data) */
+        UploadForm: {
+            /** @description Файлы; поле `file` можно повторять */
+            file: string[];
+            /**
+             * Format: uuid
+             * @description Папка. Для вложения страницы без папки сервер кладёт файл в папку «Вложения».
+             */
+            folder_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Страница вики, к которой прикрепить
+             */
+            wiki_page_id?: string | null;
+        };
         /** @description Пользователь без секретов: хэша пароля в ответах API нет */
         UserDto: {
             /** @example lena@example.com */
@@ -856,6 +1092,58 @@ export interface components {
              * @description Цвет аватара: 0..4 → av-a … av-e
              */
             tone: number;
+        };
+        /** @description Ответ 409: страницу уже изменили. В `current` лежит актуальная версия. */
+        WikiConflictDto: {
+            /** @example conflict */
+            code: string;
+            current: components["schemas"]["WikiPageDto"];
+            /** @example Страницу изменил другой участник */
+            message: string;
+        };
+        /** @description Страница в дереве: без текста */
+        WikiNodeDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Родительская страница; `null` — корень дерева
+             */
+            parent_id?: string | null;
+            /**
+             * Format: double
+             * @description Порядок среди страниц одного родителя
+             */
+            position: number;
+            /**
+             * Format: int32
+             * @description Номер версии: растёт на единицу при каждом изменении
+             */
+            rev: number;
+            /** @description Может быть пустым: интерфейс пишет «Без названия» */
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            updated_by?: string | null;
+        };
+        /** @description Страница вместе с текстом */
+        WikiPageDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description Весь текст страницы одной строкой markdown */
+            md: string;
+            /** Format: uuid */
+            parent_id?: string | null;
+            /** Format: double */
+            position: number;
+            /** Format: int32 */
+            rev: number;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            updated_by?: string | null;
         };
     };
     responses: never;
@@ -1086,6 +1374,312 @@ export interface operations {
             };
             /** @description Нет такой колонки */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `root` — только файлы вне папок, идентификатор папки — файлы в ней, не передано — везде */
+                folder: string | null;
+                /** @description img | pdf | doc | sheet | zip | other */
+                kind: string | null;
+                /** @description Часть имени файла */
+                q: string | null;
+                /** @description Только вложения этой страницы */
+                wiki_page_id: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Файлы и общее число файлов в библиотеке */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileListDto"];
+                };
+            };
+            /** @description Некорректные условия отбора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upload_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UploadForm"];
+            };
+        };
+        responses: {
+            /** @description Файлы сохранены */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileDto"][];
+                };
+            };
+            /** @description Некорректная форма, нет такой папки или страницы */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Файл больше лимита */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Файл */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Файл удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого файла */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    download_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Файл */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Содержимое файла */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого файла или у записи нет содержимого (пример из сида) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_folders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Папки библиотеки */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFolder"];
+            };
+        };
+        responses: {
+            /** @description Папка создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderDto"];
+                };
+            };
+            /** @description Некорректное название */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Папка с таким названием уже есть */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Папка */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Папка удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой папки */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description В папке есть файлы */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2331,6 +2925,69 @@ export interface operations {
             };
         };
     };
+    upload_task_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Задача */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TaskUploadForm"];
+            };
+        };
+        responses: {
+            /** @description Файлы прикреплены */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskFileDto"][];
+                };
+            };
+            /** @description Некорректная форма */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой задачи */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Файл больше лимита */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     create_subtask: {
         parameters: {
             query?: never;
@@ -2410,6 +3067,220 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Все страницы вики */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiNodeDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWikiPage"];
+            };
+        };
+        responses: {
+            /** @description Страница создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiPageDto"];
+                };
+            };
+            /** @description Некорректный запрос или нет такого родителя */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Страница */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiPageDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой страницы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Страница */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой страницы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_page: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Страница */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWikiPage"];
+            };
+        };
+        responses: {
+            /** @description Страница после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiPageDto"];
+                };
+            };
+            /** @description Некорректный запрос или перенос страницы внутрь себя */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой страницы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Страницу уже изменили, в current её актуальная версия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WikiConflictDto"];
                 };
             };
         };

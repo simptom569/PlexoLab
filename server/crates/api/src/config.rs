@@ -1,10 +1,11 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use domain::auth::MIN_JWT_SECRET_LEN;
+use domain::{auth::MIN_JWT_SECRET_LEN, files::DEFAULT_MAX_UPLOAD_BYTES};
 
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:8080";
 const DEFAULT_DATA_DIR: &str = "./data";
+const MAX_UPLOAD_MB_LIMIT: u64 = 2048;
 
 /// Адреса, с которых клиенту разрешено ходить в API: окно Tauri на Windows и сервер Vite при разработке
 pub const DEFAULT_CORS_ORIGINS: &[&str] = &[
@@ -23,6 +24,8 @@ pub enum ConfigError {
     WeakSecret,
     #[error("BIND_ADDR «{0}» не похож на адрес вида 127.0.0.1:8080")]
     BadBindAddr(String),
+    #[error("MAX_UPLOAD_MB «{0}» должно быть целым числом мегабайт от 1 до {MAX_UPLOAD_MB_LIMIT}")]
+    BadMaxUpload(String),
 }
 
 #[derive(Debug, Clone)]
@@ -30,8 +33,10 @@ pub struct Config {
     pub database_url: String,
     pub jwt_secret: String,
     pub bind_addr: SocketAddr,
-    /// Папка для загруженных файлов (DATA_DIR/files/<uuid>), используется с этапа 5
+    /// Папка данных: загруженные файлы лежат в DATA_DIR/files/<uuid>
     pub data_dir: PathBuf,
+    /// Лимит одного загружаемого файла, байты (MAX_UPLOAD_MB, по умолчанию 25 МБ)
+    pub max_upload_bytes: u64,
     pub cors_origins: Vec<String>,
     /// Отдавать схему OpenAPI по `/api/v1/openapi.json` (EXPOSE_OPENAPI). В боевом режиме выключено.
     pub expose_openapi: bool,
@@ -54,13 +59,20 @@ impl Config {
         let bind = get("BIND_ADDR").unwrap_or_else(|| DEFAULT_BIND_ADDR.to_owned());
         let bind_addr = bind.parse().map_err(|_| ConfigError::BadBindAddr(bind))?;
         let data_dir = PathBuf::from(get("DATA_DIR").unwrap_or_else(|| DEFAULT_DATA_DIR.to_owned()));
+        let max_upload_bytes = match get("MAX_UPLOAD_MB") {
+            Some(v) => match v.parse::<u64>() {
+                Ok(mb) if (1..=MAX_UPLOAD_MB_LIMIT).contains(&mb) => mb * 1024 * 1024,
+                _ => return Err(ConfigError::BadMaxUpload(v)),
+            },
+            None => DEFAULT_MAX_UPLOAD_BYTES,
+        };
         let cors_origins = match get("CORS_ORIGINS") {
             Some(list) => list.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect(),
             None => DEFAULT_CORS_ORIGINS.iter().map(|s| (*s).to_owned()).collect(),
         };
         let expose_openapi =
             get("EXPOSE_OPENAPI").is_some_and(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"));
-        Ok(Config { database_url, jwt_secret, bind_addr, data_dir, cors_origins, expose_openapi })
+        Ok(Config { database_url, jwt_secret, bind_addr, data_dir, max_upload_bytes, cors_origins, expose_openapi })
     }
 }
 
@@ -82,6 +94,7 @@ mod tests {
         let c = Config::from_lookup(env(&[("DATABASE_URL", "postgres://x"), ("JWT_SECRET", SECRET)])).unwrap();
         assert_eq!(c.bind_addr.to_string(), "127.0.0.1:8080");
         assert_eq!(c.data_dir, PathBuf::from("./data"));
+        assert_eq!(c.max_upload_bytes, 25 * 1024 * 1024);
         assert!(c.cors_origins.contains(&"http://tauri.localhost".to_owned()));
     }
 
@@ -113,6 +126,17 @@ mod tests {
         assert_eq!(c.bind_addr.port(), 9000);
         assert_eq!(c.data_dir, PathBuf::from("/var/lib/plexolab"));
         assert_eq!(c.cors_origins, ["https://a.example", "https://b.example"]);
+    }
+
+    #[test]
+    fn upload_limit_is_read_in_megabytes() {
+        let base = [("DATABASE_URL", "postgres://x"), ("JWT_SECRET", SECRET)];
+        let c = Config::from_lookup(env(&[base[0], base[1], ("MAX_UPLOAD_MB", "100")])).unwrap();
+        assert_eq!(c.max_upload_bytes, 100 * 1024 * 1024);
+        for bad in ["0", "-5", "много", "2049", "1.5"] {
+            let r = Config::from_lookup(env(&[base[0], base[1], ("MAX_UPLOAD_MB", bad)]));
+            assert_eq!(r.unwrap_err(), ConfigError::BadMaxUpload(bad.to_owned()), "{bad}");
+        }
     }
 
     #[test]

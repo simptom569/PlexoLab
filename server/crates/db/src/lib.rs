@@ -14,6 +14,7 @@ pub mod activity;
 pub mod columns;
 pub mod comments;
 pub mod files;
+pub mod folders;
 pub mod modules;
 pub mod projects;
 pub mod releases;
@@ -23,6 +24,7 @@ pub mod tags;
 pub mod tasks;
 pub mod tokens;
 pub mod users;
+pub mod wiki;
 
 /// Миграции, вшитые в бинарник
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("../../migrations");

@@ -148,7 +148,7 @@ async fn seeded(pool: PgPool) -> Ctx {
     let app = app(pool.clone());
     let tokens = login_ok(&app, "lena@example.com", "dev").await;
     let user = db::users::find_by_email(&pool, "lena@example.com").await.unwrap().unwrap();
-    Ctx { app, pool, token: str_field(&tokens, "access_token").to_owned(), user }
+    Ctx { app, pool, token: str_field(&tokens, "access_token").to_owned(), user, dir: common::TestDir::new() }
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

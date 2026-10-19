@@ -11,6 +11,7 @@ use time::{Date, Duration, Month, OffsetDateTime, Time};
 use uuid::Uuid;
 
 use data::*;
+use domain::files::file_kind;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SeedError {
@@ -160,18 +161,6 @@ fn parse_size(s: &str) -> Result<i64, SeedError> {
         _ => return Err(bad()),
     };
     Ok((value * unit).round() as i64)
-}
-
-/// Тип файла по расширению (kindOf в макете)
-fn kind_of(name: &str) -> &'static str {
-    match name.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" => "img",
-        "pdf" => "pdf",
-        "doc" | "docx" | "txt" | "md" | "rtf" => "doc",
-        "xls" | "xlsx" | "csv" => "sheet",
-        "zip" | "rar" | "7z" | "gz" | "tar" => "zip",
-        _ => "other",
-    }
 }
 
 fn pick<K: std::hash::Hash + Eq + std::fmt::Debug, V: Copy>(map: &HashMap<K, V>, key: K) -> Result<V, SeedError> {
@@ -365,8 +354,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
             )
             .bind(name)
             .bind(parse_size(size)?)
-            .bind(kind_of(name))
-            .bind(format!("seed:{name}"))
+            .bind(file_kind(name))
+            .bind(format!("{}{name}", crate::files::SEED_KEY_PREFIX))
             .bind(assignee.unwrap_or(me))
             .bind(task_id)
             .execute(&mut *c)
@@ -508,8 +497,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         )
         .bind(f.name)
         .bind(parse_size(f.size)?)
-        .bind(kind_of(f.name))
-        .bind(format!("seed:{}", f.name))
+        .bind(file_kind(f.name))
+        .bind(format!("{}{}", crate::files::SEED_KEY_PREFIX, f.name))
         .bind(user(f.who)?)
         .bind(f.folder.map(|n| pick(&folders, n)).transpose()?)
         .bind(f.page.map(|p| pick(&wiki, p)).transpose()?)

@@ -41,7 +41,7 @@ fn clean_title(raw: &str) -> ApiResult<String> {
 }
 
 /// «WEB-151 Название» для ленты активности
-fn target(project: &Project, task: &Task) -> String {
+pub(super) fn target(project: &Project, task: &Task) -> String {
     format!("{} {}", board::task_key(&project.key, task.number), task.title)
 }
 
@@ -53,7 +53,7 @@ async fn column_in_project(conn: &mut PgConnection, column_id: Uuid, project_id:
 }
 
 /// Находит задачу и блокирует проект и задачу до конца транзакции
-async fn load_locked(conn: &mut PgConnection, task_id: Uuid) -> ApiResult<(Task, Project)> {
+pub(super) async fn load_locked(conn: &mut PgConnection, task_id: Uuid) -> ApiResult<(Task, Project)> {
     let task = tasks::get(&mut *conn, task_id).await?.ok_or(ApiError::NotFound)?;
     let project = db::projects::lock(conn, task.project_id).await?.ok_or(ApiError::NotFound)?;
     // пока ждали блокировку проекта, задачу могли удалить или изменить: читаем заново
@@ -301,9 +301,12 @@ async fn delete_task(
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     let (task, project) = load_locked(&mut tx, id).await?;
+    // записи о вложениях уйдут вместе с задачей, а файлы на диске надо убрать самим
+    let file_keys = db::files::storage_keys_for_task(&mut *tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "delete", &target(&project, &task), "удалена").await?;
     tasks::delete(&mut tx, id).await?;
     tx.commit().await?;
+    crate::storage::remove_all(&state.data_dir, &file_keys).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

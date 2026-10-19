@@ -34,6 +34,8 @@ pub enum ApiError {
     NotFound,
     #[error("{0}")]
     Conflict(String),
+    #[error("{0}")]
+    TooLarge(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -50,6 +52,7 @@ impl ApiError {
             ApiError::Forbidden => StatusCode::FORBIDDEN,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
+            ApiError::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -63,6 +66,7 @@ impl ApiError {
             ApiError::Forbidden => "forbidden",
             ApiError::NotFound => "not_found",
             ApiError::Conflict(_) => "conflict",
+            ApiError::TooLarge(_) => "payload_too_large",
             ApiError::Internal(_) => "internal",
         }
     }
