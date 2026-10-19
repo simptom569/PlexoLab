@@ -7,6 +7,7 @@ PlexoLab: сервер
   server [serve]          запустить сервер (настройки из переменных окружения или файла .env)
   server user add ...     создать пользователя
   server user passwd ...  сменить пароль пользователя (его сессии на всех устройствах завершаются)
+  server openapi [--out файл]   вывести схему OpenAPI (для генерации типов клиента), сервер и база не нужны
 
 Параметры `user add`:
   --email <адрес>         обязательно
@@ -33,6 +34,10 @@ pub enum Command {
     Serve,
     UserAdd(UserAdd),
     UserPasswd(UserPasswd),
+    /// Вывести схему OpenAPI в файл или на экран
+    Openapi {
+        out: Option<String>,
+    },
     Help,
 }
 
@@ -65,6 +70,12 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
         ["help" | "--help" | "-h"] => Ok(Command::Help),
         ["user", "add", rest @ ..] => parse_user_add(rest).map(Command::UserAdd),
         ["user", "passwd", rest @ ..] => parse_user_passwd(rest).map(Command::UserPasswd),
+        ["openapi"] => Ok(Command::Openapi { out: None }),
+        ["openapi", "--out", path] => Ok(Command::Openapi { out: Some((*path).to_owned()) }),
+        ["openapi", arg] if arg.starts_with("--out=") => {
+            Ok(Command::Openapi { out: Some(arg["--out=".len()..].to_owned()) })
+        }
+        ["openapi", ..] => Err("у `openapi` один необязательный параметр: --out <файл>".to_owned()),
         ["user", ..] => Err("после `user` ожидается `add` или `passwd`".to_owned()),
         [other, ..] => Err(format!("неизвестная команда «{other}»")),
     }
@@ -194,6 +205,16 @@ mod tests {
         assert_eq!(password_from_stdin("\u{feff}\u{feff}secret"), "secret");
         assert_eq!(password_from_stdin(" secret with spaces "), " secret with spaces ", "пробелы — часть пароля");
         assert_eq!(password_from_stdin("\r\n"), "");
+    }
+
+    #[test]
+    fn openapi_command_takes_an_optional_output_file() {
+        assert_eq!(p(&["openapi"]), Ok(Command::Openapi { out: None }));
+        assert_eq!(p(&["openapi", "--out", "a/b.json"]), Ok(Command::Openapi { out: Some("a/b.json".into()) }));
+        assert_eq!(p(&["openapi", "--out=a/b.json"]), Ok(Command::Openapi { out: Some("a/b.json".into()) }));
+        assert!(p(&["openapi", "--out"]).is_err());
+        assert!(p(&["openapi", "file.json"]).is_err());
+        assert!(p(&["openapi", "--out", "a", "b"]).is_err());
     }
 
     #[test]

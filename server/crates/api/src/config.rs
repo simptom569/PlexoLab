@@ -33,6 +33,8 @@ pub struct Config {
     /// Папка для загруженных файлов (DATA_DIR/files/<uuid>), используется с этапа 5
     pub data_dir: PathBuf,
     pub cors_origins: Vec<String>,
+    /// Отдавать схему OpenAPI по `/api/v1/openapi.json` (EXPOSE_OPENAPI). В боевом режиме выключено.
+    pub expose_openapi: bool,
 }
 
 impl Config {
@@ -56,7 +58,9 @@ impl Config {
             Some(list) => list.split(',').map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()).collect(),
             None => DEFAULT_CORS_ORIGINS.iter().map(|s| (*s).to_owned()).collect(),
         };
-        Ok(Config { database_url, jwt_secret, bind_addr, data_dir, cors_origins })
+        let expose_openapi =
+            get("EXPOSE_OPENAPI").is_some_and(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes" | "on"));
+        Ok(Config { database_url, jwt_secret, bind_addr, data_dir, cors_origins, expose_openapi })
     }
 }
 
@@ -79,6 +83,20 @@ mod tests {
         assert_eq!(c.bind_addr.to_string(), "127.0.0.1:8080");
         assert_eq!(c.data_dir, PathBuf::from("./data"));
         assert!(c.cors_origins.contains(&"http://tauri.localhost".to_owned()));
+    }
+
+    #[test]
+    fn openapi_is_off_unless_asked() {
+        let base = [("DATABASE_URL", "postgres://x"), ("JWT_SECRET", SECRET)];
+        assert!(!Config::from_lookup(env(&base)).unwrap().expose_openapi, "по умолчанию выключено");
+        for on in ["1", "true", "TRUE", "yes", "on"] {
+            let c = Config::from_lookup(env(&[base[0], base[1], ("EXPOSE_OPENAPI", on)])).unwrap();
+            assert!(c.expose_openapi, "{on}");
+        }
+        for off in ["0", "false", "no", "", "maybe"] {
+            let c = Config::from_lookup(env(&[base[0], base[1], ("EXPOSE_OPENAPI", off)])).unwrap();
+            assert!(!c.expose_openapi, "«{off}»");
+        }
     }
 
     #[test]

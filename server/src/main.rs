@@ -20,6 +20,7 @@ async fn main() -> anyhow::Result<()> {
         Ok(Command::Serve) => api::run(api::Config::from_env()?).await,
         Ok(Command::UserAdd(args)) => user_add(args).await,
         Ok(Command::UserPasswd(args)) => user_passwd(args).await,
+        Ok(Command::Openapi { out }) => openapi(out),
         Ok(Command::Help) => {
             print!("{}", cli::USAGE);
             Ok(())
@@ -29,6 +30,19 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(2);
         }
     }
+}
+
+/// Схема OpenAPI без запуска сервера: из неё клиент генерирует типы
+fn openapi(out: Option<String>) -> anyhow::Result<()> {
+    let json = serde_json::to_string_pretty(&api::openapi_document())?;
+    match out {
+        Some(path) => {
+            std::fs::write(&path, json + "\n").with_context(|| format!("не удалось записать {path}"))?;
+            eprintln!("Схема OpenAPI записана в {path}");
+        }
+        None => println!("{json}"),
+    }
+    Ok(())
 }
 
 /// Пароль из параметра или из стандартного ввода

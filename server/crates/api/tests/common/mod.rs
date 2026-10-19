@@ -24,9 +24,16 @@ pub fn app(pool: PgPool) -> Router {
     router(AppState::new(pool, SECRET))
 }
 
-/// Приложение без базы: подходит для проверок, которые до базы не доходят (401, 404, CORS, OpenAPI)
+/// Приложение без базы: подходит для проверок, которые до базы не доходят (401, 404, CORS)
 pub fn app_without_db() -> Router {
     app(PgPool::connect_lazy("postgres://nobody@127.0.0.1:1/none").unwrap())
+}
+
+/// То же, но с включённой схемой OpenAPI
+pub fn app_with_openapi() -> Router {
+    router(
+        AppState::new(PgPool::connect_lazy("postgres://nobody@127.0.0.1:1/none").unwrap(), SECRET).with_openapi(true),
+    )
 }
 
 pub struct Reply {

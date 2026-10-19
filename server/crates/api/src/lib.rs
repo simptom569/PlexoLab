@@ -25,24 +25,30 @@ pub use config::Config;
 pub use error::{ApiError, ApiResult};
 pub use state::AppState;
 
-/// Собирает приложение: `/healthz`, `/api/v1/openapi.json` и ручки `/api/v1/...`.
+/// Схема OpenAPI в виде JSON. Для неё не нужны ни база, ни запущенный сервер: так клиент получает типы.
+pub fn openapi_document() -> serde_json::Value {
+    let (_, api) = OpenApiRouter::<AppState>::with_openapi(openapi::ApiDoc::openapi())
+        .nest("/api/v1", routes::v1())
+        .split_for_parts();
+    serde_json::to_value(&api).expect("схема OpenAPI сериализуется")
+}
+
+/// Собирает приложение: `/healthz`, ручки `/api/v1/...` и, если включено, `/api/v1/openapi.json`.
 /// CORS добавляет вызывающий (`cors::layer`), чтобы он оборачивал всё, включая ответы 404.
 pub fn router(state: AppState) -> Router {
-    let (v1, api) =
+    let (v1, _) =
         OpenApiRouter::with_openapi(openapi::ApiDoc::openapi()).nest("/api/v1", routes::v1()).split_for_parts();
-    let api_json = Arc::new(serde_json::to_value(&api).expect("схема OpenAPI сериализуется"));
 
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/api/v1/openapi.json", get(move || async move { Json(api_json) }))
-        .merge(v1)
-        .fallback(not_found)
-        .with_state(state)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
-                .on_response(DefaultOnResponse::new().level(Level::INFO).latency_unit(LatencyUnit::Millis)),
-        )
+    let mut app = Router::new().route("/healthz", get(healthz));
+    if state.expose_openapi {
+        let api_json = Arc::new(openapi_document());
+        app = app.route("/api/v1/openapi.json", get(move || async move { Json(api_json) }));
+    }
+    app.merge(v1).fallback(not_found).with_state(state).layer(
+        TraceLayer::new_for_http()
+            .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+            .on_response(DefaultOnResponse::new().level(Level::INFO).latency_unit(LatencyUnit::Millis)),
+    )
 }
 
 async fn healthz() -> &'static str {
@@ -58,7 +64,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await.context("не удалось подключиться к базе данных")?;
     db::migrate(&pool).await.context("не удалось применить миграции")?;
 
-    let app = router(AppState::new(pool, &config.jwt_secret)).layer(cors::layer(&config.cors_origins));
+    let state = AppState::new(pool, &config.jwt_secret).with_openapi(config.expose_openapi);
+    let app = router(state).layer(cors::layer(&config.cors_origins));
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await
         .with_context(|| format!("не удалось занять адрес {}", config.bind_addr))?;

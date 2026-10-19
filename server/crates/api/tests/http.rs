@@ -23,8 +23,22 @@ async fn healthz_answers_ok_without_token() {
 }
 
 #[tokio::test]
-async fn openapi_json_describes_the_api() {
+async fn openapi_json_is_hidden_unless_enabled() {
     let r = get(&app_without_db(), "/api/v1/openapi.json", None).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "в боевом режиме схема не отдаётся");
+    assert_eq!(r.body["code"], "not_found");
+}
+
+#[tokio::test]
+async fn the_served_schema_equals_the_offline_document() {
+    let served = get(&app_with_openapi(), "/api/v1/openapi.json", None).await;
+    assert_eq!(served.status, StatusCode::OK);
+    assert_eq!(served.body, api::openapi_document(), "команда `server openapi` выдаёт ту же схему");
+}
+
+#[tokio::test]
+async fn openapi_json_describes_the_api() {
+    let r = get(&app_with_openapi(), "/api/v1/openapi.json", None).await;
     assert_eq!(r.status, StatusCode::OK);
     assert!(str_field(&r.body, "openapi").starts_with("3."));
     assert_eq!(r.body["info"]["title"], "PlexoLab API");
