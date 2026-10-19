@@ -261,6 +261,28 @@ async fn logout_of_one_session_keeps_another_one_alive(pool: PgPool) {
     assert_eq!(r.status, StatusCode::OK);
 }
 
+// ===== Смена пароля =====
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn password_change_closes_old_sessions_and_the_old_password(pool: PgPool) {
+    let (app, _) = setup(pool.clone()).await;
+    let tokens = login_ok(&app, EMAIL, PASSWORD).await;
+
+    let new_hash = auth::hash_password("another-long-password").unwrap();
+    db::users::change_password(&pool, EMAIL, &new_hash).await.unwrap();
+
+    let old = login(&app, EMAIL, PASSWORD).await;
+    assert_eq!(old.status, StatusCode::UNAUTHORIZED, "старый пароль больше не подходит");
+    login_ok(&app, EMAIL, "another-long-password").await;
+
+    let r = post(&app, "/api/v1/auth/refresh", json!({ "refresh_token": str_field(&tokens, "refresh_token") })).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED, "сессия, открытая со старым паролем, завершена");
+
+    // токен доступа, выданный раньше, действует до конца своего срока (12 часов): так устроен JWT
+    let me = get(&app, "/api/v1/me", Some(str_field(&tokens, "access_token"))).await;
+    assert_eq!(me.status, StatusCode::OK);
+}
+
 // ===== Выход =====
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

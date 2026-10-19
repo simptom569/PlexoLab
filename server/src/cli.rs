@@ -1,4 +1,4 @@
-//! Разбор командной строки. Своя маленькая реализация: команд пока две, тянуть ради них clap не нужно.
+//! Разбор командной строки. Своя маленькая реализация: команд пока три, тянуть ради них clap не нужно.
 
 pub const USAGE: &str = "\
 PlexoLab: сервер
@@ -6,6 +6,7 @@ PlexoLab: сервер
 Команды:
   server [serve]          запустить сервер (настройки из переменных окружения или файла .env)
   server user add ...     создать пользователя
+  server user passwd ...  сменить пароль пользователя (его сессии на всех устройствах завершаются)
 
 Параметры `user add`:
   --email <адрес>         обязательно
@@ -16,8 +17,13 @@ PlexoLab: сервер
   --password <пароль>     пароль, не короче 8 символов
   --password-stdin        прочитать пароль из стандартного ввода (безопаснее, чем --password)
 
-Пример (PowerShell):
+Параметры `user passwd`:
+  --email <адрес>         чей пароль меняем, обязательно
+  --password <пароль> или --password-stdin   новый пароль, как в `user add`
+
+Примеры (PowerShell):
   'секретный-пароль' | server user add --email lena@example.com --name \"Лена М.\" --role Frontend --password-stdin
+  'новый-пароль' | server user passwd --email lena@example.com --password-stdin
 ";
 
 pub const MIN_PASSWORD_LEN: usize = 8;
@@ -26,7 +32,14 @@ pub const MIN_PASSWORD_LEN: usize = 8;
 pub enum Command {
     Serve,
     UserAdd(UserAdd),
+    UserPasswd(UserPasswd),
     Help,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UserPasswd {
+    pub email: String,
+    pub password: PasswordSource,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -51,9 +64,49 @@ pub fn parse(args: &[String]) -> Result<Command, String> {
         [] | ["serve"] => Ok(Command::Serve),
         ["help" | "--help" | "-h"] => Ok(Command::Help),
         ["user", "add", rest @ ..] => parse_user_add(rest).map(Command::UserAdd),
-        ["user", ..] => Err("после `user` ожидается `add`".to_owned()),
+        ["user", "passwd", rest @ ..] => parse_user_passwd(rest).map(Command::UserPasswd),
+        ["user", ..] => Err("после `user` ожидается `add` или `passwd`".to_owned()),
         [other, ..] => Err(format!("неизвестная команда «{other}»")),
     }
+}
+
+/// Допускаем и `--name X`, и `--name=X`
+fn split_flag(arg: &str) -> (&str, Option<String>) {
+    match arg.split_once('=') {
+        Some((flag, value)) if flag.starts_with("--") => (flag, Some(value.to_owned())),
+        _ => (arg, None),
+    }
+}
+
+fn check_email(raw: &str) -> Result<String, String> {
+    let email = raw.trim().to_lowercase();
+    if !email.contains('@') || email.contains(char::is_whitespace) {
+        return Err(format!("«{email}» не похож на e-mail"));
+    }
+    Ok(email)
+}
+
+fn parse_user_passwd(args: &[&str]) -> Result<UserPasswd, String> {
+    let (mut email, mut password) = (None, None);
+    let mut it = args.iter().copied();
+    while let Some(arg) = it.next() {
+        let (flag, inline) = split_flag(arg);
+        let mut value = |flag: &str| {
+            inline.clone().or_else(|| it.next().map(str::to_owned)).ok_or_else(|| format!("у {flag} нет значения"))
+        };
+        match flag {
+            "--email" => email = Some(value(flag)?),
+            "--password" => password = Some(PasswordSource::Value(value(flag)?)),
+            "--password-stdin" => password = Some(PasswordSource::Stdin),
+            other => return Err(format!("неизвестный параметр «{other}»")),
+        }
+    }
+    let email = check_email(&email.ok_or("укажите --email")?)?;
+    let password = password.ok_or("укажите --password или --password-stdin")?;
+    if let PasswordSource::Value(p) = &password {
+        check_password(p)?;
+    }
+    Ok(UserPasswd { email, password })
 }
 
 fn parse_user_add(args: &[&str]) -> Result<UserAdd, String> {
@@ -62,11 +115,7 @@ fn parse_user_add(args: &[&str]) -> Result<UserAdd, String> {
 
     let mut it = args.iter().copied();
     while let Some(arg) = it.next() {
-        // допускаем и `--name X`, и `--name=X`
-        let (flag, inline) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_owned())),
-            _ => (arg, None),
-        };
+        let (flag, inline) = split_flag(arg);
         let mut value = |flag: &str| {
             inline.clone().or_else(|| it.next().map(str::to_owned)).ok_or_else(|| format!("у {flag} нет значения"))
         };
@@ -85,10 +134,7 @@ fn parse_user_add(args: &[&str]) -> Result<UserAdd, String> {
         }
     }
 
-    let email = email.ok_or("укажите --email")?.trim().to_lowercase();
-    if !email.contains('@') || email.contains(char::is_whitespace) {
-        return Err(format!("«{email}» не похож на e-mail"));
-    }
+    let email = check_email(&email.ok_or("укажите --email")?)?;
     let name = name.ok_or("укажите --name")?.trim().to_owned();
     if name.is_empty() {
         return Err("--name не может быть пустым".to_owned());
@@ -98,6 +144,13 @@ fn parse_user_add(args: &[&str]) -> Result<UserAdd, String> {
         check_password(p)?;
     }
     Ok(UserAdd { email, name, role: role.trim().to_owned(), tone, admin, password })
+}
+
+/// Пароль из стандартного ввода: без маркера UTF-8 в начале и без перевода строки в конце.
+/// Windows PowerShell 5.1 при передаче через пайп добавляет в начало невидимый маркер (EF BB BF),
+/// и без этой очистки пароль сохранился бы с лишним невидимым символом.
+pub fn password_from_stdin(raw: &str) -> String {
+    raw.trim_start_matches('\u{feff}').trim_end_matches(['\r', '\n']).to_owned()
 }
 
 pub fn check_password(password: &str) -> Result<(), String> {
@@ -130,6 +183,45 @@ mod tests {
         assert!(p(&["dance"]).is_err());
         assert!(p(&["user"]).is_err());
         assert!(p(&["user", "remove"]).is_err());
+    }
+
+    #[test]
+    fn stdin_password_loses_the_bom_and_the_line_break_only() {
+        assert_eq!(password_from_stdin("секрет-123"), "секрет-123");
+        assert_eq!(password_from_stdin("secret\r\n"), "secret");
+        assert_eq!(password_from_stdin("secret\n"), "secret");
+        assert_eq!(password_from_stdin("\u{feff}secret\r\n"), "secret", "так приходит из PowerShell 5.1");
+        assert_eq!(password_from_stdin("\u{feff}\u{feff}secret"), "secret");
+        assert_eq!(password_from_stdin(" secret with spaces "), " secret with spaces ", "пробелы — часть пароля");
+        assert_eq!(password_from_stdin("\r\n"), "");
+    }
+
+    #[test]
+    fn user_passwd_reads_email_and_password() {
+        assert_eq!(
+            p(&["user", "passwd", "--email", " Lena@Example.com ", "--password", "long-enough-pass"]),
+            Ok(Command::UserPasswd(UserPasswd {
+                email: "lena@example.com".into(),
+                password: PasswordSource::Value("long-enough-pass".into()),
+            }))
+        );
+        assert_eq!(
+            p(&["user", "passwd", "--email=a@b.c", "--password-stdin"]),
+            Ok(Command::UserPasswd(UserPasswd { email: "a@b.c".into(), password: PasswordSource::Stdin }))
+        );
+    }
+
+    #[test]
+    fn user_passwd_validates_input() {
+        let ok = ["user", "passwd", "--email", "a@b.c", "--password", "long-enough-pass"];
+        assert!(p(&ok).is_ok());
+        assert!(p(&["user", "passwd", "--password", "long-enough-pass"]).is_err(), "без --email");
+        assert!(p(&["user", "passwd", "--email", "a@b.c"]).is_err(), "без пароля");
+        assert!(p(&["user", "passwd", "--email", "a@b.c", "--password", "short"]).is_err(), "короткий пароль");
+        assert!(p(&["user", "passwd", "--email", "no-at", "--password", "long-enough-pass"]).is_err());
+        assert!(p(&["user", "passwd", "--email", "a@b.c", "--password"]).is_err(), "у --password нет значения");
+        assert!(p(&["user", "passwd", "--email", "a@b.c", "--password-stdin", "--admin"]).is_err(), "лишний параметр");
+        assert!(p(&["user", "passwd", "--email", "a@b.c", "--name", "X", "--password-stdin"]).is_err());
     }
 
     #[test]

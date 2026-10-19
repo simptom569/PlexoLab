@@ -60,6 +60,33 @@ pub async fn create(pool: &PgPool, u: &NewUser) -> Result<User, CreateUserError>
     })
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ChangePasswordError {
+    #[error("пользователь с таким e-mail не найден")]
+    NotFound,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+/// Меняет пароль пользователя и завершает все его сессии: refresh-токены удаляются, и войти по старым
+/// нельзя. Уже выданные токены доступа действуют до конца своего срока (до 12 часов).
+/// `email` должен быть в нижнем регистре.
+pub async fn change_password(pool: &PgPool, email: &str, password_hash: &str) -> Result<User, ChangePasswordError> {
+    let mut tx = pool.begin().await?;
+    let user: User = sqlx::query_as(
+        "update users set password_hash = $2 where email = $1 \
+         returning id, email, name, role, tone, is_admin, password_hash, created_at",
+    )
+    .bind(email)
+    .bind(password_hash)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ChangePasswordError::NotFound)?;
+    sqlx::query("delete from refresh_tokens where user_id = $1").bind(user.id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(user)
+}
+
 pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(select_user!("where email = $1")).bind(email).fetch_optional(pool).await
 }
