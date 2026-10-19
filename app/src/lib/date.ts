@@ -39,3 +39,21 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
   return many
 }
+
+const hhmm = (d: Date): string => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+/** Время события для людей: «только что», «12 минут назад», «вчера, 17:40», «12 окт, 09:05» (по часам этого компьютера) */
+export function whenText(timestamp: string, now: Date = new Date()): string {
+  const at = new Date(timestamp)
+  const mins = Math.floor((now.getTime() - at.getTime()) / 60_000)
+  if (mins < 1) return 'только что'
+  const day = todayIso(at)
+  const today = todayIso(now)
+  if (day === today) {
+    if (mins < 60) return `${mins} ${plural(mins, 'минуту', 'минуты', 'минут')} назад`
+    const hours = Math.floor(mins / 60)
+    return `${hours} ${plural(hours, 'час', 'часа', 'часов')} назад`
+  }
+  if (day === addDays(today, -1)) return `вчера, ${hhmm(at)}`
+  return `${fd(day)}, ${hhmm(at)}`
+}

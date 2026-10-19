@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, fd, iso, mondayOf, plural, todayIso, toMs } from './date'
+import { addDays, fd, iso, mondayOf, plural, todayIso, toMs, whenText } from './date'
 
 describe('даты', () => {
   it('toMs и iso взаимно обратны', () => {
@@ -44,5 +44,23 @@ describe('plural', () => {
       '21 задача', '22 задачи', '25 задач', '100 задач', '101 задача', '111 задач', '112 задач',
     ])
     expect(task(0)).toBe('0 задач')
+  })
+})
+
+describe('whenText', () => {
+  const now = new Date(2026, 9, 18, 15, 0)
+  const at = (d: Date) => whenText(d.toISOString(), now)
+  it('сегодня: относительное время', () => {
+    expect(at(new Date(2026, 9, 18, 15, 0, 20))).toBe('только что')
+    expect(at(new Date(2026, 9, 18, 14, 59))).toBe('1 минуту назад')
+    expect(at(new Date(2026, 9, 18, 14, 48))).toBe('12 минут назад')
+    expect(at(new Date(2026, 9, 18, 14, 0))).toBe('1 час назад')
+    expect(at(new Date(2026, 9, 18, 12, 0))).toBe('3 часа назад')
+    expect(at(new Date(2026, 9, 18, 0, 5))).toBe('14 часов назад')
+  })
+  it('вчера и раньше: день и время', () => {
+    expect(at(new Date(2026, 9, 17, 17, 40))).toBe('вчера, 17:40')
+    expect(at(new Date(2026, 9, 17, 23, 59))).toBe('вчера, 23:59')
+    expect(at(new Date(2026, 9, 12, 9, 5))).toBe('12 окт, 09:05')
   })
 })
