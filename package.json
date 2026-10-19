@@ -10,6 +10,8 @@
     "build-app": "npm --prefix app run tauri build",
     "test": "npm run test-server && npm run test-app",
     "test-server": "cargo test --workspace --manifest-path server/Cargo.toml",
-    "test-app": "npm --prefix app run build"
+    "test-app": "npm --prefix app run lint && npm --prefix app run build",
+    "test-visual": "npm --prefix tests/visual test",
+    "update-visual": "npm --prefix tests/visual run update"
   }
 }

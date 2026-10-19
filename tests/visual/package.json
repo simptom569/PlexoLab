@@ -1,0 +1,17 @@
+{
+  "name": "plexolab-visual-tests",
+  "private": true,
+  "type": "module",
+  "description": "Playwright: сравнение интерфейса с эталоном design/screenshots и снимки витрины компонентов",
+  "scripts": {
+    "test": "playwright test",
+    "update": "playwright test --update-snapshots"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/pngjs": "^6.0.5",
+    "pixelmatch": "^8.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

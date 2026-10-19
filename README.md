@@ -2,7 +2,7 @@
 
 Десктоп-приложение для небольшой команды разработки: канбан-доска, бэклог, модули, релизы и вехи, вики с файлами, документы (страница и холст), активность, ссылки команды. Клиент на Tauri 2 + React, бэкенд на Rust (axum) и PostgreSQL. Интерфейс повторяет макет из `design/`.
 
-Правила проекта: `CLAUDE.md`. Этапы работы: `docs/PLAN.md`. Сейчас готов этап 0 (каркас).
+Правила проекта: `CLAUDE.md`. Этапы работы: `docs/PLAN.md`. Сейчас готовы этапы 0 (каркас) и 1 (дизайн-система, AppShell и Sidebar).
 
 ## Состав
 
@@ -21,8 +21,12 @@ server/                       бэкенд (cargo workspace)
   crates/api|domain|db        роуты и middleware / бизнес-правила / доступ к БД
   migrations/                 миграции sqlx (с этапа 2)
 app/                          клиент: Vite + React + TypeScript
+  src/styles/styles.css       копия design/styles.css, не править
+  src/components/             общие компоненты (кнопки, чипы, аватары, поповеры ...), AppShell, Sidebar
+  src/features/               экраны; showcase: витрина компонентов (только в разработке)
+  src/lib/                    утилиты, цвета TONES, состояние интерфейса (zustand)
   src-tauri/                  оболочка Tauri 2
-tests/visual/                 Playwright: сравнение со скриншотами (с этапа 1)
+tests/visual/                 Playwright: сравнение с design/screenshots и снимки витрины
 deploy/                       systemd, Caddyfile, postgresql.conf, бэкапы (этап 10)
 ```
 
@@ -31,7 +35,7 @@ deploy/                       systemd, Caddyfile, postgresql.conf, бэкапы 
 - Rust stable (MSVC-тулчейн на Windows) и Visual Studio Build Tools с компонентом C++.
 - Node.js 24 и npm.
 - WebView2 (в Windows 11 уже есть).
-- PostgreSQL нужен с этапа 2 для бэкенда и его тестов. Для этапа 0 не нужен.
+- PostgreSQL 18 нужен с этапа 2 для бэкенда и его тестов (на этой машине стоит локально, база `plexolab`, пароль `postgres` — `dev`, только для разработки).
 
 ## Команды
 
@@ -41,14 +45,24 @@ deploy/                       systemd, Caddyfile, postgresql.conf, бэкапы 
 |---|---|
 | `npm run dev-server` | запускает сервер, по умолчанию на `127.0.0.1:8080` (переменные `BIND_ADDR`, `RUST_LOG`) |
 | `npm run dev-app` | запускает клиент в окне Tauri (первая сборка занимает несколько минут) |
-| `npm run dev-app-web` | клиент в обычном браузере на `http://localhost:1420`, без Tauri |
-| `npm run test` | тесты сервера и проверка типов и сборки клиента |
+| `npm run dev-app-web` | клиент в обычном браузере на `http://localhost:1420`, без Tauri. Витрина компонентов: `/showcase` (обе темы) или `/showcase?theme=dark` |
+| `npm run test` | тесты сервера, линтер, проверка типов и сборка клиента |
+| `npm run test-visual` | Playwright: сравнение с эталоном и снимки витрины (нужен браузер, см. ниже) |
+| `npm run update-visual` | пересоздать снимки витрины после намеренных изменений вида |
 | `npm run build-server` | релизная сборка сервера |
 | `npm run build-app` | установщик NSIS (настройки упаковки появятся на этапе 9) |
 
 Проверка сервера: `GET http://127.0.0.1:8080/healthz` отвечает `ok`.
 
 Перед первым запуском клиента: `npm --prefix app install`.
+
+### Визуальные тесты
+
+Один раз: `npm --prefix tests/visual install`, затем `cd tests/visual && npx playwright install chromium`. Сервер разработки поднимется сам.
+
+- **Сравнение с эталоном.** Область интерфейса снимается в окне 1440×900 и сравнивается с `design/screenshots` попиксельно. Допуск: меньше 0,5% отличающихся пикселей (`tests/visual/tolerance.ts`). Эталон снят в Chromium на Linux, там текст шире примерно на 4–8%, чем в Chromium на Windows. Поэтому строки текста (их прямоугольники берутся из DOM) в пиксельное сравнение не входят, сами тексты проверяются по DOM. Всё остальное (фоны, рамки, иконки, аватары, скругления, отступы) сверяется жёстко. Картинки с результатом лежат в `tests/visual/output/` (снимок, эталон, разница).
+- **Снимки витрины и каркаса** лежат в `tests/visual/snapshots/` и привязаны к ОС (`-win32`).
+- **Иконка в меню.** Вместо пунктирной заглушки эталона в боковом меню стоит иконка приложения, её квадрат 32×32 исключён из сравнения.
 
 ## Идентификатор и иконка
 
