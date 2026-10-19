@@ -1526,7 +1526,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Все участники, по имени */
+            /** @description Все участники в порядке добавления в команду */
             200: {
                 headers: {
                     [name: string]: unknown;

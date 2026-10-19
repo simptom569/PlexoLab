@@ -61,7 +61,7 @@ async fn me(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Use
     tag = "users",
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "Все участники, по имени", body = [UserDto]),
+        (status = 200, description = "Все участники в порядке добавления в команду", body = [UserDto]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
     )
 )]

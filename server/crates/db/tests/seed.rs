@@ -141,7 +141,8 @@ async fn demo_users_can_log_in_with_the_chosen_password(pool: PgPool) {
     assert_eq!((lena.name.as_str(), lena.role.as_str(), lena.is_admin), ("Лена М.", "Frontend", true));
     assert!(domain::auth::verify_password("dev", &lena.password_hash));
     assert!(!domain::auth::verify_password("other", &lena.password_hash));
-    assert_eq!(db::users::list(&pool).await.unwrap().len(), 5);
+    let team: Vec<String> = db::users::list(&pool).await.unwrap().into_iter().map(|u| u.name).collect();
+    assert_eq!(team, ["Лена М.", "Артём К.", "Даниил С.", "Соня В.", "Игорь П."], "как в макете, не по алфавиту");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

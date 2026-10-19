@@ -156,8 +156,8 @@ async fn me_for_a_deleted_user_is_401(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn users_lists_the_team_by_name_without_secrets(pool: PgPool) {
-    let (app, _) = setup(pool.clone()).await;
+async fn users_lists_the_team_in_the_order_they_were_added_without_secrets(pool: PgPool) {
+    let (app, _) = setup(pool.clone()).await; // Лена добавлена первой
     make_user(&pool, "artem@example.com", "Артём К.", "pass-pass-pass").await;
     make_user(&pool, "daniil@example.com", "Даниил С.", "pass-pass-pass").await;
     let tokens = login_ok(&app, EMAIL, PASSWORD).await;
@@ -165,7 +165,7 @@ async fn users_lists_the_team_by_name_without_secrets(pool: PgPool) {
     let r = get(&app, "/api/v1/users", Some(str_field(&tokens, "access_token"))).await;
     assert_eq!(r.status, StatusCode::OK);
     let names: Vec<&str> = r.body.as_array().unwrap().iter().map(|u| str_field(u, "name")).collect();
-    assert_eq!(names, ["Артём К.", "Даниил С.", "Лена М."]);
+    assert_eq!(names, ["Лена М.", "Артём К.", "Даниил С."], "порядок добавления, не алфавит");
     let mut keys: Vec<&String> = r.body[0].as_object().unwrap().keys().collect();
     keys.sort();
     assert_eq!(keys, ["email", "id", "is_admin", "name", "role", "tone"]);

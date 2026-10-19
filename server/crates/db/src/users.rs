@@ -95,9 +95,9 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
     sqlx::query_as::<_, User>(select_user!("where id = $1")).bind(id).fetch_optional(pool).await
 }
 
-/// Участники команды: по имени, чтобы порядок был стабильным
+/// Участники команды в порядке добавления
 pub async fn list(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
-    sqlx::query_as::<_, User>(select_user!("order by name, id")).fetch_all(pool).await
+    sqlx::query_as::<_, User>(select_user!("order by seq")).fetch_all(pool).await
 }
 
 pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {
