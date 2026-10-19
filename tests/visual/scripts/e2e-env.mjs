@@ -1,7 +1,7 @@
 // Общее для стенда тестов: окружение тестовой базы и наполнение её данными макета.
 
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
 export const ROOT = path.resolve(import.meta.dirname, '../../..')
@@ -11,6 +11,8 @@ export const E2E_SERVER_URL = `http://127.0.0.1:${E2E_PORT}`
 export const MOCK_TODAY = '2026-10-18'
 export const E2E_DB = 'plexolab_e2e'
 export const MANIFEST = path.join(ROOT, 'server', 'Cargo.toml')
+/** Загруженные в тестах файлы лежат здесь (папка не попадает в git) и стираются вместе с данными */
+export const E2E_DATA_DIR = path.join(ROOT, 'tests', 'visual', 'output', 'data')
 
 /** Читает KEY=VALUE из .env в корне репозитория (без зависимостей) */
 function readEnvFile() {
@@ -43,6 +45,9 @@ export function e2eEnv() {
       JWT_SECRET: env.JWT_SECRET ?? 'e2e-secret-e2e-secret-e2e-secret-32',
       BIND_ADDR: `127.0.0.1:${E2E_PORT}`,
       EXPOSE_OPENAPI: 'false',
+      DATA_DIR: E2E_DATA_DIR,
+      // лимит мал нарочно: тест «файл больше лимита» обходится двумя мегабайтами
+      MAX_UPLOAD_MB: '1',
       RUST_LOG: 'warn',
     },
   }
@@ -55,5 +60,6 @@ export function run(command, args, options = {}) {
 
 /** Стирает данные тестовой базы и заполняет её данными макета. Вызывается при запуске и перед изменяющими тестами. */
 export function seedDatabase(env = e2eEnv().env) {
+  rmSync(E2E_DATA_DIR, { recursive: true, force: true })
   run('cargo', ['run', '-q', '--manifest-path', MANIFEST, '--bin', 'seed', '--', '--reset', '--today', MOCK_TODAY], { env })
 }
