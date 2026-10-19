@@ -13,6 +13,11 @@ type UiState = Persisted & {
   menu: string | null
   /** Поиск по названию и номеру */
   q: string
+  /** Открытая в панели задача (openId в макете) и первое нажатие «Удалить» (confirmDel) */
+  openTaskId: string | null
+  confirmDelete: boolean
+  /** Панель только что создала задачу: поставить курсор в название */
+  focusTitle: boolean
 
   setPage: (page: PageId) => void
   setProject: (project: string) => void
@@ -21,6 +26,9 @@ type UiState = Persisted & {
   toggleMenu: (menu: string) => void
   closeMenus: () => void
   setQuery: (q: string) => void
+  openTask: (id: string, options?: { focusTitle?: boolean }) => void
+  closeTask: () => void
+  setConfirmDelete: (value: boolean) => void
   /** Включить или выключить значение в группе фильтра (исполнитель, приоритет, метка, модуль) */
   toggleFilter: (field: 'who' | 'prio' | 'tag' | 'module', value: string) => void
   setDue: (due: DueFilter) => void
@@ -38,14 +46,20 @@ export const useUi = create<UiState>()((set) => ({
   display: DEFAULT_SETTINGS.display,
   menu: null,
   q: '',
+  openTaskId: null,
+  confirmDelete: false,
+  focusTitle: false,
 
-  setPage: (page) => set({ page, menu: null }),
-  setProject: (project) => set({ project, menu: null }),
+  setPage: (page) => set({ page, menu: null, openTaskId: null, confirmDelete: false }),
+  setProject: (project) => set({ project, menu: null, openTaskId: null, confirmDelete: false }),
   setView: (view) => set({ view, menu: null }),
   toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark', menu: null })),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
   setQuery: (q) => set({ q }),
+  openTask: (id, options) => set({ openTaskId: id, confirmDelete: false, focusTitle: !!options?.focusTitle }),
+  closeTask: () => set({ openTaskId: null, confirmDelete: false, focusTitle: false }),
+  setConfirmDelete: (confirmDelete) => set({ confirmDelete }),
   toggleFilter: (field, value) =>
     set((s) => {
       const list = s.filters[field] as string[]

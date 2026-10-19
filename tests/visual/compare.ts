@@ -66,3 +66,33 @@ export function compareToReference({ actual, referenceFile, region, ignore = [],
   const total = region.width * region.height
   return { diffPixels, total, diffRatio: diffPixels / total }
 }
+
+/**
+ * Границы строк таблицы в эталоне, по столбцу пикселей `x` от `y0` до `y1`: линии цвета разделителя (его находим по
+ * одиночным линиям между строками), затем нижний край таблицы. Нужно, когда строки у эталона и у приложения могут
+ * отличаться по высоте (перенос текста) и сравнивать надо построчно: строка i лежит между границами i и i+1.
+ */
+export function referenceLines(referenceFile: string, x: number, y0: number, y1: number): number[] {
+  const png = PNG.sync.read(readFileSync(path.join(REFERENCE_DIR, referenceFile)))
+  const px = (y: number) => {
+    const i = (png.width * y + x) << 2
+    return `${png.data[i]},${png.data[i + 1]},${png.data[i + 2]}`
+  }
+  const count = new Map<string, number>()
+  for (let y = y0 + 1; y < y1; y++) {
+    if (px(y) !== px(y - 1) && px(y) !== px(y + 1) && px(y - 1) === px(y + 1)) count.set(px(y), (count.get(px(y)) ?? 0) + 1)
+  }
+  const lineColor = [...count.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]
+  if (!lineColor) return []
+  const lines: number[] = []
+  for (let y = y0; y < y1; y++) if (px(y) === lineColor) lines.push(y)
+  // нижний край: первая строка пикселей под последней линией, которая не похожа на фон строки
+  const last = lines.at(-1)
+  if (last !== undefined) {
+    const rowBackground = px(last + 1)
+    let y = last + 1
+    while (y < y1 && px(y) === rowBackground) y++
+    lines.push(y)
+  }
+  return lines
+}

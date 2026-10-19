@@ -20,10 +20,12 @@ type AppShellProps = {
   /** Открыт поповер или меню: поверх контента лежит прозрачная подложка закрытия */
   menuOpen: boolean
   onCloseMenus: () => void
+  /** Правая панель и подобное: в макете лежит рядом с <main>, а не внутри */
+  overlay?: ReactNode
   children: ReactNode
 }
 
-export function AppShell({ dark, sidebar, menuOpen, onCloseMenus, children }: AppShellProps) {
+export function AppShell({ dark, sidebar, menuOpen, onCloseMenus, overlay, children }: AppShellProps) {
   return (
     <div className={cx('app', dark && 'dark')} style={ROOT_STYLE}>
       {sidebar}
@@ -31,6 +33,7 @@ export function AppShell({ dark, sidebar, menuOpen, onCloseMenus, children }: Ap
         {menuOpen && <Backdrop onClick={onCloseMenus} />}
         {children}
       </main>
+      {overlay}
     </div>
   )
 }

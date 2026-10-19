@@ -23,6 +23,7 @@ export async function textRects(page: Page, region: Rect): Promise<Rect[]> {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       if (!node.textContent?.trim()) continue
+      if (node.parentElement && getComputedStyle(node.parentElement).visibility === 'hidden') continue
       const range = document.createRange()
       range.selectNodeContents(node)
       for (const r of Array.from(range.getClientRects())) {
@@ -34,6 +35,16 @@ export async function textRects(page: Page, region: Rect): Promise<Rect[]> {
         const y1 = Math.min(reg.y + reg.height, Math.ceil(r.bottom + 1))
         if (x1 > x0 && y1 > y0) out.push({ x: x0 - reg.x, y: y0 - reg.y, width: x1 - x0, height: y1 - y0 })
       }
+    }
+    // текст внутри полей ввода (значения, подсказки, даты) не лежит в текстовых узлах: закрываем поле целиком
+    for (const el of Array.from(document.querySelectorAll('input:not([type=checkbox]):not([type=radio]), textarea'))) {
+      const r = el.getBoundingClientRect()
+      if (r.width < 2 || r.height < 2 || getComputedStyle(el).visibility === 'hidden') continue
+      const x0 = Math.max(reg.x, Math.floor(r.left + 1))
+      const y0 = Math.max(reg.y, Math.floor(r.top + 1))
+      const x1 = Math.min(reg.x + reg.width, Math.ceil(r.right - 1))
+      const y1 = Math.min(reg.y + reg.height, Math.ceil(r.bottom - 1))
+      if (x1 > x0 && y1 > y0) out.push({ x: x0 - reg.x, y: y0 - reg.y, width: x1 - x0, height: y1 - y0 })
     }
     return out
   }, region)

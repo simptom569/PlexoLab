@@ -4,6 +4,8 @@ import { Sidebar, type SidebarProject } from '../../components/Sidebar'
 import { useBoard, useProjects } from '../../lib/api/queries'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
+import { BoardPage } from '../board/BoardPage'
+import { TaskDrawer } from '../board/TaskDrawer'
 import { PagePlaceholder } from './PagePlaceholder'
 
 export function Workspace() {
@@ -44,6 +46,7 @@ export function Workspace() {
       dark={theme === 'dark'}
       menuOpen={menu !== null}
       onCloseMenus={closeMenus}
+      overlay={projectId ? <TaskDrawer projectId={projectId} /> : null}
       sidebar={
         <Sidebar
           page={page}
@@ -64,7 +67,7 @@ export function Workspace() {
         />
       }
     >
-      <PagePlaceholder page={page} />
+      {page === 'board' && projectId ? <BoardPage key={projectId} projectId={projectId} /> : <PagePlaceholder page={page} />}
     </AppShell>
   )
 }
