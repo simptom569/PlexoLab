@@ -1,0 +1,15 @@
+{
+  "name": "plexolab",
+  "private": true,
+  "description": "Корневые задачи репозитория. Зависимостей нет, клиент живёт в app/.",
+  "scripts": {
+    "dev-server": "cargo run --manifest-path server/Cargo.toml",
+    "dev-app": "npm --prefix app run tauri dev",
+    "dev-app-web": "npm --prefix app run dev",
+    "build-server": "cargo build --release --manifest-path server/Cargo.toml",
+    "build-app": "npm --prefix app run tauri build",
+    "test": "npm run test-server && npm run test-app",
+    "test-server": "cargo test --workspace --manifest-path server/Cargo.toml",
+    "test-app": "npm --prefix app run build"
+  }
+}
