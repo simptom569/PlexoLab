@@ -1,0 +1,29 @@
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+
+# Локальные настройки и секреты
+.env
+.env.*
+!.env.example
+
+# Данные сервера в разработке (DATA_DIR)
+/server/data/
+
+# Playwright
+test-results/
+playwright-report/
+/tests/visual/output/
+
+# Tauri
+/app/src-tauri/gen/
+
+# Редакторы и ОС
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
