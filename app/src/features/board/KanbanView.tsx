@@ -241,46 +241,48 @@ export function ColumnOverlay({ id }: { id: string }) {
   )
 }
 
-function NewColumn() {
+function NewColumnForm({ onClose }: { onClose: () => void }) {
   const { createColumn } = useMutations()
-  const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const ref = useFocusOnMount<HTMLInputElement>()
-  const close = () => {
-    setOpen(false)
-    setTitle('')
-  }
   const add = (keepOpen: boolean) => {
     const value = title.trim()
     if (value) createColumn.mutate({ title: value })
     setTitle('')
     if (keepOpen && value) ref.current?.focus()
-    else if (!keepOpen) setOpen(false)
+    else if (!keepOpen) onClose()
   }
+  return (
+    <>
+      <input
+        ref={ref}
+        className="quick"
+        placeholder="Название колонки"
+        aria-label="Название новой колонки"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            if (title.trim()) add(true)
+          } else if (e.key === 'Escape') onClose()
+        }}
+      />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <Button onClick={() => add(false)}>Добавить</Button>
+        <Button variant="ghost" onClick={onClose}>
+          Отмена
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function NewColumn() {
+  const [open, setOpen] = useState(false)
   return (
     <div className="col col-new" data-new-col>
       {open ? (
-        <>
-          <input
-            ref={ref}
-            className="quick"
-            placeholder="Название колонки"
-            aria-label="Название новой колонки"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (title.trim()) add(true)
-              } else if (e.key === 'Escape') close()
-            }}
-          />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Button onClick={() => add(false)}>Добавить</Button>
-            <Button variant="ghost" onClick={close}>
-              Отмена
-            </Button>
-          </div>
-        </>
+        <NewColumnForm onClose={() => setOpen(false)} />
       ) : (
         <button className="add-col" type="button" onClick={() => setOpen(true)}>
           <Icon name="plus" />

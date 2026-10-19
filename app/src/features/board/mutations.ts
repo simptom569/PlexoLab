@@ -19,8 +19,11 @@ interface Spec<V, R> {
   detail?: (detail: TaskDetail, vars: V) => TaskDetail
   /** Счётчики подзадач в карточке пересчитать по полной задаче */
   syncSubtasks?: boolean
-  /** Ответ сервера → кэш (для того, что нельзя показать до ответа) */
-  onSuccess?: (data: R, vars: V, qc: QueryClient, projectId: string) => void
+  /**
+   * Ответ сервера → кэш (для того, что нельзя показать до ответа). `last`: больше правок в пути нет;
+   * иначе ответ мог устареть относительно более свежей правки на экране, и записывать его нельзя.
+   */
+  onSuccess?: (data: R, vars: V, qc: QueryClient, projectId: string, last: boolean) => void
 }
 
 function useBoardMutation<V, R = void>(projectId: string, spec: Spec<V, R>) {
@@ -55,7 +58,7 @@ function useBoardMutation<V, R = void>(projectId: string, spec: Spec<V, R>) {
       if (snapshot.board) qc.setQueryData(boardKey, snapshot.board)
       if (snapshot.taskId && snapshot.detail) qc.setQueryData(keys.task(snapshot.taskId), snapshot.detail)
     },
-    onSuccess: (data, vars) => spec.onSuccess?.(data, vars, qc, projectId),
+    onSuccess: (data, vars) => spec.onSuccess?.(data, vars, qc, projectId, qc.isMutating({ mutationKey }) <= 1),
     onSettled: (_data, _error, vars) => {
       // пока идут другие правки, доску не перечитываем: иначе она «мигнёт» старыми данными
       if (qc.isMutating({ mutationKey }) > 1) return
@@ -79,7 +82,7 @@ export function useBoardMutations(projectId: string) {
     taskId: (v) => v.id,
     board: (b, v) => mapTask(b, v.id, (t) => patchCard(t, v.patch)),
     detail: (d, v) => patchDetail(d, v.patch),
-    onSuccess: (data, _v, qc) => qc.setQueryData(keys.task(data.id), data),
+    onSuccess: (data, _v, qc, _pid, last) => last && qc.setQueryData(keys.task(data.id), data),
   })
 
   const createTask = useBoardMutation<{ columnId: string | null; title: string }, TaskDetail>(projectId, {
