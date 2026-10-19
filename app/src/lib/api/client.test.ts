@@ -131,3 +131,57 @@ describe('без настроенного адреса', () => {
     expect(httpFetch).not.toHaveBeenCalled()
   })
 })
+
+describe('ошибка с телом', () => {
+  it('сохраняет тело ответа: у 409 на вики там лежит актуальная версия страницы', async () => {
+    const body = { code: 'conflict', message: 'Страницу изменил другой участник', current: { id: 'p1', rev: 4, md: 'Чужой текст' } }
+    httpFetch.mockResolvedValue(json(409, body))
+    const err = await api.patch('/wiki/p1', { rev: 3 }).catch((e) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect(err).toMatchObject({ status: 409, code: 'conflict', body })
+  })
+})
+
+describe('файлы', () => {
+  it('upload шлёт форму без своего Content-Type (границу частей ставит fetch) и ждёт дольше обычного', async () => {
+    httpFetch.mockResolvedValue(json(201, [{ id: 'f1' }]))
+    const form = new FormData()
+    form.append('file', new Blob(['abc']), 'a.txt')
+    const r = await api.upload<{ id: string }[]>('/files', form)
+    expect(r).toEqual([{ id: 'f1' }])
+    const [url, init] = call(0)
+    expect(url).toBe('http://srv:8080/api/v1/files')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBe(form)
+    expect(init.headers['Content-Type']).toBeUndefined()
+    expect(init.headers.Authorization).toBe('Bearer tok1')
+    expect((init as { timeoutMs?: number }).timeoutMs).toBeGreaterThan(60_000)
+  })
+
+  it('upload повторяет ту же форму после обновления токена', async () => {
+    httpFetch.mockResolvedValueOnce(json(401, { code: 'unauthorized', message: '' })).mockResolvedValueOnce(json(201, []))
+    refresh.mockResolvedValue('tok2')
+    const form = new FormData()
+    await api.upload('/files', form)
+    expect(call(0)[1].body).toBe(form)
+    expect(call(1)[1].body).toBe(form)
+    expect(call(1)[1].headers.Authorization).toBe('Bearer tok2')
+  })
+
+  it('upload отдаёт ошибку сервера: файл больше лимита', async () => {
+    httpFetch.mockResolvedValue(json(413, { code: 'payload_too_large', message: 'Файл «a.bin» больше допустимых 25 МБ' }))
+    await expect(api.upload('/files', new FormData())).rejects.toMatchObject({ status: 413, code: 'payload_too_large' })
+  })
+
+  it('download отдаёт содержимое как есть и просит любой тип', async () => {
+    httpFetch.mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 }))
+    const blob = await api.download('/files/f1/download')
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+    expect(call(0)[1].headers.Accept).toBe('*/*')
+  })
+
+  it('download с 404 даёт ApiError', async () => {
+    httpFetch.mockResolvedValue(json(404, { code: 'not_found', message: 'Не найдено' }))
+    await expect(api.download('/files/x/download')).rejects.toMatchObject({ status: 404 })
+  })
+})

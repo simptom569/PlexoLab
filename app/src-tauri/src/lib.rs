@@ -7,6 +7,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         // запросы к серверу идут из Rust: без CORS и с любым адресом, http и https
         .plugin(tauri_plugin_http::init())
+        // внешние ссылки (вики, ссылки команды) открываются в системном браузере
+        .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
             secrets::init();
             Ok(())

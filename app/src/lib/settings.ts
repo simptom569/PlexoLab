@@ -44,6 +44,8 @@ export const settingsSchema = z.object({
   view: z.enum(VIEWS).catch('board'),
   filters: filtersSchema.catch(EMPTY_FILTERS),
   display: displaySchema.catch(DEFAULT_DISPLAY),
+  /** Последняя открытая страница вики */
+  wikiPage: z.string().nullable().catch(null),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

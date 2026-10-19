@@ -15,7 +15,13 @@ describe('parseSettings', () => {
       view: 'board',
       filters: EMPTY_FILTERS,
       display: DEFAULT_DISPLAY,
+      wikiPage: null,
     })
+  })
+
+  it('последняя страница вики хранится строкой, мусор заменяется на null', () => {
+    expect(parseSettings({ wikiPage: 'w4' }).wikiPage).toBe('w4')
+    expect(parseSettings({ wikiPage: 7 }).wikiPage).toBeNull()
   })
 
   it('сохраняет корректные значения', () => {

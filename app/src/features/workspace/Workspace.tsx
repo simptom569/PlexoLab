@@ -11,6 +11,7 @@ import { BoardPage } from '../board/BoardPage'
 import { TaskDrawer } from '../board/TaskDrawer'
 import { ModulesPage } from '../modules/ModulesPage'
 import { ReleasesPage } from '../releases/ReleasesPage'
+import { WikiScreen } from '../wiki/WikiScreen'
 import { PagePlaceholder } from './PagePlaceholder'
 
 /** Экраны, которые уже сделаны и зависят от проекта; остальные пока показывают заглушку */
@@ -19,6 +20,11 @@ const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => Re
   backlog: BacklogPage,
   modules: ModulesPage,
   releases: ReleasesPage,
+}
+
+/** Экраны всей команды: от выбранного проекта не зависят */
+const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
+  wiki: WikiScreen,
 }
 
 export function Workspace() {
@@ -55,6 +61,7 @@ export function Workspace() {
   if (!user) return null
 
   const ProjectPage = PROJECT_PAGES[page]
+  const TeamPage = TEAM_PAGES[page]
 
   return (
     <AppShell
@@ -87,7 +94,13 @@ export function Workspace() {
         />
       }
     >
-      {ProjectPage && projectId ? <ProjectPage key={`${page}:${projectId}`} projectId={projectId} /> : <PagePlaceholder page={page} />}
+      {TeamPage ? (
+        <TeamPage />
+      ) : ProjectPage && projectId ? (
+        <ProjectPage key={`${page}:${projectId}`} projectId={projectId} />
+      ) : (
+        <PagePlaceholder page={page} />
+      )}
     </AppShell>
   )
 }

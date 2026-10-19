@@ -7,12 +7,15 @@ export class ApiError extends Error {
   readonly status: number
   /** Машинный код сервера: bad_request, not_found, conflict, ... */
   readonly code: string
+  /** Тело ответа целиком: у 409 на вики там лежит `current`, актуальная версия страницы */
+  readonly body: unknown
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.body = body
   }
 }
 
@@ -36,14 +39,20 @@ type Method = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
 export async function readError(res: Response): Promise<ApiError> {
   try {
     const body = (await res.json()) as { code?: string; message?: string }
-    return new ApiError(res.status, body.code ?? 'error', body.message ?? `Ошибка ${res.status}`)
+    return new ApiError(res.status, body.code ?? 'error', body.message ?? `Ошибка ${res.status}`, body)
   } catch {
     return new ApiError(res.status, 'error', `Сервер ответил ошибкой ${res.status}`)
   }
 }
 
-/** Запрос к /api/v1 с токеном. Тело отправляется как JSON; для 204 возвращается undefined. */
-export async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+/** Большие файлы грузятся и скачиваются долго: вместо обычных 15 секунд даём десять минут */
+const TRANSFER_TIMEOUT_MS = 10 * 60_000
+
+type Payload = { json?: unknown; form?: FormData }
+type CallOptions = { accept?: string; timeoutMs?: number }
+
+/** Запрос к /api/v1 с токеном; при 401 один раз обновляет токен и повторяет. Ошибочные ответы становятся ApiError. */
+async function call(method: Method, path: string, payload: Payload, { accept = 'application/json', timeoutMs }: CallOptions = {}): Promise<Response> {
   if (!hooks) throw new Error('Клиент API не настроен')
   const h = hooks
   const server = h.getServer()
@@ -53,11 +62,13 @@ export async function request<T>(method: Method, path: string, body?: unknown): 
     httpFetch(`${server}/api/v1${path}`, {
       method,
       headers: {
-        Accept: 'application/json',
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        Accept: accept,
+        // у формы тип содержимого с границей частей выставляет сам fetch
+        ...(payload.json !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: payload.form ?? (payload.json !== undefined ? JSON.stringify(payload.json) : undefined),
+      ...(timeoutMs ? { timeoutMs } : {}),
     })
 
   let res = await send(h.getAccessToken())
@@ -70,6 +81,12 @@ export async function request<T>(method: Method, path: string, body?: unknown): 
     res = await send(token)
   }
   if (!res.ok) throw await readError(res)
+  return res
+}
+
+/** Запрос с JSON-телом; для 204 возвращается undefined. */
+export async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+  const res = await call(method, path, { json: body })
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
@@ -78,4 +95,9 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   patch: <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: (path: string) => request<void>('DELETE', path),
+  /** Загрузка файлов формой multipart/form-data */
+  upload: async <T>(path: string, form: FormData) =>
+    (await (await call('POST', path, { form }, { timeoutMs: TRANSFER_TIMEOUT_MS })).json()) as T,
+  /** Скачивание содержимого файла */
+  download: async (path: string) => (await call('GET', path, {}, { accept: '*/*', timeoutMs: TRANSFER_TIMEOUT_MS })).blob(),
 }

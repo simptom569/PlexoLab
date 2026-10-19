@@ -7,11 +7,15 @@ import { whenText } from '../../lib/date'
 import { PRIORITY_LABELS, type Priority } from '../../lib/domain'
 import { formatSize } from '../../lib/format'
 import { toneAt } from '../../lib/tones'
+import { UPLOAD_FAILED, useToast } from '../../lib/toast'
+import { pickedFiles } from '../../lib/upload'
 import { useUi } from '../../lib/ui-store'
 import { useDraft } from '../../lib/useDraft'
+import { FileName } from '../wiki/FileBits'
 import { cardOf } from './cache'
 import { BoardProvider } from './BoardProvider'
 import { colorVar, useBoardModel, useModel, useMutations } from './model'
+import { useTaskFiles } from './taskFiles'
 import { useToggleDone } from './useToggleDone'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -242,7 +246,7 @@ function Subtasks({ detail }: { detail: TaskDetail }) {
 }
 
 function Files({ detail }: { detail: TaskDetail }) {
-  // Загрузка и удаление файлов приходят вместе с вики и файлами (этап 5): пока вложения только показываются
+  const { upload, remove } = useTaskFiles(detail.id)
   return (
     <div>
       <h3 className="sec-title">
@@ -252,14 +256,24 @@ function Files({ detail }: { detail: TaskDetail }) {
         {detail.files.map((f) => (
           <div key={f.id} className="file-row">
             <Icon name="docs" />
-            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+            <FileName file={f} plain />
             <span style={{ color: 'var(--muted)', fontSize: 12 }}>{formatSize(f.size_bytes)}</span>
+            <IconButton label="Убрать файл" icon="close" small onClick={() => remove.mutate({ id: f.id })} />
           </div>
         ))}
-        <button className="btn" type="button" disabled title="Загрузка файлов появится вместе с разделом «Вики»" style={{ alignSelf: 'flex-start' }}>
+        <label className="btn" style={{ alignSelf: 'flex-start', cursor: 'pointer' }}>
           <Icon name="paperclip" sm />
           Прикрепить файл
-        </button>
+          <input
+            className="sr"
+            type="file"
+            multiple
+            onChange={(e) => {
+              const picked = pickedFiles(e.currentTarget)
+              if (picked.length) upload.mutate(picked, { onError: () => useToast.getState().show(UPLOAD_FAILED) })
+            }}
+          />
+        </label>
       </div>
     </div>
   )
