@@ -1,0 +1,22 @@
+[workspace]
+members = [".", "crates/api", "crates/domain", "crates/db"]
+resolver = "3"
+
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+default-run = "server"
+
+[dependencies]
+anyhow = "1.0.104"
+api = { path = "crates/api" }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# Релизная сборка маленькая и без лишнего: на сервере мало памяти и диска.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
