@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
 import { compareToReference, type Rect } from './compare'
-import { settle, switchToDark, textRects } from './helpers'
+import { openApp } from './fixtures'
 import { MAX_DIFF_RATIO } from './tolerance'
+import { textRects } from './helpers'
 
 // Боковое меню эталона 01 (доска). Берём верх до конца списка проектов: карточка пользователя
 // в эталоне ниже границы экрана (там min-height 1380px), а в приложении она прижата к низу окна.
@@ -15,12 +16,13 @@ const PROJECT_TEXTS = ['Web-приложение', 'Мобильный API', 'И
 for (const theme of ['light', 'dark'] as const) {
   test.describe(`тема: ${theme}`, () => {
     test.beforeEach(async ({ page }) => {
-      await page.goto('/')
-      if (theme === 'dark') await switchToDark(page)
-      await settle(page)
+      await openApp(page, { theme })
+      await expect(page.getByRole('button', { name: 'Web-приложение' })).toBeVisible()
+      await expect(page.locator('.side .count')).toHaveText('5') // счётчик бэклога пришёл с сервера
     })
 
     test('AppShell и Sidebar совпадают с эталоном 01 (без пикселей текста)', async ({ page }) => {
+      await page.mouse.move(800, 600)
       const actual = await page.screenshot({ clip: SIDEBAR })
       const text = await textRects(page, SIDEBAR)
       const { diffPixels, total, diffRatio } = compareToReference({
