@@ -5,7 +5,9 @@ use crate::state::AppState;
 pub mod auth;
 pub mod columns;
 pub mod dto;
+pub mod modules;
 pub mod projects;
+pub mod releases;
 pub mod tags;
 pub mod tasks;
 pub mod users;
@@ -19,4 +21,6 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(columns::router())
         .merge(tasks::router())
         .merge(tags::router())
+        .merge(modules::router())
+        .merge(releases::router())
 }

@@ -67,7 +67,10 @@ async fn enums_have_values_from_data_model(pool: PgPool) {
     assert_eq!(values("work_status").await, ["plan", "progress", "done"]);
     assert_eq!(values("obj_type").await, ["sticky", "rect", "ellipse", "text"]);
     assert_eq!(values("doc_mode").await, ["page", "edge"]);
-    assert_eq!(values("act_kind").await, ["move", "create", "delete", "comment", "code", "doc", "release", "file"]);
+    assert_eq!(
+        values("act_kind").await,
+        ["move", "create", "delete", "comment", "code", "doc", "release", "file", "module"]
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

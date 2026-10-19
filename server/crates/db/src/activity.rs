@@ -3,7 +3,7 @@
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-/// Тип события: move | create | delete | comment | code | doc | release | file
+/// Тип события: move | create | delete | comment | code | doc | release | file | module
 pub async fn insert(
     conn: &mut PgConnection,
     actor_id: Uuid,

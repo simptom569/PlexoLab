@@ -16,6 +16,7 @@ pub mod comments;
 pub mod files;
 pub mod modules;
 pub mod projects;
+pub mod releases;
 pub mod seed;
 pub mod subtasks;
 pub mod tags;

@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Row};
+use sqlx::{PgExecutor, PgPool, Row};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -93,6 +93,11 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, s
 
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(select_user!("where id = $1")).bind(id).fetch_optional(pool).await
+}
+
+/// Есть ли такой пользователь. Работает и внутри транзакции.
+pub async fn exists<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("select exists (select 1 from users where id = $1)").bind(id).fetch_one(ex).await
 }
 
 /// Участники команды в порядке добавления

@@ -17,7 +17,10 @@ use utoipa::{
         (name = "projects", description = "Проекты и данные доски"),
         (name = "columns", description = "Колонки доски"),
         (name = "tasks", description = "Задачи, подзадачи, комментарии"),
-        (name = "tags", description = "Метки")
+        (name = "tags", description = "Метки"),
+        (name = "modules", description = "Модули проекта"),
+        (name = "milestones", description = "Вехи проекта"),
+        (name = "releases", description = "Релизы и чек-лист выкатки")
     )
 )]
 pub struct ApiDoc;

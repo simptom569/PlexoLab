@@ -1,7 +1,14 @@
 //! Формы запросов и ответов доски. Даты `ГГГГ-ММ-ДД`, время RFC 3339.
 
 use db::{
-    columns::Column, comments::Comment, files::TaskFile, modules, projects::Project, subtasks::Subtask, tags::Tag,
+    columns::Column,
+    comments::Comment,
+    files::TaskFile,
+    modules,
+    projects::Project,
+    releases::{Release, ReleaseItem},
+    subtasks::Subtask,
+    tags::Tag,
 };
 use domain::board::task_key;
 use serde::{Deserialize, Serialize};
@@ -86,6 +93,10 @@ pub struct ModuleDto {
     #[serde(with = "iso_date::option")]
     pub date_to: Option<Date>,
     pub note: String,
+    /// Все задачи модуля, включая бэклог
+    pub tasks_total: i64,
+    /// Задачи в колонках с отметкой «Готово»
+    pub tasks_done: i64,
 }
 
 impl From<modules::Module> for ModuleDto {
@@ -98,6 +109,8 @@ impl From<modules::Module> for ModuleDto {
             date_from: m.date_from,
             date_to: m.date_to,
             note: m.note,
+            tasks_total: m.tasks_total,
+            tasks_done: m.tasks_done,
         }
     }
 }
@@ -108,11 +121,67 @@ pub struct MilestoneDto {
     pub title: String,
     #[serde(with = "iso_date")]
     pub due_date: Date,
+    /// Все задачи вехи, включая бэклог
+    pub tasks_total: i64,
+    /// Задачи в колонках с отметкой «Готово»
+    pub tasks_done: i64,
 }
 
 impl From<modules::Milestone> for MilestoneDto {
     fn from(m: modules::Milestone) -> Self {
-        MilestoneDto { id: m.id, title: m.title, due_date: m.due_date }
+        MilestoneDto {
+            id: m.id,
+            title: m.title,
+            due_date: m.due_date,
+            tasks_total: m.tasks_total,
+            tasks_done: m.tasks_done,
+        }
+    }
+}
+
+/// Шаг чек-листа релиза
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ReleaseItemDto {
+    pub id: Uuid,
+    #[schema(example = "Заморозка кода")]
+    pub title: String,
+    pub done: bool,
+    /// Порядок в чек-листе
+    pub position: f64,
+}
+
+impl From<ReleaseItem> for ReleaseItemDto {
+    fn from(i: ReleaseItem) -> Self {
+        ReleaseItemDto { id: i.id, title: i.title, done: i.done, position: i.position }
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ReleaseDto {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    #[schema(example = "2.9.0")]
+    pub version: String,
+    #[serde(with = "iso_date")]
+    pub release_date: Date,
+    /// plan | progress | done (Запланирован / Готовится / Выпущен)
+    pub status: String,
+    /// Changelog, свободный текст
+    pub notes: String,
+    pub items: Vec<ReleaseItemDto>,
+}
+
+impl ReleaseDto {
+    pub fn new(r: Release, items: Vec<ReleaseItem>) -> Self {
+        ReleaseDto {
+            id: r.id,
+            project_id: r.project_id,
+            version: r.version,
+            release_date: r.release_date,
+            status: r.status,
+            notes: r.notes,
+            items: items.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
@@ -367,6 +436,85 @@ pub struct UpdateSubtask {
 #[serde(deny_unknown_fields)]
 pub struct CreateComment {
     pub body: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateModule {
+    pub title: String,
+}
+
+/// Любые поля модуля. Что не передано, не меняется. У необязательных полей `null` очищает значение.
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateModule {
+    pub title: Option<String>,
+    /// plan | progress | done
+    pub status: Option<String>,
+    /// Ответственный; `null` — не назначен
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Uuid>)]
+    pub lead_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "iso_date::patch::deserialize")]
+    #[schema(value_type = Option<Date>)]
+    pub date_from: Option<Option<Date>>,
+    #[serde(default, deserialize_with = "iso_date::patch::deserialize")]
+    #[schema(value_type = Option<Date>)]
+    pub date_to: Option<Option<Date>>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateMilestone {
+    pub title: String,
+    #[serde(with = "iso_date")]
+    #[schema(value_type = Date)]
+    pub due_date: Date,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateMilestone {
+    pub title: Option<String>,
+    #[serde(default, with = "iso_date::option")]
+    #[schema(value_type = Option<Date>)]
+    pub due_date: Option<Date>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateRelease {
+    #[schema(example = "2.10.0")]
+    pub version: String,
+    #[serde(with = "iso_date")]
+    #[schema(value_type = Date)]
+    pub release_date: Date,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateRelease {
+    pub version: Option<String>,
+    #[serde(default, with = "iso_date::option")]
+    #[schema(value_type = Option<Date>)]
+    pub release_date: Option<Date>,
+    /// plan | progress | done
+    pub status: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CreateReleaseItem {
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateReleaseItem {
+    pub title: Option<String>,
+    pub done: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
