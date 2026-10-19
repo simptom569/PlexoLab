@@ -90,6 +90,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/milestones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить веху. Её задачи остаются, но без вехи. */
+        delete: operations["delete_milestone"];
+        options?: never;
+        head?: never;
+        /** Название и дата вехи */
+        patch: operations["update_milestone"];
+        trace?: never;
+    };
+    "/api/v1/modules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить модуль. Его задачи остаются на доске и в бэклоге, но без модуля. */
+        delete: operations["delete_module"];
+        options?: never;
+        head?: never;
+        /** Название, статус, ответственный, даты и заметка модуля. Смена статуса попадает в ленту активности. */
+        patch: operations["update_module"];
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -144,6 +180,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{id}/milestones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Новая веха с датой */
+        post: operations["create_milestone"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Новый модуль: «Запланирован», ответственный — автор, без дат и заметки */
+        post: operations["create_module"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Релизы проекта от новых к старым, каждый с чек-листом */
+        get: operations["list_releases"];
+        put?: never;
+        /** Новый релиз «Запланирован» с четырьмя стандартными шагами чек-листа */
+        post: operations["create_release"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/tasks": {
         parameters: {
             query?: never;
@@ -155,6 +243,59 @@ export interface paths {
         put?: never;
         /** Новая задача в конце колонки или в бэклоге. Номер (WEB-159) выдаётся в той же транзакции. */
         post: operations["create_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/release-items/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить шаг из чек-листа */
+        delete: operations["delete_item"];
+        options?: never;
+        head?: never;
+        /** Отметить или переименовать шаг. Когда шаг отмечают выполненным, в ленту активности пишется «отмечен шаг». */
+        patch: operations["update_item"];
+        trace?: never;
+    };
+    "/api/v1/releases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить релиз вместе с чек-листом */
+        delete: operations["delete_release"];
+        options?: never;
+        head?: never;
+        /** Версия, дата, статус и заметки релиза. Смена статуса попадает в ленту активности. */
+        patch: operations["update_release"];
+        trace?: never;
+    };
+    "/api/v1/releases/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Новый шаг в конец чек-листа */
+        post: operations["create_item"];
         delete?: never;
         options?: never;
         head?: never;
@@ -340,6 +481,23 @@ export interface components {
         CreateComment: {
             body: string;
         };
+        CreateMilestone: {
+            /** Format: date */
+            due_date: string;
+            title: string;
+        };
+        CreateModule: {
+            title: string;
+        };
+        CreateRelease: {
+            /** Format: date */
+            release_date: string;
+            /** @example 2.10.0 */
+            version: string;
+        };
+        CreateReleaseItem: {
+            title: string;
+        };
         CreateSubtask: {
             title: string;
         };
@@ -382,6 +540,16 @@ export interface components {
             due_date: string;
             /** Format: uuid */
             id: string;
+            /**
+             * Format: int64
+             * @description Задачи в колонках с отметкой «Готово»
+             */
+            tasks_done: number;
+            /**
+             * Format: int64
+             * @description Все задачи вехи, включая бэклог
+             */
+            tasks_total: number;
             title: string;
         };
         ModuleDto: {
@@ -396,6 +564,16 @@ export interface components {
             note: string;
             /** @description plan | progress | done */
             status: string;
+            /**
+             * Format: int64
+             * @description Задачи в колонках с отметкой «Готово»
+             */
+            tasks_done: number;
+            /**
+             * Format: int64
+             * @description Все задачи модуля, включая бэклог
+             */
+            tasks_total: number;
             title: string;
         };
         ProjectDto: {
@@ -416,6 +594,34 @@ export interface components {
         };
         RefreshRequest: {
             refresh_token: string;
+        };
+        ReleaseDto: {
+            /** Format: uuid */
+            id: string;
+            items: components["schemas"]["ReleaseItemDto"][];
+            /** @description Changelog, свободный текст */
+            notes: string;
+            /** Format: uuid */
+            project_id: string;
+            /** Format: date */
+            release_date: string;
+            /** @description plan | progress | done (Запланирован / Готовится / Выпущен) */
+            status: string;
+            /** @example 2.9.0 */
+            version: string;
+        };
+        /** @description Шаг чек-листа релиза */
+        ReleaseItemDto: {
+            done: boolean;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: double
+             * @description Порядок в чек-листе
+             */
+            position: number;
+            /** @example Заморозка кода */
+            title: string;
         };
         SubtaskDto: {
             done: boolean;
@@ -562,6 +768,39 @@ export interface components {
             before_id?: string | null;
             color?: string | null;
             is_done?: boolean | null;
+            title?: string | null;
+        };
+        UpdateMilestone: {
+            /** Format: date */
+            due_date?: string | null;
+            title?: string | null;
+        };
+        /** @description Любые поля модуля. Что не передано, не меняется. У необязательных полей `null` очищает значение. */
+        UpdateModule: {
+            /** Format: date */
+            date_from?: string | null;
+            /** Format: date */
+            date_to?: string | null;
+            /**
+             * Format: uuid
+             * @description Ответственный; `null` — не назначен
+             */
+            lead_id?: string | null;
+            note?: string | null;
+            /** @description plan | progress | done */
+            status?: string | null;
+            title?: string | null;
+        };
+        UpdateRelease: {
+            notes?: string | null;
+            /** Format: date */
+            release_date?: string | null;
+            /** @description plan | progress | done */
+            status?: string | null;
+            version?: string | null;
+        };
+        UpdateReleaseItem: {
+            done?: boolean | null;
             title?: string | null;
         };
         UpdateSubtask: {
@@ -885,6 +1124,192 @@ export interface operations {
             };
         };
     };
+    delete_milestone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Веха */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Веха удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой вехи */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_milestone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Веха */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMilestone"];
+            };
+        };
+        responses: {
+            /** @description Веха после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MilestoneDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой вехи */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_module: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Модуль */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Модуль удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого модуля */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_module: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Модуль */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateModule"];
+            };
+        };
+        responses: {
+            /** @description Модуль после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого модуля */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_projects: {
         parameters: {
             query?: never;
@@ -1009,6 +1434,209 @@ export interface operations {
             };
         };
     };
+    create_milestone: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMilestone"];
+            };
+        };
+        responses: {
+            /** @description Веха создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MilestoneDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_module: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModule"];
+            };
+        };
+        responses: {
+            /** @description Модуль создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModuleDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_releases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Релизы проекта */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_release: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRelease"];
+            };
+        };
+        responses: {
+            /** @description Релиз создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     create_task: {
         parameters: {
             query?: never;
@@ -1053,6 +1681,246 @@ export interface operations {
                 };
             };
             /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Шаг чек-листа */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Шаг удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого шага */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Шаг чек-листа */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateReleaseItem"];
+            };
+        };
+        responses: {
+            /** @description Шаг после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseItemDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого шага */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_release: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Релиз */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Релиз удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого релиза */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_release: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Релиз */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRelease"];
+            };
+        };
+        responses: {
+            /** @description Релиз после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого релиза */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_item: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Релиз */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateReleaseItem"];
+            };
+        };
+        responses: {
+            /** @description Шаг добавлен */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReleaseItemDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого релиза */
             404: {
                 headers: {
                     [name: string]: unknown;

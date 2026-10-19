@@ -15,6 +15,8 @@ export type Subtask = S['SubtaskDto']
 export type Comment = S['CommentDto']
 export type TaskFile = S['TaskFileDto']
 export type Board = S['BoardDto']
+export type Release = S['ReleaseDto']
+export type ReleaseItem = S['ReleaseItemDto']
 export type TokenResponse = S['TokenResponse']
 
 export type UpdateTask = S['UpdateTask']
@@ -22,5 +24,9 @@ export type UpdateColumn = S['UpdateColumn']
 export type UpdateSubtask = S['UpdateSubtask']
 export type CreateColumn = S['CreateColumn']
 export type CreateTask = S['CreateTask']
+export type UpdateModule = S['UpdateModule']
+export type UpdateMilestone = S['UpdateMilestone']
+export type UpdateRelease = S['UpdateRelease']
+export type UpdateReleaseItem = S['UpdateReleaseItem']
 
 export type Priority = 'high' | 'med' | 'low'

@@ -8,19 +8,11 @@ import { PRIORITY_LABELS, type Priority } from '../../lib/domain'
 import { formatSize } from '../../lib/format'
 import { toneAt } from '../../lib/tones'
 import { useUi } from '../../lib/ui-store'
+import { useDraft } from '../../lib/useDraft'
 import { cardOf } from './cache'
 import { BoardProvider } from './BoardProvider'
 import { colorVar, useBoardModel, useModel, useMutations } from './model'
 import { useToggleDone } from './useToggleDone'
-
-/** Текст, который уходит на сервер, когда поле отпускают (blur) или нажимают Enter, а не на каждую букву */
-function useDraft(value: string) {
-  const [state, setState] = useState({ value, draft: value })
-  // значение пришло новое (сохранили, обновили с сервера): черновик начинается заново
-  if (state.value !== value) setState({ value, draft: value })
-  const setDraft = (draft: string) => setState((s) => ({ ...s, draft }))
-  return [state.draft, setDraft] as const
-}
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (

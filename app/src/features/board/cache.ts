@@ -1,7 +1,9 @@
 // Чистые преобразования кэша доски для оптимистичных обновлений: экран меняется сразу, сервер подтверждает позже.
 // Точные позиции присылает сервер (после ответа доска перечитывается), здесь они приблизительные, но порядок верный.
 
-import type { Board, Column, Subtask, TaskCard, TaskDetail, UpdateColumn, UpdateTask } from '../../lib/api/types'
+import type {
+  Board, Column, Milestone, Subtask, TaskCard, TaskDetail, UpdateColumn, UpdateMilestone, UpdateModule, UpdateTask,
+} from '../../lib/api/types'
 
 /** Шаг между позициями, как на сервере (domain::position) */
 export const STEP = 1024
@@ -97,6 +99,55 @@ export const mapTask = (board: Board, id: string, fn: (t: TaskCard) => TaskCard)
 })
 
 export const removeTask = (board: Board, id: string): Board => ({ ...board, tasks: board.tasks.filter((t) => t.id !== id) })
+
+// ----- Модули и вехи (счётчики задач приходят от сервера, здесь они не пересчитываются) -----
+
+export function patchModule(board: Board, id: string, patch: UpdateModule): Board {
+  return {
+    ...board,
+    modules: board.modules.map((m) =>
+      m.id !== id
+        ? m
+        : {
+            ...m,
+            title: patch.title ?? m.title,
+            status: patch.status ?? m.status,
+            note: patch.note ?? m.note,
+            lead_id: patch.lead_id !== undefined ? patch.lead_id : m.lead_id,
+            date_from: patch.date_from !== undefined ? patch.date_from : m.date_from,
+            date_to: patch.date_to !== undefined ? patch.date_to : m.date_to,
+          },
+    ),
+  }
+}
+
+/** Модуль удалён: задачи остаются, но без модуля */
+export function removeModule(board: Board, id: string): Board {
+  return {
+    ...board,
+    modules: board.modules.filter((m) => m.id !== id),
+    tasks: board.tasks.map((t) => (t.module_id === id ? { ...t, module_id: null } : t)),
+  }
+}
+
+/** Вехи идут по возрастанию даты (при равных датах — как пришли) */
+export const byDueDate = (list: Milestone[]): Milestone[] => list.slice().sort((a, b) => (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0))
+
+export function patchMilestone(board: Board, id: string, patch: UpdateMilestone): Board {
+  const next = board.milestones.map((m) =>
+    m.id !== id ? m : { ...m, title: patch.title ?? m.title, due_date: patch.due_date ?? m.due_date },
+  )
+  return { ...board, milestones: byDueDate(next) }
+}
+
+/** Веха удалена: задачи остаются, но без вехи */
+export function removeMilestone(board: Board, id: string): Board {
+  return {
+    ...board,
+    milestones: board.milestones.filter((m) => m.id !== id),
+    tasks: board.tasks.map((t) => (t.milestone_id === id ? { ...t, milestone_id: null } : t)),
+  }
+}
 
 /** Карточка доски из полной задачи (после создания и правок, которые вернул сервер) */
 export function cardOf(task: TaskDetail): TaskCard {

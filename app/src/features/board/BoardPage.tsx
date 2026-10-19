@@ -1,17 +1,16 @@
-import { Button, EmptyState } from '../../components'
 import { useUi } from '../../lib/ui-store'
 import { ActiveFilters } from './ActiveFilters'
 import { BoardHeader } from './BoardHeader'
+import { BoardLoader } from './BoardLoader'
 import { BoardToolbar } from './BoardToolbar'
 import { PillOverlay, CalendarView } from './CalendarView'
 import { CardFace } from './CardFace'
-import { BoardProvider } from './BoardProvider'
 import { DragProvider } from './DragProvider'
 import { END, type DragKind, type DragState } from './dnd'
 import { GanttView } from './GanttView'
 import { ColumnOverlay, KanbanView } from './KanbanView'
 import { ListView } from './ListView'
-import { useBoardModel, useModel, useMutations } from './model'
+import { useModel, useMutations } from './model'
 import { TableView } from './TableView'
 
 /** Бросок на цель: карточка в колонку, колонка на место, плашка на день */
@@ -50,6 +49,7 @@ function useDropHandler() {
 function Overlay({ kind, id }: { kind: DragKind; id: string }) {
   const m = useModel()
   const view = useUi((s) => s.view)
+  if (kind === 'row') return null // строки бэклога переносятся только на его экране
   if (kind === 'col') return <ColumnOverlay id={id} />
   if (view === 'cal') return <PillOverlay id={id} />
   const task = m.onBoard.find((t) => t.id === id)
@@ -75,21 +75,9 @@ function BoardScreen() {
 
 /** Страница «Доска» выбранного проекта */
 export function BoardPage({ projectId }: { projectId: string }) {
-  const loaded = useBoardModel(projectId)
-  if (loaded.status === 'loading') return <EmptyState>Загружаю доску…</EmptyState>
-  if (loaded.status === 'error') {
-    return (
-      <EmptyState>
-        Не удалось загрузить доску
-        <div style={{ marginTop: 12 }}>
-          <Button onClick={loaded.retry}>Повторить</Button>
-        </div>
-      </EmptyState>
-    )
-  }
   return (
-    <BoardProvider model={loaded.model}>
+    <BoardLoader projectId={projectId} what="доску">
       <BoardScreen />
-    </BoardProvider>
+    </BoardLoader>
   )
 }

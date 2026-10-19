@@ -5,7 +5,7 @@ import { cx } from '../../lib/cx'
 import type { Column, TaskCard } from '../../lib/api/types'
 import { useUi } from '../../lib/ui-store'
 import { CardFace, DraggableCard } from './CardFace'
-import { END, useDragSource, useDragState, type DragState } from './dnd'
+import { END, nextOf, useDragSource, useDragState, type DragState } from './dnd'
 import { COLUMN_COLORS, colorVar, useModel, useMutations } from './model'
 
 const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
@@ -16,12 +16,6 @@ const useColumnEdit = create<{ id: string | null; start: (id: string) => void; s
   start: (id) => set({ id }),
   stop: () => set({ id: null }),
 }))
-
-/** Следующая после `id` задача в списке или END; null, если `id` в списке нет */
-const nextOf = (items: Array<{ id: string }>, id: string | null): string | null => {
-  const i = items.findIndex((x) => x.id === id)
-  return i >= 0 ? (items[i + 1]?.id ?? END) : null
-}
 
 /** Поле ввода, которое получает фокус при появлении (data-autofocus в макете) */
 function useFocusOnMount<T extends HTMLInputElement>(select = false): RefObject<T | null> {

@@ -5,9 +5,13 @@ import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-q
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
 import type {
-  Board, Column, Comment, CreateColumn, Subtask, Tag, TaskDetail, UpdateColumn, UpdateSubtask, UpdateTask,
+  Board, Column, Comment, CreateColumn, Milestone, Module, Subtask, Tag, TaskDetail, UpdateColumn, UpdateMilestone, UpdateModule,
+  UpdateSubtask, UpdateTask,
 } from '../../lib/api/types'
-import { cardOf, mapTask, patchCard, patchColumn, patchDetail, placeTask, removeColumn, removeTask, withSubtasks } from './cache'
+import {
+  byDueDate, cardOf, mapTask, patchCard, patchColumn, patchDetail, patchMilestone, patchModule, placeTask, removeColumn, removeMilestone,
+  removeModule, removeTask, withSubtasks,
+} from './cache'
 
 type Snapshot = { board?: Board; detail?: TaskDetail; taskId?: string }
 
@@ -157,7 +161,44 @@ export function useBoardMutations(projectId: string) {
     },
   })
 
-  return { moveTask, updateTask, createTask, deleteTask, createColumn, updateColumn, deleteColumn, createSubtask, updateSubtask, deleteSubtask, createComment, createTag }
+  // Модули и вехи лежат в том же ответе, что и доска; счётчики задач приходят от сервера после перечитывания
+
+  const createModule = useBoardMutation<{ title: string }, Module>(projectId, {
+    mutationFn: ({ title }) => api.post<Module>(`/projects/${projectId}/modules`, { title }),
+    onSuccess: (module, _v, qc, pid) =>
+      qc.setQueryData<Board>(keys.board(pid), (b) => b && { ...b, modules: [...b.modules.filter((m) => m.id !== module.id), module] }),
+  })
+
+  const updateModule = useBoardMutation<{ id: string; patch: UpdateModule }, Module>(projectId, {
+    mutationFn: ({ id, patch }) => api.patch<Module>(`/modules/${id}`, patch),
+    board: (b, v) => patchModule(b, v.id, v.patch),
+  })
+
+  const deleteModule = useBoardMutation<{ id: string }>(projectId, {
+    mutationFn: ({ id }) => api.delete(`/modules/${id}`),
+    board: (b, v) => removeModule(b, v.id),
+  })
+
+  const createMilestone = useBoardMutation<{ title: string; dueDate: string }, Milestone>(projectId, {
+    mutationFn: ({ title, dueDate }) => api.post<Milestone>(`/projects/${projectId}/milestones`, { title, due_date: dueDate }),
+    onSuccess: (milestone, _v, qc, pid) =>
+      qc.setQueryData<Board>(keys.board(pid), (b) => b && { ...b, milestones: byDueDate([...b.milestones.filter((m) => m.id !== milestone.id), milestone]) }),
+  })
+
+  const updateMilestone = useBoardMutation<{ id: string; patch: UpdateMilestone }, Milestone>(projectId, {
+    mutationFn: ({ id, patch }) => api.patch<Milestone>(`/milestones/${id}`, patch),
+    board: (b, v) => patchMilestone(b, v.id, v.patch),
+  })
+
+  const deleteMilestone = useBoardMutation<{ id: string }>(projectId, {
+    mutationFn: ({ id }) => api.delete(`/milestones/${id}`),
+    board: (b, v) => removeMilestone(b, v.id),
+  })
+
+  return {
+    moveTask, updateTask, createTask, deleteTask, createColumn, updateColumn, deleteColumn, createSubtask, updateSubtask, deleteSubtask, createComment, createTag,
+    createModule, updateModule, deleteModule, createMilestone, updateMilestone, deleteMilestone,
+  }
 }
 
 export type BoardMutations = ReturnType<typeof useBoardMutations>

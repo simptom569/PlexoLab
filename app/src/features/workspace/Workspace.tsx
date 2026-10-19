@@ -1,12 +1,25 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
+import { Toast } from '../../components/Toast'
 import { useBoard, useProjects } from '../../lib/api/queries'
+import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
+import { BacklogPage } from '../backlog/BacklogPage'
 import { BoardPage } from '../board/BoardPage'
 import { TaskDrawer } from '../board/TaskDrawer'
+import { ModulesPage } from '../modules/ModulesPage'
+import { ReleasesPage } from '../releases/ReleasesPage'
 import { PagePlaceholder } from './PagePlaceholder'
+
+/** Экраны, которые уже сделаны и зависят от проекта; остальные пока показывают заглушку */
+const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => ReactNode>> = {
+  board: BoardPage,
+  backlog: BacklogPage,
+  modules: ModulesPage,
+  releases: ReleasesPage,
+}
 
 export function Workspace() {
   const user = useSession((s) => s.user)
@@ -41,12 +54,19 @@ export function Workspace() {
 
   if (!user) return null
 
+  const ProjectPage = PROJECT_PAGES[page]
+
   return (
     <AppShell
       dark={theme === 'dark'}
       menuOpen={menu !== null}
       onCloseMenus={closeMenus}
-      overlay={projectId ? <TaskDrawer projectId={projectId} /> : null}
+      overlay={
+        <>
+          {projectId ? <TaskDrawer projectId={projectId} /> : null}
+          <Toast />
+        </>
+      }
       sidebar={
         <Sidebar
           page={page}
@@ -67,7 +87,7 @@ export function Workspace() {
         />
       }
     >
-      {page === 'board' && projectId ? <BoardPage key={projectId} projectId={projectId} /> : <PagePlaceholder page={page} />}
+      {ProjectPage && projectId ? <ProjectPage key={`${page}:${projectId}`} projectId={projectId} /> : <PagePlaceholder page={page} />}
     </AppShell>
   )
 }

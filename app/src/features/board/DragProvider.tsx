@@ -8,7 +8,7 @@ import { DragContext, IDLE, targetAt, type DragData, type DragKind, type DragSta
 interface ProviderProps {
   /** Бросок на цель; не вызывается, если указатель отпустили не над целью */
   onDrop: (state: DragState) => void
-  /** Что показывать под указателем: копия карточки, колонки или плашки */
+  /** Что показывать под указателем: копия карточки, колонки, плашки или строки бэклога */
   renderOverlay: (kind: DragKind, id: string) => ReactNode
   children: ReactNode
 }
@@ -50,7 +50,7 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
     if (!cur.kind || !p) return
     const target = targetAt(cur, cur.kind, p.x, p.y)
     if (!target) return
-    if (target.overCol !== cur.overCol || target.overCard !== cur.overCard || target.overSlot !== cur.overSlot || target.overDay !== cur.overDay) {
+    if (target.overCol !== cur.overCol || target.overCard !== cur.overCard || target.overSlot !== cur.overSlot || target.overDay !== cur.overDay || target.overRow !== cur.overRow) {
       set({ ...cur, ...target })
     }
   }

@@ -1,8 +1,11 @@
-import { QueryClient } from '@tanstack/react-query'
+import { MutationCache, QueryClient } from '@tanstack/react-query'
 import { ApiError } from './api/client'
 import { useSession } from './session'
+import { SAVE_FAILED, useToast } from './toast'
 
 export const queryClient = new QueryClient({
+  // Любое изменение, в котором сервер отказал, уже откатилось на экране: сообщаем об этом плашкой
+  mutationCache: new MutationCache({ onError: () => useToast.getState().show(SAVE_FAILED) }),
   defaultOptions: {
     queries: {
       staleTime: 15_000,
