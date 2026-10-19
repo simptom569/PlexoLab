@@ -22,6 +22,7 @@ use utoipa::{
         (name = "milestones", description = "Вехи проекта"),
         (name = "releases", description = "Релизы и чек-лист выкатки"),
         (name = "wiki", description = "Страницы вики"),
+        (name = "docs", description = "Документы и холст"),
         (name = "files", description = "Библиотека файлов, папки, вложения задач")
     )
 )]

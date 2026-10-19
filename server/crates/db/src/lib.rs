@@ -13,6 +13,7 @@ pub use sqlx::PgPool;
 pub mod activity;
 pub mod columns;
 pub mod comments;
+pub mod docs;
 pub mod files;
 pub mod folders;
 pub mod modules;

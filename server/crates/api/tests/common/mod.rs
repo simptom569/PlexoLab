@@ -163,6 +163,9 @@ impl Ctx {
     pub async fn post(&self, uri: &str, body: Value) -> Reply {
         send(&self.app, Method::POST, uri, Some(body), Some(&self.token)).await
     }
+    pub async fn put_json(&self, uri: &str, body: Value) -> Reply {
+        send(&self.app, Method::PUT, uri, Some(body), Some(&self.token)).await
+    }
     pub async fn patch(&self, uri: &str, body: Value) -> Reply {
         send(&self.app, Method::PATCH, uri, Some(body), Some(&self.token)).await
     }

@@ -236,3 +236,31 @@ async fn reset_clears_everything_and_allows_seeding_again(pool: PgPool) {
     seed(&pool, &mock_options()).await.unwrap();
     assert_eq!(count(&pool, "select count(*) from tasks").await, 24);
 }
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn documents_and_canvas_layers_keep_the_mockup_order(pool: PgPool) {
+    seed(&pool, &mock_options()).await.unwrap();
+    let titles: Vec<String> =
+        db::sqlx::query_scalar("select title from docs order by position").fetch_all(&pool).await.unwrap();
+    assert_eq!(titles, ["Схема сервисов", "Планирование Q4", "Идеи по онбордингу", "Заметки со встречи 15 окт"]);
+
+    // слои холста: объекты лежат в том порядке, в каком идут в макете
+    let layers: Vec<String> = db::sqlx::query_scalar(
+        "select o.text from doc_objects o join docs d on d.id = o.doc_id where d.title = 'Схема сервисов' order by o.seq",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        layers,
+        [
+            "Схема запросов",
+            "Клиент",
+            "API-шлюз",
+            "Сервис пользователей",
+            "Очередь заданий",
+            "База данных",
+            "Добавить кэш для справочников"
+        ]
+    );
+}

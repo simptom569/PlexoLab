@@ -4,6 +4,8 @@ use crate::state::AppState;
 
 pub mod auth;
 pub mod columns;
+pub mod docs;
+pub mod docs_dto;
 pub mod dto;
 pub mod files;
 pub mod library_dto;
@@ -27,5 +29,6 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(modules::router())
         .merge(releases::router())
         .merge(wiki::router())
+        .merge(docs::router())
         .merge(files::router())
 }

@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod board;
+pub mod docs;
 pub mod files;
 pub mod position;
 pub mod wiki;

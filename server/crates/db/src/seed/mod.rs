@@ -427,11 +427,12 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     }
 
     // ----- Документы и холст -----
-    for d in DOCS {
+    // порядок списка как в макете: первый документ вверху, дальше с шагом 1024
+    for (i, d) in DOCS.iter().enumerate() {
         let author = user(d.who)?;
         let doc_id: Uuid = sqlx::query_scalar(
-            "insert into docs (title, md, mode, note_x, note_y, note_w, created_by, updated_by, updated_at) \
-             values ($1, $2, $3::doc_mode, $4, $5, $6, $7, $7, $8) returning id",
+            "insert into docs (title, md, mode, note_x, note_y, note_w, position, created_by, updated_by, updated_at) \
+             values ($1, $2, $3::doc_mode, $4, $5, $6, $7, $8, $8, $9) returning id",
         )
         .bind(d.title)
         .bind(d.md.join("\n"))
@@ -439,6 +440,7 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         .bind(d.note.0)
         .bind(d.note.1)
         .bind(d.note.2)
+        .bind(1024.0 * (i as f64 + 1.0))
         .bind(author)
         .bind(ctx.noon(d.updated)?)
         .fetch_one(&mut *c)
