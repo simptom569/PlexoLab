@@ -51,6 +51,37 @@ export function findByTitle(pages: WikiNode[], title: string): WikiNode | undefi
 /** Названия страниц в нижнем регистре: по ним ссылкам на несуществующие страницы ставится пометка */
 export const lowerTitles = (pages: WikiNode[]): string[] => pages.map((p) => (p.title || '').toLowerCase())
 
+/** Страница и все вложенные в неё */
+export function subtreeIds(pages: WikiNode[], id: string): Set<string> {
+  const ids = new Set([id])
+  for (let grew = true; grew; ) {
+    grew = false
+    for (const p of pages) {
+      if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
+        ids.add(p.id)
+        grew = true
+      }
+    }
+  }
+  return ids
+}
+
+/**
+ * Список страниц после переноса: страница у нового родителя перед `beforeId` (null — последней среди его страниц).
+ * Порядок соседей в дереве задаёт порядок в списке, поэтому достаточно переставить элемент.
+ */
+export function moveInList(pages: WikiNode[], id: string, parentId: string | null, beforeId: string | null): WikiNode[] {
+  const node = pages.find((p) => p.id === id)
+  if (!node) return pages
+  const rest = pages.filter((p) => p.id !== id)
+  let at = beforeId ? rest.findIndex((p) => p.id === beforeId) : -1
+  if (at < 0) {
+    const last = rest.findLastIndex((p) => (p.parent_id ?? null) === parentId)
+    at = last < 0 ? rest.length : last + 1
+  }
+  return [...rest.slice(0, at), { ...node, parent_id: parentId }, ...rest.slice(at)]
+}
+
 /** Какая страница открыта: сохранённая, если она ещё есть, иначе первая в корне; страниц нет — null */
 export function currentPage(pages: WikiNode[], id: string | null): WikiNode | null {
   return pages.find((p) => p.id === id) ?? pages.find((p) => !p.parent_id) ?? null

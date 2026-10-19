@@ -8,6 +8,7 @@ import { keys } from '../../lib/api/queries'
 import type { FileList, Folder, LibraryFile, WikiNode, WikiPage } from '../../lib/api/types'
 import { dropDrafts, toNode } from './drafts'
 import { uploadInBatches } from '../../lib/upload'
+import { moveInList, subtreeIds } from './logic'
 import { useWikiStore } from './store'
 
 // ----- Страницы -----
@@ -39,19 +40,33 @@ export function useCreatePageOnce() {
   }
 }
 
-/** Страница и все вложенные в неё */
-export function subtreeIds(pages: WikiNode[], id: string): Set<string> {
-  const ids = new Set([id])
-  for (let grew = true; grew; ) {
-    grew = false
-    for (const p of pages) {
-      if (p.parent_id && ids.has(p.parent_id) && !ids.has(p.id)) {
-        ids.add(p.id)
-        grew = true
-      }
-    }
-  }
-  return ids
+/**
+ * Перенос страницы по дереву: на экране сразу, при отказе сервера возвращается. Сервер версию страницы не трогает,
+ * поэтому перенос открытой и редактируемой страницы не мешает её сохранению.
+ */
+export function useMovePage() {
+  const qc = useQueryClient()
+  const mutationKey = ['wiki-move']
+  return useMutation<WikiPage, Error, { id: string; parentId: string | null; beforeId: string | null }, { before?: WikiNode[] }>({
+    mutationKey,
+    mutationFn: ({ id, parentId, beforeId }) => api.patch<WikiPage>(`/wiki/${id}`, { parent_id: parentId, before_id: beforeId }),
+    onMutate: async ({ id, parentId, beforeId }) => {
+      await qc.cancelQueries({ queryKey: keys.wiki })
+      const before = qc.getQueryData<WikiNode[]>(keys.wiki)
+      if (before) qc.setQueryData<WikiNode[]>(keys.wiki, moveInList(before, id, parentId, beforeId))
+      // куда бы страница ни попала, её должно быть видно
+      if (parentId) useWikiStore.getState().reveal([parentId])
+      return { before }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.before) qc.setQueryData(keys.wiki, ctx.before)
+    },
+    onSettled: () => {
+      // пока идут другие переносы, дерево не перечитываем: иначе оно «мигнёт» старым порядком
+      if (qc.isMutating({ mutationKey }) > 1) return
+      void qc.invalidateQueries({ queryKey: keys.wiki })
+    },
+  })
 }
 
 export function useDeletePage() {
