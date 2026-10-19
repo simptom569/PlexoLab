@@ -1,1 +1,3 @@
 //! Типы и бизнес-правила PlexoLab без зависимости от axum и sqlx.
+
+pub mod auth;

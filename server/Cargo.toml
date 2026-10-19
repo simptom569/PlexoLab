@@ -11,8 +11,18 @@ default-run = "server"
 [dependencies]
 anyhow = "1.0.104"
 api = { path = "crates/api" }
+db = { version = "0.1.0", path = "crates/db" }
+domain = { version = "0.1.0", path = "crates/domain" }
+dotenvy = "0.15.7"
+time = { version = "0.3.55", features = ["parsing"] }
 tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+# Argon2 в debug-сборке считает пароль секундами: оптимизируем только его, остальной код отлаживается как обычно.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
 
 # Релизная сборка маленькая и без лишнего: на сервере мало памяти и диска.
 [profile.release]
