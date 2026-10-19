@@ -73,6 +73,95 @@ export interface paths {
         patch: operations["update_column"];
         trace?: never;
     };
+    "/api/v1/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Документы в порядке списка, без текста
+         * @description Порядок общий для команды (его меняют перетаскиванием карточек), новые документы встают первыми. У каждого
+         *     документа есть фрагмент текста и счётчик объектов холста; объекты для миниатюры приходят только у документов в
+         *     режиме «Холст».
+         */
+        get: operations["list_docs"];
+        put?: never;
+        /** Новый документ в начало списка. В ленту пишется «создан» или «создан как холст». */
+        post: operations["create_doc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/docs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Документ вместе с текстом и холстом */
+        get: operations["get_doc"];
+        put?: never;
+        post?: never;
+        /** Удалить документ вместе с холстом и звёздочками. В ленту пишется «удалён». */
+        delete: operations["delete_doc"];
+        options?: never;
+        head?: never;
+        /**
+         * Название, текст, режим и место в списке.
+         * @description Для названия и текста нужен `rev`; если он не совпал с текущим, ответ 409 с актуальной версией, и ничего не
+         *     записывается. Правки текста в ленту не пишутся: их много, и они не событие для команды.
+         *
+         *     Режим («Страница» или «Холст») и перенос (`before_id`) версию не проверяют и не меняют: это вид и место в списке,
+         *     а не содержимое, поэтому переключение режима открытого и редактируемого документа не приводит к конфликту с его
+         *     собственным сохранением. `before_id` — перед каким документом встать (`null`: в конец списка).
+         */
+        patch: operations["update_doc"];
+        trace?: never;
+    };
+    "/api/v1/docs/{id}/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Сохранить холст целиком: карточку с текстом, объекты и стрелки.
+         * @description Тело — полный список: объекты, которых в нём нет, удаляются вместе со своими стрелками, остальные обновляются,
+         *     новые добавляются. Идентификаторы объектов выдаёт клиент. Всё происходит в одной транзакции: если что-то не
+         *     прошло проверку, холст остаётся прежним. Версия текста не меняется, время правки документа обновляется.
+         */
+        put: operations["put_canvas"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/docs/{id}/star": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Поставить или снять свою звёздочку. Звёздочка у каждого участника своя; повторный запрос ничего не меняет. */
+        put: operations["set_star"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files": {
         parameters: {
             query?: never;
@@ -599,6 +688,43 @@ export interface components {
             /** @description Все задачи проекта, доска и бэклог, по возрастанию позиции */
             tasks: components["schemas"]["TaskCardDto"][];
         };
+        /** @description Холст документа, как его присылает клиент */
+        CanvasDto: {
+            links: components["schemas"]["CanvasLinkDto"][];
+            note: components["schemas"]["NoteDto"];
+            /** @description Снизу вверх: объект, стоящий позже, лежит поверх более ранних */
+            objects: components["schemas"]["CanvasObjectDto"][];
+        };
+        /** @description Стрелка от объекта `a` к объекту `b` */
+        CanvasLinkDto: {
+            /** Format: uuid */
+            a: string;
+            /** Format: uuid */
+            b: string;
+        };
+        /**
+         * @description Стикер, фигура или подпись на холсте. Идентификатор выдаёт клиент: стрелки ссылаются на него, а весь холст
+         *     сохраняется одним запросом.
+         */
+        CanvasObjectDto: {
+            /**
+             * Format: int32
+             * @description Индекс цвета в палитре (0..7)
+             */
+            color: number;
+            /** Format: float */
+            h: number;
+            /** Format: uuid */
+            id: string;
+            text: string;
+            type: components["schemas"]["ObjectKind"];
+            /** Format: float */
+            w: number;
+            /** Format: float */
+            x: number;
+            /** Format: float */
+            y: number;
+        };
         ColumnDto: {
             /** @description Токен цвета: muted | accent | warn | ok | b-fg | e-fg */
             color: string;
@@ -633,6 +759,11 @@ export interface components {
         };
         CreateComment: {
             body: string;
+        };
+        CreateDoc: {
+            md?: string | null;
+            mode?: components["schemas"]["DocMode"] | null;
+            title?: string | null;
         };
         CreateFolder: {
             name: string;
@@ -682,6 +813,85 @@ export interface components {
              */
             parent_id?: string | null;
             title?: string | null;
+        };
+        /** @description Ответ 409: название или текст документа уже изменили. В `current` лежит актуальная версия. */
+        DocConflictDto: {
+            /** @example conflict */
+            code: string;
+            current: components["schemas"]["DocDto"];
+            /** @example Документ изменил другой участник */
+            message: string;
+        };
+        /** @description Документ целиком: текст, холст */
+        DocDto: {
+            /**
+             * Format: int32
+             * @description Версия холста: растёт при каждом сохранении холста, текст и название на неё не влияют
+             */
+            canvas_rev: number;
+            /** Format: uuid */
+            created_by?: string | null;
+            /** Format: uuid */
+            id: string;
+            links: components["schemas"]["CanvasLinkDto"][];
+            /** @description Весь текст документа одной строкой markdown */
+            md: string;
+            mode: components["schemas"]["DocMode"];
+            note: components["schemas"]["NoteDto"];
+            /** @description Объекты холста снизу вверх */
+            objects: components["schemas"]["CanvasObjectDto"][];
+            /** Format: double */
+            position: number;
+            /**
+             * Format: int32
+             * @description Номер версии названия и текста: растёт на единицу при каждом их изменении
+             */
+            rev: number;
+            starred: boolean;
+            title: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: uuid */
+            updated_by?: string | null;
+        };
+        /**
+         * @description Режим документа: страница или холст. Текст и объекты в обоих режимах одни и те же.
+         * @enum {string}
+         */
+        DocMode: "page" | "edge";
+        /** @description Документ в списке: без текста, с фрагментом и данными для миниатюры холста */
+        DocSummaryDto: {
+            /**
+             * Format: uuid
+             * @description Автор документа
+             */
+            created_by?: string | null;
+            /** Format: uuid */
+            id: string;
+            mode: components["schemas"]["DocMode"];
+            note: components["schemas"]["NoteDto"];
+            /**
+             * Format: int64
+             * @description Сколько объектов на холсте
+             */
+            object_count: number;
+            /**
+             * Format: double
+             * @description Порядок в списке: меньше — выше. Общий для всей команды.
+             */
+            position: number;
+            /** @description Первые строки текста без разметки через « · ». Пусто, если текста нет. */
+            snippet: string;
+            /** @description Отмечен ли документ звёздочкой тем, кто спрашивает */
+            starred: boolean;
+            /** @description Объекты для миниатюры: только у документов в режиме «Холст» */
+            thumb: components["schemas"]["ThumbObjectDto"][];
+            title: string;
+            /**
+             * Format: date-time
+             * @description Когда меняли название, текст или холст
+             */
+            updated_at: string;
         };
         ErrorBody: {
             /**
@@ -786,6 +996,20 @@ export interface components {
             tasks_total: number;
             title: string;
         };
+        /** @description Карточка с текстом документа на холсте: где лежит и какой ширины (высота зависит от текста) */
+        NoteDto: {
+            /** Format: float */
+            w: number;
+            /** Format: float */
+            x: number;
+            /** Format: float */
+            y: number;
+        };
+        /**
+         * @description Тип объекта на холсте
+         * @enum {string}
+         */
+        ObjectKind: "sticky" | "rect" | "ellipse" | "text";
         ProjectDto: {
             /**
              * @description Токен цвета: accent | warn | ok
@@ -832,6 +1056,21 @@ export interface components {
             position: number;
             /** @example Заморозка кода */
             title: string;
+        };
+        /** @description Холст после сохранения */
+        SavedCanvasDto: {
+            /**
+             * Format: int32
+             * @description Версия холста после этого сохранения
+             */
+            canvas_rev: number;
+            links: components["schemas"]["CanvasLinkDto"][];
+            note: components["schemas"]["NoteDto"];
+            /** @description Снизу вверх */
+            objects: components["schemas"]["CanvasObjectDto"][];
+        };
+        SetStar: {
+            starred: boolean;
         };
         SubtaskDto: {
             done: boolean;
@@ -960,6 +1199,20 @@ export interface components {
             /** @description Файлы; поле `file` можно повторять */
             file: string[];
         };
+        /** @description Объект холста для миниатюры в списке: без текста */
+        ThumbObjectDto: {
+            /** Format: int32 */
+            color: number;
+            /** Format: float */
+            h: number;
+            type: components["schemas"]["ObjectKind"];
+            /** Format: float */
+            w: number;
+            /** Format: float */
+            x: number;
+            /** Format: float */
+            y: number;
+        };
         TokenResponse: {
             /** @description JWT для заголовка `Authorization: Bearer ...`, живёт 12 часов */
             access_token: string;
@@ -983,6 +1236,23 @@ export interface components {
             before_id?: string | null;
             color?: string | null;
             is_done?: boolean | null;
+            title?: string | null;
+        };
+        /** @description Изменения документа. Что не передано, не меняется. */
+        UpdateDoc: {
+            /**
+             * Format: uuid
+             * @description Перед каким документом встать в списке; `null` — в конец. Не передано — порядок не меняется.
+             */
+            before_id?: string | null;
+            md?: string | null;
+            mode?: components["schemas"]["DocMode"] | null;
+            /**
+             * Format: int32
+             * @description Версия, которую клиент видел последней. Нужна, когда меняются название или текст: если документ успели
+             *     изменить, ответ 409. Для режима и переноса не нужна.
+             */
+            rev?: number | null;
             title?: string | null;
         };
         UpdateMilestone: {
@@ -1389,6 +1659,331 @@ export interface operations {
                 };
             };
             /** @description Нет такой колонки */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_docs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Часть названия или текста, без учёта регистра */
+                q: string | null;
+                /** @description `true` — только отмеченные звёздочкой тем, кто спрашивает */
+                starred: boolean | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Документы */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSummaryDto"][];
+                };
+            };
+            /** @description Некорректные условия отбора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_doc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDoc"];
+            };
+        };
+        responses: {
+            /** @description Документ создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_doc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Документ */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Документ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого документа */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_doc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Документ */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Документ удалён */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого документа */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_doc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Документ */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDoc"];
+            };
+        };
+        responses: {
+            /** @description Документ после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого документа */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Документ уже изменили, в current его актуальная версия */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocConflictDto"];
+                };
+            };
+        };
+    };
+    put_canvas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Документ */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CanvasDto"];
+            };
+        };
+        responses: {
+            /** @description Холст после сохранения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedCanvasDto"];
+                };
+            };
+            /** @description Холст не прошёл проверку */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого документа */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    set_star: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Документ */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetStar"];
+            };
+        };
+        responses: {
+            /** @description Звёздочка стоит или снята */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого документа */
             404: {
                 headers: {
                     [name: string]: unknown;

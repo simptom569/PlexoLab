@@ -46,6 +46,10 @@ export const settingsSchema = z.object({
   display: displaySchema.catch(DEFAULT_DISPLAY),
   /** Последняя открытая страница вики */
   wikiPage: z.string().nullable().catch(null),
+  /** Открытый документ; null — виден список */
+  docOpen: z.string().nullable().catch(null),
+  /** В списке документов включён фильтр «Избранные» */
+  docStar: z.boolean().catch(false),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

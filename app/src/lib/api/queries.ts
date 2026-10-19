@@ -1,9 +1,9 @@
 // Чтение данных с сервера через TanStack Query. Ключи собраны в одном месте, чтобы изменения (мутации)
 // и события WebSocket (этап 8) обращались к тем же самым записям кэша.
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api } from './client'
-import type { Board, FileList, Folder, Project, Release, TaskDetail, User, WikiNode, WikiPage } from './types'
+import type { Board, Doc, DocSummary, FileList, Folder, Project, Release, TaskDetail, User, WikiNode, WikiPage } from './types'
 
 export const keys = {
   projects: ['projects'] as const,
@@ -15,6 +15,10 @@ export const keys = {
   wikiPage: (id: string) => ['wiki-page', id] as const,
   files: ['files'] as const,
   folders: ['folders'] as const,
+  /** Все документы в порядке списка. Поиск лежит под этим же началом ключа, поэтому `['docs']` затрагивает и его. */
+  docs: ['docs'] as const,
+  docSearch: (q: string) => ['docs', 'search', q] as const,
+  doc: (id: string) => ['doc', id] as const,
 }
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
@@ -53,3 +57,23 @@ export const useWikiPage = (id: string | null) =>
 export const useLibrary = () => useQuery({ queryKey: keys.files, queryFn: () => api.get<FileList>('/files') })
 
 export const useFolders = () => useQuery({ queryKey: keys.folders, queryFn: () => api.get<Folder[]>('/folders') })
+
+/** Все документы, без текста: карточки списка. Порядок общий для команды. */
+export const useDocs = () => useQuery({ queryKey: keys.docs, queryFn: () => api.get<DocSummary[]>('/docs') })
+
+/** Поиск по названию и тексту: ищет сервер, потому что текст в список не приходит. Пока ответа нет, остаётся прошлый. */
+export const useDocSearch = (q: string) =>
+  useQuery({
+    queryKey: keys.docSearch(q),
+    queryFn: () => api.get<DocSummary[]>(`/docs?q=${encodeURIComponent(q)}`),
+    enabled: q !== '',
+    placeholderData: keepPreviousData,
+  })
+
+/** Документ с текстом и холстом. Правки идут через черновики (docDrafts, canvasDraft), которые сами держат кэш в порядке. */
+export const useDoc = (id: string | null) =>
+  useQuery({
+    queryKey: keys.doc(id ?? ''),
+    queryFn: () => api.get<Doc>(`/docs/${id}`),
+    enabled: id !== null,
+  })

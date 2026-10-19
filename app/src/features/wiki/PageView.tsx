@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Fragment, useEffect } from 'react'
-import { Button, EmptyState, Icon, MarkdownEditor, Panel, Pill } from '../../components'
+import { Button, ConfirmDelete, ConflictBanner, EmptyState, Icon, MarkdownEditor, Panel, Pill } from '../../components'
 import { keys, useLibrary, useWiki, useWikiPage } from '../../lib/api/queries'
 import type { WikiNode, WikiPage } from '../../lib/api/types'
 import { formatSize } from '../../lib/format'
@@ -8,37 +8,11 @@ import { pickedFiles } from '../../lib/upload'
 import { openExternal } from '../../lib/platform/opener'
 import { UPLOAD_FAILED, useToast } from '../../lib/toast'
 import { useOpenWikiLink } from './actions'
-import { ConfirmDelete, FileName, FileTile } from './FileBits'
+import { FileName, FileTile } from './FileBits'
 import { fileDate, kindOf, lowerTitles, pathTo } from './logic'
 import { useDeleteFile, useDeletePage, useUploadFiles } from './mutations'
 import { usePageDraft } from './drafts'
 import { useWikiStore } from './store'
-
-/** Баннер конфликта: страницу успел изменить другой участник. В макете такого элемента нет, собран из его переменных. */
-function ConflictBanner({ onTheirs, onMine }: { onTheirs: () => void; onMine: () => void }) {
-  return (
-    <div
-      role="alert"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 10,
-        padding: '10px 14px',
-        borderRadius: 12,
-        border: '1px solid var(--line-strong)',
-        background: 'var(--bug-bg)',
-        color: 'var(--bug-fg)',
-        fontSize: 13,
-        fontWeight: 600,
-      }}
-    >
-      <span style={{ flex: 1, minWidth: 220 }}>Страницу изменил другой участник</span>
-      <Button onClick={onTheirs}>Загрузить его версию</Button>
-      <Button onClick={onMine}>Оставить мою</Button>
-    </div>
-  )
-}
 
 function PageFiles({ page }: { page: WikiNode }) {
   const files = (useLibrary().data?.files ?? []).filter((f) => f.wiki_page_id === page.id)
@@ -139,7 +113,7 @@ function LoadedPage({ page }: { page: WikiPage }) {
         value={state.title}
         onChange={(e) => setTitle(e.target.value)}
       />
-      {state.conflict && <ConflictBanner onTheirs={() => draft.acceptTheirs()} onMine={() => draft.keepMine()} />}
+      {state.conflict && <ConflictBanner message="Страницу изменил другой участник" onTheirs={() => draft.acceptTheirs()} onMine={() => draft.keepMine()} />}
       <MarkdownEditor
         // чужая версия заменила текст: редактор начинается заново
         key={state.resetKey}

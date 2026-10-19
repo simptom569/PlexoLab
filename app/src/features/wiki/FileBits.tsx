@@ -1,9 +1,7 @@
-import type { CSSProperties, ReactNode } from 'react'
-import { Button } from '../../components'
+import type { CSSProperties } from 'react'
 import type { LibraryFile } from '../../lib/api/types'
 import { downloadFile } from '../../lib/download'
 import { toneAt } from '../../lib/tones'
-import { useUi } from '../../lib/ui-store'
 import { fileExt, kindOf } from './logic'
 
 /** Плитка файла с расширением, цвет по типу (.ft) */
@@ -46,24 +44,5 @@ export function FileName({ file, plain }: { file: { id: string; name: string }; 
     >
       {file.name}
     </button>
-  )
-}
-
-/** «Удалить», после нажатия «Точно удалить?»; второе нажатие удаляет (confirmThen в макете) */
-export function ConfirmDelete({ confirmKey, onConfirm, children }: { confirmKey: string; onConfirm: () => void; children?: ReactNode }) {
-  const confirm = useUi((s) => s.confirm)
-  const setConfirm = useUi((s) => s.setConfirm)
-  return (
-    <Button
-      variant="ghost"
-      onClick={() => {
-        if (confirm === confirmKey) {
-          setConfirm(null)
-          onConfirm()
-        } else setConfirm(confirmKey)
-      }}
-    >
-      {confirm === confirmKey ? 'Точно удалить?' : (children ?? 'Удалить')}
-    </Button>
   )
 }

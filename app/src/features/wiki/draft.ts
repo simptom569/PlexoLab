@@ -1,60 +1,64 @@
-// Черновик страницы вики: текст и название, которые человек правит, и их сохранение на сервер.
+// Черновик страницы вики или документа: текст и название, которые человек правит, и их сохранение на сервер.
 //
 // Сохранение идёт с задержкой (600 мс после последней правки) и сразу при выходе из редактирования. Сервер хранит
 // номер версии `rev`: каждое сохранение отправляет ту версию, которую клиент видел последней. Если страницу успел
 // изменить другой участник, сервер отвечает 409 и отдаёт его версию. Тогда сохранение останавливается, и человек
 // выбирает: взять чужую версию или оставить свою. Черновик живёт вне компонента: если уйти со страницы, не дождавшись
 // сохранения, оно всё равно закончится, а вернувшись, человек увидит свой текст, а не старый.
+// Один и тот же класс держит и страницы вики (`WikiPage`), и документы (`Doc`): им нужны только id, название, текст и версия.
 
 import { ApiError } from '../../lib/api/client'
 import type { WikiPage } from '../../lib/api/types'
+
+/** Всё, что черновику нужно знать о странице или документе */
+export type Versioned = { id: string; title: string; md: string; rev: number }
 
 /** Пауза после последней правки перед сохранением */
 export const SAVE_DELAY_MS = 600
 /** Через сколько повторять сохранение, если сервер не ответил */
 export const RETRY_MS = 5_000
 
-export type DraftState = {
+export type DraftState<P extends Versioned = WikiPage> = {
   title: string
   md: string
   /** Чужая версия, если страницу успели изменить; пока она есть, ничего не сохраняется */
-  conflict: WikiPage | null
+  conflict: P | null
   /** Растёт, когда текст заменили снаружи (чужая версия): редактор должен начаться заново */
   resetKey: number
 }
 
-export type DraftDeps = {
-  /** PATCH /wiki/{id}; при 409 бросает ApiError с `body.current` */
-  patch: (id: string, body: { rev: number; title?: string; md?: string }) => Promise<WikiPage>
+export type DraftDeps<P extends Versioned = WikiPage> = {
+  /** PATCH /wiki/{id} или /docs/{id}; при 409 бросает ApiError с `body.current` */
+  patch: (id: string, body: { rev: number; title?: string; md?: string }) => Promise<P>
   /** Версия страницы с сервера стала известна (после сохранения или при выборе чужой версии) */
-  onSaved: (page: WikiPage) => void
+  onSaved: (page: P) => void
   /** Сохранить не вышло: сообщить человеку (повтор запланирован) */
   onError: () => void
 }
 
-const isConflict = (e: unknown): e is ApiError & { body: { current: WikiPage } } =>
-  e instanceof ApiError && e.status === 409 && !!(e.body as { current?: WikiPage } | undefined)?.current
+const isConflict = <P extends Versioned>(e: unknown): e is ApiError & { body: { current: P } } =>
+  e instanceof ApiError && e.status === 409 && !!(e.body as { current?: P } | undefined)?.current
 
 type Fields = { title: string; md: string }
 
-export class PageDraft {
+export class PageDraft<P extends Versioned = WikiPage> {
   private readonly listeners = new Set<() => void>()
   private rev: number
   /** Последнее, что известно с сервера */
   private saved: Fields
   private title: string
   private md: string
-  private conflict: WikiPage | null = null
+  private conflict: P | null = null
   private resetKey = 0
   private inFlight = false
   private disposed = false
   private again = false
   private timer: ReturnType<typeof setTimeout> | undefined
-  private snapshot: DraftState
+  private snapshot: DraftState<P>
   private readonly id: string
-  private readonly deps: DraftDeps
+  private readonly deps: DraftDeps<P>
 
-  constructor(page: WikiPage, deps: DraftDeps) {
+  constructor(page: P, deps: DraftDeps<P>) {
     this.id = page.id
     this.deps = deps
     this.rev = page.rev
@@ -71,7 +75,7 @@ export class PageDraft {
     return () => void this.listeners.delete(listener)
   }
 
-  getState = (): DraftState => this.snapshot
+  getState = (): DraftState<P> => this.snapshot
 
   /** Есть ли то, что ещё не ушло на сервер */
   get dirty(): boolean {
@@ -104,7 +108,7 @@ export class PageDraft {
    * Новая версия с сервера (перечитали страницу): принимается, только если своих несохранённых правок нет.
    * Иначе сохранение само разберётся: либо запишет правки поверх, либо получит 409.
    */
-  adopt(page: WikiPage) {
+  adopt(page: P) {
     if (page.rev <= this.rev || this.dirty || this.inFlight || this.conflict) return
     this.take(page)
   }
@@ -137,7 +141,7 @@ export class PageDraft {
 
   // ----- внутреннее -----
 
-  private build(): DraftState {
+  private build(): DraftState<P> {
     return { title: this.title, md: this.md, conflict: this.conflict, resetKey: this.resetKey }
   }
 
@@ -153,7 +157,7 @@ export class PageDraft {
   }
 
   /** Заменяет черновик версией с сервера */
-  private take(page: WikiPage) {
+  private take(page: P) {
     const textChanged = page.md !== this.md
     this.rev = page.rev
     this.saved = { title: page.title, md: page.md }
@@ -185,7 +189,7 @@ export class PageDraft {
       const page = await this.deps.patch(this.id, { ...body, rev: this.rev })
       this.saveSucceeded(page, body)
     } catch (e) {
-      if (isConflict(e)) {
+      if (isConflict<P>(e)) {
         this.conflict = e.body.current
         this.changed()
       } else {
@@ -203,7 +207,7 @@ export class PageDraft {
     }
   }
 
-  private saveSucceeded(page: WikiPage, sent: { title?: string; md?: string }) {
+  private saveSucceeded(page: P, sent: { title?: string; md?: string }) {
     this.rev = page.rev
     let replaced = false
     // отправленное поле теперь известно как есть на сервере; не отправленное, если его не трогали, подтягивается с сервера

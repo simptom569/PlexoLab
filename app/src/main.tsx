@@ -11,6 +11,7 @@ import App from './App.tsx'
 import { loadSettings } from './lib/settings'
 import { useSession } from './lib/session'
 import { hydrateUi } from './lib/ui-store'
+import { hydrateDocs } from './features/docs/store'
 import { hydrateWiki } from './features/wiki/store'
 
 async function start() {
@@ -18,6 +19,7 @@ async function start() {
   const settings = await loadSettings()
   hydrateUi(settings)
   hydrateWiki(settings)
+  hydrateDocs(settings)
   // Вход по сохранённому токену запускаем один раз и вне React, иначе StrictMode в разработке запустил бы его дважды,
   // а refresh-токен одноразовый
   void useSession.getState().boot()

@@ -16,12 +16,19 @@ describe('parseSettings', () => {
       filters: EMPTY_FILTERS,
       display: DEFAULT_DISPLAY,
       wikiPage: null,
+      docOpen: null,
+      docStar: false,
     })
   })
 
   it('последняя страница вики хранится строкой, мусор заменяется на null', () => {
     expect(parseSettings({ wikiPage: 'w4' }).wikiPage).toBe('w4')
     expect(parseSettings({ wikiPage: 7 }).wikiPage).toBeNull()
+  })
+
+  it('открытый документ и фильтр «Избранные» хранятся, мусор заменяется', () => {
+    expect(parseSettings({ docOpen: 'd1', docStar: true })).toMatchObject({ docOpen: 'd1', docStar: true })
+    expect(parseSettings({ docOpen: 5, docStar: 'да' })).toMatchObject({ docOpen: null, docStar: false })
   })
 
   it('сохраняет корректные значения', () => {

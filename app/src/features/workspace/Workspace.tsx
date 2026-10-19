@@ -9,6 +9,7 @@ import { useUi } from '../../lib/ui-store'
 import { BacklogPage } from '../backlog/BacklogPage'
 import { BoardPage } from '../board/BoardPage'
 import { TaskDrawer } from '../board/TaskDrawer'
+import { DocsScreen } from '../docs/DocsScreen'
 import { ModulesPage } from '../modules/ModulesPage'
 import { ReleasesPage } from '../releases/ReleasesPage'
 import { WikiScreen } from '../wiki/WikiScreen'
@@ -25,6 +26,7 @@ const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => Re
 /** Экраны всей команды: от выбранного проекта не зависят */
 const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
   wiki: WikiScreen,
+  docs: DocsScreen,
 }
 
 export function Workspace() {

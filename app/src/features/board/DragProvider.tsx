@@ -50,7 +50,7 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
     if (!cur.kind || !p) return
     const target = targetAt(cur, cur.kind, p.x, p.y)
     if (!target) return
-    if (target.overCol !== cur.overCol || target.overCard !== cur.overCard || target.overSlot !== cur.overSlot || target.overDay !== cur.overDay || target.overRow !== cur.overRow) {
+    if (target.overCol !== cur.overCol || target.overCard !== cur.overCard || target.overSlot !== cur.overSlot || target.overDay !== cur.overDay || target.overRow !== cur.overRow || target.overDoc !== cur.overDoc) {
       set({ ...cur, ...target })
     }
   }

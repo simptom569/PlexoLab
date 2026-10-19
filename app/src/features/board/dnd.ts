@@ -3,8 +3,11 @@
 //   карточка: над карточкой — перед ней или после (верхняя/нижняя половина), над колонкой — в конец;
 //   колонка: над колонкой — перед ней или после (левая/правая половина), над «Добавить колонку» — в конец;
 //   календарь: над днём;
-//   строка бэклога: над строкой — перед ней или после, над пустым местом списка — в конец (если заглушки ещё нет).
-// Разметка помечается атрибутами data-card-id, data-col-id, data-new-col, data-day, data-row-id, data-backlog.
+//   строка бэклога: над строкой — перед ней или после, над пустым местом списка — в конец (если заглушки ещё нет);
+//   карточка документа: над карточкой — перед ней (левая половина) или после (правая), карточки лежат сеткой;
+//     над пустым местом сетки — в конец (если заглушки ещё нет).
+// Разметка помечается атрибутами data-card-id, data-col-id, data-new-col, data-day, data-row-id, data-backlog,
+// data-doc-id и data-docs-grid.
 
 import { useDraggable } from '@dnd-kit/core'
 import { createContext, useCallback, useContext, useRef } from 'react'
@@ -12,7 +15,7 @@ import { createContext, useCallback, useContext, useRef } from 'react'
 /** Значение «в конец» для overCard и overSlot */
 export const END = '__end'
 
-export type DragKind = 'card' | 'col' | 'row'
+export type DragKind = 'card' | 'col' | 'row' | 'doc'
 
 export interface DragState {
   kind: DragKind | null
@@ -30,10 +33,12 @@ export interface DragState {
   overDay: string | null
   /** Строка бэклога, перед которой встанет заглушка (или END) */
   overRow: string | null
+  /** Карточка документа, перед которой встанет заглушка (или END) */
+  overDoc: string | null
 }
 
 export const IDLE: DragState = {
-  kind: null, id: null, h: 64, w: 272, overCol: null, overCard: null, overSlot: null, overDay: null, overRow: null,
+  kind: null, id: null, h: 64, w: 272, overCol: null, overCard: null, overSlot: null, overDay: null, overRow: null, overDoc: null,
 }
 
 /** Следующая после `id` запись списка или END; null, если `id` в списке нет */
@@ -45,14 +50,15 @@ export const nextOf = (items: Array<{ id: string }>, id: string | null): string 
 export const DragContext = createContext<DragState>(IDLE)
 export const useDragState = (): DragState => useContext(DragContext)
 
-type Target = Pick<DragState, 'overCol' | 'overCard' | 'overSlot' | 'overDay' | 'overRow'>
+type Target = Pick<DragState, 'overCol' | 'overCard' | 'overSlot' | 'overDay' | 'overRow' | 'overDoc'>
 
 /** Что под указателем в точке (x, y) для переноса вида `kind`; null — указатель не над целью */
 export function targetAt(prev: DragState, kind: DragKind, x: number, y: number): Target | null {
   const el = document.elementFromPoint(x, y)
   if (!el) return null
   const keep = (patch: Partial<Target>): Target => ({
-    overCol: prev.overCol, overCard: prev.overCard, overSlot: prev.overSlot, overDay: prev.overDay, overRow: prev.overRow, ...patch,
+    overCol: prev.overCol, overCard: prev.overCard, overSlot: prev.overSlot, overDay: prev.overDay, overRow: prev.overRow,
+    overDoc: prev.overDoc, ...patch,
   })
   // над самой заглушкой: цель прежняя (в макете заглушка лежит внутри обёртки цели и тоже ловит бросок)
   if (el.closest('[data-ph]')) return keep({})
@@ -79,6 +85,20 @@ export function targetAt(prev: DragState, kind: DragKind, x: number, y: number):
     }
     // над пустым местом списка: в конец, если заглушки ещё нет
     if (el.closest('[data-backlog]')) return keep({ overRow: prev.overRow ?? END })
+    return null
+  }
+
+  if (kind === 'doc') {
+    const docEl = el.closest<HTMLElement>('[data-doc-id]')
+    if (docEl) {
+      const rect = docEl.getBoundingClientRect()
+      const after = x > rect.left + rect.width / 2
+      const docs = Array.from(document.querySelectorAll<HTMLElement>('[data-doc-id]'))
+      const i = docs.indexOf(docEl)
+      return keep({ overDoc: after ? (docs[i + 1]?.dataset.docId ?? END) : docEl.dataset.docId! })
+    }
+    // над пустым местом сетки: в конец, если заглушки ещё нет
+    if (el.closest('[data-docs-grid]')) return keep({ overDoc: prev.overDoc ?? END })
     return null
   }
 
