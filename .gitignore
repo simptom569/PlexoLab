@@ -27,3 +27,6 @@ playwright-report/
 .DS_Store
 Thumbs.db
 *.log
+
+# Схема OpenAPI для генерации типов клиента (сами типы app/src/lib/api/schema.d.ts коммитятся)
+/app/src/lib/api/openapi.json

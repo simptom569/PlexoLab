@@ -1,5 +1,8 @@
+import { QueryClientProvider } from '@tanstack/react-query'
 import { lazy, Suspense } from 'react'
+import { AuthGate } from './features/auth/AuthGate'
 import { Workspace } from './features/workspace/Workspace'
+import { queryClient } from './lib/query'
 
 // Витрина компонентов нужна только при разработке и в сборку не попадает
 const Showcase = import.meta.env.DEV ? lazy(() => import('./features/showcase/Showcase')) : null
@@ -12,5 +15,11 @@ export default function App() {
       </Suspense>
     )
   }
-  return <Workspace />
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthGate>
+        <Workspace />
+      </AuthGate>
+    </QueryClientProvider>
+  )
 }

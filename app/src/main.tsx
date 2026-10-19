@@ -8,9 +8,22 @@ import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import './styles/styles.css'
 import App from './App.tsx'
+import { loadSettings } from './lib/settings'
+import { useSession } from './lib/session'
+import { hydrateUi } from './lib/ui-store'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+async function start() {
+  // Настройки читаем до показа интерфейса: тема и открытая страница сразу правильные
+  hydrateUi(await loadSettings())
+  // Вход по сохранённому токену запускаем один раз и вне React, иначе StrictMode в разработке запустил бы его дважды,
+  // а refresh-токен одноразовый
+  void useSession.getState().boot()
+
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+}
+
+void start()

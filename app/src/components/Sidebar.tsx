@@ -34,6 +34,7 @@ type SidebarProps = {
   onToggleUserMenu: () => void
   dark: boolean
   onToggleTheme: () => void
+  onLogout: () => void
 }
 
 export function Sidebar({
@@ -48,6 +49,7 @@ export function Sidebar({
   onToggleUserMenu,
   dark,
   onToggleTheme,
+  onLogout,
 }: SidebarProps) {
   return (
     <aside className="side">
@@ -125,6 +127,7 @@ export function Sidebar({
           {userMenuOpen && (
             <Popover small role="menu" aria-label="Меню пользователя" style={{ top: 'auto', bottom: 'calc(100% + 8px)' }}>
               <MenuItem onClick={onToggleTheme}>{dark ? 'Светлая тема' : 'Тёмная тема'}</MenuItem>
+              <MenuItem onClick={onLogout}>Выйти</MenuItem>
             </Popover>
           )}
         </Anchor>

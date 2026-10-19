@@ -1,4 +1,5 @@
-export type PageId = 'board' | 'backlog' | 'modules' | 'releases' | 'wiki' | 'docs' | 'activity' | 'links'
+export const PAGE_IDS = ['board', 'backlog', 'modules', 'releases', 'wiki', 'docs', 'activity', 'links'] as const
+export type PageId = (typeof PAGE_IDS)[number]
 
 // Названия экранов (PAGES в макете)
 export const PAGE_LABELS: Record<PageId, string> = {
