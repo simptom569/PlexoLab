@@ -28,8 +28,36 @@ async fn openapi_json_describes_the_api() {
     assert_eq!(r.status, StatusCode::OK);
     assert!(str_field(&r.body, "openapi").starts_with("3."));
     assert_eq!(r.body["info"]["title"], "PlexoLab API");
-    for path in ["/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/me", "/api/v1/users"] {
+    for path in [
+        "/api/v1/auth/login",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
+        "/api/v1/me",
+        "/api/v1/users",
+        "/api/v1/projects",
+        "/api/v1/projects/{id}/board",
+        "/api/v1/projects/{id}/columns",
+        "/api/v1/columns/{id}",
+        "/api/v1/projects/{id}/tasks",
+        "/api/v1/tasks/{id}",
+        "/api/v1/tasks/{id}/subtasks",
+        "/api/v1/subtasks/{id}",
+        "/api/v1/tasks/{id}/comments",
+        "/api/v1/tags",
+        "/api/v1/tags/{id}",
+    ] {
         assert!(r.body["paths"].get(path).is_some(), "в схеме нет {path}");
+    }
+    let task = &r.body["paths"]["/api/v1/tasks/{id}"];
+    for method in ["get", "patch", "delete"] {
+        assert!(task.get(method).is_some(), "у /tasks/{{id}} нет {method}");
+    }
+    for schema in ["BoardDto", "TaskCardDto", "TaskDetailDto", "UpdateTask", "ColumnDto", "TagDto"] {
+        assert!(r.body["components"]["schemas"].get(schema).is_some(), "в схеме нет {schema}");
+    }
+    let update = &r.body["components"]["schemas"]["UpdateTask"]["properties"];
+    for field in ["column_id", "before_id", "tag_ids", "due_date"] {
+        assert!(update.get(field).is_some(), "в UpdateTask нет {field}");
     }
     assert_eq!(r.body["components"]["securitySchemes"]["bearer"]["scheme"], "bearer");
     assert!(r.body["components"]["schemas"].get("ErrorBody").is_some());

@@ -25,6 +25,42 @@ where
     }
 }
 
+/// Параметр пути (`/tasks/{id}`). Некорректный идентификатор даёт 400 в общем формате ошибок.
+pub struct ApiPath<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiPath<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + Send,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        match axum::extract::Path::<T>::from_request_parts(parts, state).await {
+            Ok(axum::extract::Path(value)) => Ok(ApiPath(value)),
+            Err(_) => Err(ApiError::BadRequest("Некорректный идентификатор в адресе".into())),
+        }
+    }
+}
+
+/// Параметры запроса (`?move_to=...`). Ошибки разбора дают 400 в общем формате.
+pub struct ApiQuery<T>(pub T);
+
+impl<S, T> FromRequestParts<S> for ApiQuery<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, ApiError> {
+        match axum::extract::Query::<T>::from_request_parts(parts, state).await {
+            Ok(axum::extract::Query(value)) => Ok(ApiQuery(value)),
+            Err(rejection) => Err(ApiError::BadRequest(rejection.body_text())),
+        }
+    }
+}
+
 /// Пользователь из токена доступа (`Authorization: Bearer ...`). Без действительного токена ручка отвечает 401.
 #[derive(Debug, Clone, Copy)]
 pub struct AuthUser {

@@ -18,6 +18,7 @@ pub mod error;
 pub mod extract;
 mod openapi;
 pub mod routes;
+pub mod serde_helpers;
 pub mod state;
 
 pub use config::Config;

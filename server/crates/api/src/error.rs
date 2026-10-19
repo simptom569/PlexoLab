@@ -90,7 +90,16 @@ impl IntoResponse for ApiError {
 
 impl From<db::sqlx::Error> for ApiError {
     fn from(e: db::sqlx::Error) -> Self {
-        ApiError::Internal(e.into())
+        match &e {
+            // клиент сослался на несуществующую запись (исполнитель, метка и т. п.)
+            db::sqlx::Error::Database(d) if d.is_foreign_key_violation() => {
+                ApiError::BadRequest("Указана несуществующая связанная запись".into())
+            }
+            db::sqlx::Error::Database(d) if d.is_unique_violation() => {
+                ApiError::Conflict("Такая запись уже есть".into())
+            }
+            _ => ApiError::Internal(e.into()),
+        }
     }
 }
 

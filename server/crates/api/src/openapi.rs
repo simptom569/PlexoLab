@@ -13,7 +13,11 @@ use utoipa::{
     modifiers(&SecurityAddon),
     tags(
         (name = "auth", description = "Вход и сессии"),
-        (name = "users", description = "Участники команды")
+        (name = "users", description = "Участники команды"),
+        (name = "projects", description = "Проекты и данные доски"),
+        (name = "columns", description = "Колонки доски"),
+        (name = "tasks", description = "Задачи, подзадачи, комментарии"),
+        (name = "tags", description = "Метки")
     )
 )]
 pub struct ApiDoc;
