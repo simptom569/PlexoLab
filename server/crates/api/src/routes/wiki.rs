@@ -7,7 +7,10 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use db::{sqlx::PgConnection, wiki::Patch};
+use db::{
+    sqlx::PgConnection,
+    wiki::{Patch, PlaceError},
+};
 use domain::wiki::{self, MAX_MD_LEN, MAX_TITLE_LEN};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
@@ -117,8 +120,15 @@ async fn create_page(
     Ok((StatusCode::CREATED, Json(page.into())))
 }
 
-/// Название, текст или родитель страницы. Если `rev` не совпал с текущим, ответ 409 с актуальной версией.
-/// Правки текста в ленту не пишутся: их много, и они не событие для команды.
+/// Название и текст страницы, а также её место в дереве.
+///
+/// Для названия и текста нужен `rev`; если он не совпал с текущим, ответ 409 с актуальной версией, и ничего не
+/// записывается. Правки текста в ленту не пишутся: их много, и они не событие для команды.
+///
+/// Перенос (`parent_id` и `before_id`) версию не проверяет и не меняет: это место в дереве, а не содержимое, поэтому
+/// перенос открытой и редактируемой страницы не приводит к конфликту с её собственным сохранением.
+/// `parent_id` — новый родитель (`null`: корень), `before_id` — перед какой страницей встать среди страниц этого
+/// родителя (`null`: в конец). Если передан только `before_id`, страница остаётся у своего родителя.
 #[utoipa::path(
     patch,
     path = "/wiki/{id}",
@@ -143,41 +153,56 @@ async fn update_page(
     let title = req.title.as_deref().map(clean_title).transpose()?;
     let md = req.md.as_deref().map(clean_md).transpose()?;
 
+    let content = title.is_some() || md.is_some();
+    if content && req.rev.is_none() {
+        return Err(bad("Чтобы изменить название или текст, нужна версия страницы (rev)"));
+    }
+    let moving = req.parent_id.is_some() || req.before_id.is_some();
+
     let mut tx = state.pool.begin().await?;
-    if req.parent_id.is_some() {
-        // перенос меняет и позиции соседей, и проверку на цикл: всё это по очереди с созданием страниц
+    if moving {
+        // перенос меняет позиции соседей и опирается на проверку цикла: по очереди с созданием и удалением страниц
         db::wiki::lock(&mut tx).await?;
     }
-    let current = db::wiki::get_for_update(&mut tx, id).await?.ok_or(ApiError::NotFound)?;
-    if current.rev != req.rev {
-        let body = WikiConflictDto {
-            code: "conflict".to_owned(),
-            message: CONFLICT_MESSAGE.to_owned(),
-            current: current.into(),
-        };
-        return Ok((StatusCode::CONFLICT, Json(body)).into_response());
+    let mut page = db::wiki::get_for_update(&mut tx, id).await?.ok_or(ApiError::NotFound)?;
+
+    if content {
+        if req.rev != Some(page.rev) {
+            let body = WikiConflictDto {
+                code: "conflict".to_owned(),
+                message: CONFLICT_MESSAGE.to_owned(),
+                current: page.into(),
+            };
+            return Ok((StatusCode::CONFLICT, Json(body)).into_response());
+        }
+        let patch =
+            Patch { title: title.as_deref().filter(|t| *t != page.title), md: md.as_deref().filter(|m| *m != page.md) };
+        // ничего не изменилось: версию не поднимаем
+        if patch.title.is_some() || patch.md.is_some() {
+            page = db::wiki::update(&mut tx, id, &patch, auth.id).await?;
+        }
     }
 
-    let parent_id = match req.parent_id {
-        Some(Some(parent)) => {
+    if moving {
+        let parent = req.parent_id.unwrap_or(page.parent_id);
+        if let Some(parent) = parent
+            && req.parent_id.is_some()
+        {
             check_parent(&mut tx, parent).await?;
             if db::wiki::in_subtree(&mut tx, id, parent).await? {
                 return Err(bad("Страницу нельзя перенести внутрь неё самой или её вложенных страниц"));
             }
-            Some(Some(parent))
         }
-        other => other,
-    };
-    let patch = Patch {
-        title: title.as_deref().filter(|t| *t != current.title),
-        md: md.as_deref().filter(|m| *m != current.md),
-        parent_id: parent_id.filter(|p| *p != current.parent_id),
-    };
-    if patch.title.is_none() && patch.md.is_none() && patch.parent_id.is_none() {
-        // ничего не изменилось: версию не поднимаем
-        return Ok(Json(WikiPageDto::from(current)).into_response());
+        // новый родитель без `before_id` — в конец его списка
+        let before = req.before_id.flatten();
+        page = db::wiki::place(&mut tx, &page, parent, before).await.map_err(|e| match e {
+            PlaceError::BeforeNotFound => {
+                bad("Страница, перед которой нужно встать, не найдена среди страниц этого родителя")
+            }
+            PlaceError::Db(e) => e.into(),
+        })?;
     }
-    let page = db::wiki::update(&mut tx, id, &patch, auth.id).await?;
+
     tx.commit().await?;
     Ok(Json(WikiPageDto::from(page)).into_response())
 }

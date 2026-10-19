@@ -229,17 +229,189 @@ async fn moving_a_page_puts_it_last_under_the_new_parent(pool: PgPool) {
     let a1 = c.page(Some(id_of(&a)), "А1").await;
 
     // «А1» переезжает под «Б» после «Б1»
-    let r = c.save(&a1, json!({ "parent_id": id_of(&b) })).await;
+    let r = c.patch(&page_uri(&a1), json!({ "parent_id": id_of(&b) })).await;
     let moved = c.ok(r, StatusCode::OK).await;
     assert_eq!(moved["parent_id"], id_of(&b).to_string());
-    assert_eq!(moved["rev"], 2);
     assert!(moved["position"].as_f64() > b1["position"].as_f64());
 
     // в корень
-    let r = c.save(&moved, json!({ "parent_id": null })).await;
+    let r = c.patch(&page_uri(&moved), json!({ "parent_id": null })).await;
     let root = c.ok(r, StatusCode::OK).await;
     assert_eq!(root["parent_id"], Value::Null);
     assert!(root["position"].as_f64() > b["position"].as_f64());
+}
+
+fn page_uri(page: &Value) -> String {
+    format!("/api/v1/wiki/{}", id_of(page))
+}
+
+impl Ctx {
+    /// Названия страниц одного родителя в порядке дерева
+    async fn children(&self, parent: Option<&Value>) -> Vec<String> {
+        let want = parent.map(|p| str_field(p, "id").to_owned());
+        self.tree()
+            .await
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["parent_id"].as_str().map(str::to_owned) == want)
+            .map(|p| str_field(p, "title").to_owned())
+            .collect()
+    }
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn before_id_reorders_pages_among_siblings(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let a = c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+    let d = c.page(None, "В").await;
+    assert_eq!(c.children(None).await, ["А", "Б", "В"]);
+
+    // «В» встаёт перед «А»
+    let r = c.patch(&page_uri(&d), json!({ "before_id": id_of(&a) })).await;
+    c.ok(r, StatusCode::OK).await;
+    assert_eq!(c.children(None).await, ["В", "А", "Б"]);
+
+    // «В» — в самый конец
+    let r = c.patch(&page_uri(&d), json!({ "before_id": null })).await;
+    c.ok(r, StatusCode::OK).await;
+    assert_eq!(c.children(None).await, ["А", "Б", "В"]);
+
+    // «В» перед «Б»: в середину
+    let r = c.patch(&page_uri(&d), json!({ "before_id": id_of(&b) })).await;
+    c.ok(r, StatusCode::OK).await;
+    assert_eq!(c.children(None).await, ["А", "В", "Б"]);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn page_moves_to_another_parent_before_a_given_child(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let a = c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+    c.page(Some(id_of(&b)), "Б1").await;
+    let b2 = c.page(Some(id_of(&b)), "Б2").await;
+    let a1 = c.page(Some(id_of(&a)), "А1").await;
+
+    let r = c.patch(&page_uri(&a1), json!({ "parent_id": id_of(&b), "before_id": id_of(&b2) })).await;
+    let moved = c.ok(r, StatusCode::OK).await;
+    assert_eq!(moved["parent_id"], id_of(&b).to_string());
+    assert_eq!(c.children(Some(&b)).await, ["Б1", "А1", "Б2"]);
+    assert!(c.children(Some(&a)).await.is_empty());
+
+    // «Б2» — первым среди вложенных в «Б»
+    let first = c.tree().await.as_array().unwrap().iter().find(|p| p["title"] == "Б1").unwrap().clone();
+    let r = c.patch(&page_uri(&b2), json!({ "before_id": id_of(&first) })).await;
+    c.ok(r, StatusCode::OK).await;
+    assert_eq!(c.children(Some(&b)).await, ["Б2", "Б1", "А1"]);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn moving_needs_no_revision_and_leaves_it_alone(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let a = c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+    let r = c.save(&b, json!({ "md": "Текст Б" })).await;
+    let b = c.ok(r, StatusCode::OK).await;
+    assert_eq!(b["rev"], 2);
+
+    // перенос без версии проходит, версия, текст и время правки на месте
+    let r = c.patch(&page_uri(&b), json!({ "parent_id": id_of(&a) })).await;
+    let moved = c.ok(r, StatusCode::OK).await;
+    assert_eq!(moved["rev"], 2);
+    assert_eq!(moved["md"], "Текст Б");
+    assert_eq!(moved["updated_at"], b["updated_at"]);
+
+    // страницу, которую кто-то только что переносил, всё равно можно сохранить со своей версией
+    let r = c.patch(&page_uri(&b), json!({ "rev": 2, "md": "Новый текст" })).await;
+    let saved = c.ok(r, StatusCode::OK).await;
+    assert_eq!(saved["rev"], 3);
+    assert_eq!(saved["parent_id"], id_of(&a).to_string());
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn text_and_move_in_one_request_check_the_revision_first(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let a = c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+
+    let r = c.patch(&page_uri(&b), json!({ "rev": 7, "md": "Чужая версия", "parent_id": id_of(&a) })).await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert!(c.children(Some(&a)).await.is_empty(), "при конфликте ничего не перенесено");
+
+    let r = c.patch(&page_uri(&b), json!({ "rev": 1, "md": "Текст", "parent_id": id_of(&a) })).await;
+    let both = c.ok(r, StatusCode::OK).await;
+    assert_eq!(both["rev"], 2);
+    assert_eq!(both["parent_id"], id_of(&a).to_string());
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn title_or_text_without_a_revision_is_refused(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let page = c.page(None, "А").await;
+    let r = c.patch(&page_uri(&page), json!({ "title": "Новое" })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    let r = c.patch(&page_uri(&page), json!({ "md": "Текст", "parent_id": null })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    // пустой запрос ничего не меняет
+    let r = c.patch(&page_uri(&page), json!({})).await;
+    assert_eq!(c.ok(r, StatusCode::OK).await["rev"], 1);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn before_id_must_be_a_page_of_the_target_parent(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    let a = c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+    let a1 = c.page(Some(id_of(&a)), "А1").await;
+
+    // такой страницы нет вообще
+    let r = c.patch(&page_uri(&a1), json!({ "parent_id": null, "before_id": Uuid::new_v4() })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    // перед самой собой
+    let r = c.patch(&page_uri(&b), json!({ "parent_id": id_of(&a), "before_id": id_of(&b) })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    // страница есть, но стоит у другого родителя
+    let r = c.patch(&page_uri(&b), json!({ "before_id": id_of(&a1) })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.children(None).await, ["А", "Б"], "ничего не сдвинулось");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn moving_to_the_same_place_changes_nothing(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    c.page(None, "А").await;
+    let b = c.page(None, "Б").await;
+    let d = c.page(None, "В").await;
+    let before = c.tree().await;
+
+    // «Б» уже стоит перед «В», а «В» уже в конце
+    for body in [json!({ "before_id": id_of(&d) }), json!({ "parent_id": null, "before_id": id_of(&d) })] {
+        let r = c.patch(&page_uri(&b), body).await;
+        c.ok(r, StatusCode::OK).await;
+    }
+    let r = c.patch(&page_uri(&d), json!({ "before_id": null })).await;
+    c.ok(r, StatusCode::OK).await;
+    assert_eq!(c.tree().await, before);
+    assert_eq!(c.children(None).await, ["А", "Б", "В"]);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn order_survives_many_insertions_into_the_same_gap(pool: PgPool) {
+    let c = Ctx::new(pool).await;
+    c.page(None, "Первая").await;
+    let last = c.page(None, "Последняя").await;
+    let mut expected = vec!["Первая".to_owned(), "Последняя".to_owned()];
+
+    // каждая новая страница встаёт перед «Последней»: зазор делится пополам, пока позиции не придётся пересчитать
+    for i in 0..45 {
+        let title = format!("Вставка {i}");
+        let page = c.page(None, &title).await;
+        let r = c.patch(&page_uri(&page), json!({ "before_id": id_of(&last) })).await;
+        c.ok(r, StatusCode::OK).await;
+        expected.insert(expected.len() - 1, title);
+    }
+    assert_eq!(c.children(None).await, expected);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

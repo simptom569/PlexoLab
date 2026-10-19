@@ -94,17 +94,24 @@ pub struct CreateWikiPage {
     pub md: Option<String>,
 }
 
-/// Изменения страницы. `rev` — версия, которую клиент видел последней: если страницу успели изменить, ответ 409.
+/// Изменения страницы. Что не передано, не меняется.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateWikiPage {
-    pub rev: i32,
+    /// Версия, которую клиент видел последней. Нужна, когда меняются название или текст: если страницу успели
+    /// изменить, ответ 409. Для переноса не нужна.
+    pub rev: Option<i32>,
     pub title: Option<String>,
     pub md: Option<String>,
     /// Перенести под другую страницу; `null` — в корень
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<Uuid>)]
     pub parent_id: Option<Option<Uuid>>,
+    /// Перед какой страницей встать среди страниц нового родителя; `null` — в конец. Если передан только он,
+    /// страница остаётся у своего родителя и меняется только порядок.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<Uuid>)]
+    pub before_id: Option<Option<Uuid>>,
 }
 
 // ===== Файлы =====

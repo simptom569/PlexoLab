@@ -204,7 +204,7 @@ create index on tasks (project_id, column_id, position);
 
 Бэклог отдельных ручек не имеет: это задачи с `column_id = null`. Порядок меняется тем же `PATCH /tasks/{id}` (`before_id`), «На доску» — `PATCH` с `column_id` первой колонки.
 | `GET/POST/DELETE /tags` | метки |
-| `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (в теле `rev` обязателен, остальное: `md`, `title`, `parent_id`), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
+| `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
 | `GET /files?folder=&kind=&q=&wiki_page_id=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов. `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
 | `GET /docs?q=&starred=`, `POST /docs`, `GET /docs/{id}`, `PATCH /docs/{id}` (с `rev`), `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы |

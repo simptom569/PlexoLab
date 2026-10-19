@@ -1,5 +1,6 @@
 //! Страницы вики. Дерево хранится плоско (`parent_id`), собирает его клиент.
 
+use domain::position::{self, Placement};
 use sqlx::{PgConnection, PgExecutor};
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -79,15 +80,14 @@ pub async fn insert(
     .await
 }
 
-/// Что менять. `None` — оставить как есть. Перенос к другому родителю ставит страницу в конец его списка.
+/// Что менять в содержимом. `None` — оставить как есть.
 #[derive(Debug, Default)]
 pub struct Patch<'a> {
     pub title: Option<&'a str>,
     pub md: Option<&'a str>,
-    pub parent_id: Option<Option<Uuid>>,
 }
 
-/// Записывает изменения и увеличивает `rev`. Проверку старого `rev` делает вызывающий.
+/// Записывает название и текст и увеличивает `rev`. Проверку старого `rev` делает вызывающий.
 pub async fn update(
     conn: &mut PgConnection,
     id: Uuid,
@@ -96,20 +96,74 @@ pub async fn update(
 ) -> Result<WikiPage, sqlx::Error> {
     sqlx::query_as(concat!(
         "update wiki_pages set title = coalesce($2, title), md = coalesce($3, md), ",
-        "parent_id = case when $4 then $5::uuid else parent_id end, ",
-        "position = case when $4 then coalesce((select max(position) from wiki_pages ",
-        "where parent_id is not distinct from $5::uuid and id <> $1), 0) + 1024 else position end, ",
-        "rev = rev + 1, updated_by = $6, updated_at = now() where id = $1 ",
+        "rev = rev + 1, updated_by = $4, updated_at = now() where id = $1 ",
         "returning id, parent_id, title, md, position, rev, updated_by, updated_at"
     ))
     .bind(id)
     .bind(patch.title)
     .bind(patch.md)
-    .bind(patch.parent_id.is_some())
-    .bind(patch.parent_id.flatten())
     .bind(user_id)
     .fetch_one(conn)
     .await
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PlaceError {
+    #[error("страница, перед которой нужно встать, не найдена среди вложенных в этого родителя")]
+    BeforeNotFound,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+}
+
+/// Ставит страницу под `parent` перед страницей `before` (None: в конец). Меняет только место в дереве:
+/// версия, текст и время правки не трогаются. Если страница уже стоит там, ничего не пишется.
+/// Вызывающий держит `lock` и сам проверяет, что `parent` существует и не лежит внутри самой страницы.
+pub async fn place(
+    conn: &mut PgConnection,
+    page: &WikiPage,
+    parent: Option<Uuid>,
+    before: Option<Uuid>,
+) -> Result<WikiPage, PlaceError> {
+    // все вложенные в `parent`, включая саму страницу, если она там уже есть
+    let all: Vec<(Uuid, f64)> = sqlx::query_as(
+        "select id, position from wiki_pages where parent_id is not distinct from $1 order by position, id",
+    )
+    .bind(parent)
+    .fetch_all(&mut *conn)
+    .await?;
+    if page.parent_id == parent
+        && let Some(i) = all.iter().position(|(id, _)| *id == page.id)
+        && all.get(i + 1).map(|(id, _)| *id) == before
+    {
+        return Ok(page.clone());
+    }
+
+    let siblings: Vec<(Uuid, f64)> = all.into_iter().filter(|(id, _)| *id != page.id).collect();
+    let position = match position::place(&siblings, page.id, before).map_err(|_| PlaceError::BeforeNotFound)? {
+        Placement::One(p) => p,
+        Placement::All(all) => {
+            let (ids, positions): (Vec<Uuid>, Vec<f64>) = all.iter().copied().unzip();
+            sqlx::query(
+                "update wiki_pages set position = v.pos from unnest($1::uuid[], $2::float8[]) as v(id, pos) \
+                 where wiki_pages.id = v.id",
+            )
+            .bind(ids)
+            .bind(positions)
+            .execute(&mut *conn)
+            .await?;
+            all.iter().find(|(k, _)| *k == page.id).map_or(position::STEP, |(_, p)| *p)
+        }
+    };
+    let moved = sqlx::query_as(concat!(
+        "update wiki_pages set parent_id = $2, position = $3 where id = $1 ",
+        "returning id, parent_id, title, md, position, rev, updated_by, updated_at"
+    ))
+    .bind(page.id)
+    .bind(parent)
+    .bind(position)
+    .fetch_one(conn)
+    .await?;
+    Ok(moved)
 }
 
 /// Входит ли `candidate` в поддерево `root` (сама `root` тоже): страницу нельзя переносить внутрь себя
