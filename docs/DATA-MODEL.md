@@ -125,7 +125,9 @@ create table docs (
   md text not null default '',
   mode doc_mode not null default 'page',
   note_x real not null default 24, note_y real not null default 28, note_w real not null default 440,
-  rev int not null default 1,
+  position double precision not null,   -- порядок в списке (меньше — выше), общий для команды; новый документ встаёт первым
+  rev int not null default 1,           -- версия названия и текста
+  canvas_rev int not null default 0,    -- версия холста: растёт при каждом сохранении холста
   created_by uuid references users,
   updated_by uuid references users, updated_at timestamptz not null default now()
 );
@@ -135,7 +137,8 @@ create table doc_objects (
   doc_id uuid not null references docs on delete cascade,
   type obj_type not null,
   x real not null, y real not null, w real not null, h real not null,
-  text text not null default '', color smallint not null default 0
+  text text not null default '', color smallint not null default 0,
+  seq bigint generated always as identity   -- слой: объект с большим номером лежит поверх
 );
 create table doc_links (
   id uuid primary key default gen_random_uuid(),
@@ -207,8 +210,8 @@ create index on tasks (project_id, column_id, position);
 | `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
 | `GET /files?folder=&kind=&q=&wiki_page_id=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов. `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
-| `GET /docs?q=&starred=`, `POST /docs`, `GET /docs/{id}`, `PATCH /docs/{id}` (с `rev`), `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы |
-| `PUT /docs/{id}/canvas` | сохранить сразу объекты и стрелки холста (тело — полный список) |
+| `GET /docs?q=&starred=`, `POST /docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы. Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке, `null` — в конец) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
+| `PUT /docs/{id}/canvas` | сохранить сразу карточку с текстом, объекты и стрелки холста (тело — полный список, идентификаторы объектов выдаёт клиент); в одной транзакции, ответ с новой `canvas_rev` |
 | `GET /activity?actor=&kind=&before=` | лента, постранично по 50 |
 | `GET/POST/PATCH/DELETE /link-groups`, `/links` | ссылки команды |
 | `GET /healthz` | проверка живости (без токена) |
