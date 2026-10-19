@@ -13,7 +13,7 @@ export function BoardHeader() {
   const first = m.columns[0]
 
   const newTask = () => {
-    if (!first) return
+    if (!first || createTask.isPending) return
     createTask.mutate({ columnId: first.id, title: 'Новая задача' }, { onSuccess: (task) => openTask(task.id, { focusTitle: true }) })
   }
 
