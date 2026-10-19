@@ -223,6 +223,8 @@ pub struct DocDto {
     pub position: f64,
     /// Номер версии названия и текста: растёт на единицу при каждом их изменении
     pub rev: i32,
+    /// Версия холста: растёт при каждом сохранении холста, текст и название на неё не влияют
+    pub canvas_rev: i32,
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
     #[serde(with = "time::serde::rfc3339")]
@@ -243,6 +245,7 @@ impl DocDto {
             md: doc.md,
             position: doc.position,
             rev: doc.rev,
+            canvas_rev: doc.canvas_rev,
             created_by: doc.created_by,
             updated_by: doc.updated_by,
             updated_at: doc.updated_at,
@@ -263,7 +266,7 @@ pub struct DocConflictDto {
     pub current: DocDto,
 }
 
-/// Холст документа
+/// Холст документа, как его присылает клиент
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CanvasDto {
@@ -310,4 +313,15 @@ pub struct UpdateDoc {
 #[serde(deny_unknown_fields)]
 pub struct SetStar {
     pub starred: bool,
+}
+
+/// Холст после сохранения
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SavedCanvasDto {
+    /// Версия холста после этого сохранения
+    pub canvas_rev: i32,
+    pub note: NoteDto,
+    /// Снизу вверх
+    pub objects: Vec<CanvasObjectDto>,
+    pub links: Vec<CanvasLinkDto>,
 }

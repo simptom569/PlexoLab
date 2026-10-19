@@ -18,7 +18,8 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
 use super::docs_dto::{
-    CanvasDto, CreateDoc, DocConflictDto, DocDto, DocMode, DocSummaryDto, ListDocsQuery, SetStar, UpdateDoc,
+    CanvasDto, CreateDoc, DocConflictDto, DocDto, DocMode, DocSummaryDto, ListDocsQuery, SavedCanvasDto, SetStar,
+    UpdateDoc,
 };
 use crate::{
     error::{ApiError, ApiResult, ErrorBody},
@@ -293,7 +294,7 @@ async fn set_star(
     params(("id" = Uuid, Path, description = "Документ")),
     request_body = CanvasDto,
     responses(
-        (status = 200, description = "Холст после сохранения", body = CanvasDto),
+        (status = 200, description = "Холст после сохранения", body = SavedCanvasDto),
         (status = 400, description = "Холст не прошёл проверку", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 404, description = "Нет такого документа", body = ErrorBody),
@@ -304,7 +305,7 @@ async fn put_canvas(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CanvasDto>,
-) -> ApiResult<Json<CanvasDto>> {
+) -> ApiResult<Json<SavedCanvasDto>> {
     let note: Note = req.note.into();
     let objects: Vec<Object> = req.objects.into_iter().map(Into::into).collect();
     let links: Vec<docs::Link> = req.links.into_iter().map(Into::into).collect();
@@ -318,8 +319,10 @@ async fn put_canvas(
     })?;
     let saved = db::docs::objects_of(&mut *tx, &[id]).await?;
     let saved_links = db::docs::links_of(&mut *tx, id).await?;
+    let canvas_rev = db::docs::get(&mut *tx, id, auth.id).await?.ok_or(ApiError::NotFound)?.canvas_rev;
     tx.commit().await?;
-    Ok(Json(CanvasDto {
+    Ok(Json(SavedCanvasDto {
+        canvas_rev,
         note: note.into(),
         objects: saved.into_iter().map(Into::into).collect(),
         links: saved_links.into_iter().map(|(a, b)| super::docs_dto::CanvasLinkDto { a, b }).collect(),

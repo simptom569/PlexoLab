@@ -22,6 +22,8 @@ pub struct Doc {
     pub note_w: f32,
     pub position: f64,
     pub rev: i32,
+    /// Версия холста: растёт при каждом его сохранении
+    pub canvas_rev: i32,
     pub created_by: Option<Uuid>,
     pub updated_by: Option<Uuid>,
     pub updated_at: OffsetDateTime,
@@ -69,7 +71,7 @@ pub struct DocObject {
 macro_rules! select_doc {
     ($tail:literal) => {
         concat!(
-            "select d.id, d.title, d.md, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, d.rev, ",
+            "select d.id, d.title, d.md, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, d.rev, d.canvas_rev, ",
             "d.created_by, d.updated_by, d.updated_at, ",
             "exists(select 1 from doc_stars s where s.doc_id = d.id and s.user_id = $1) as starred ",
             "from docs d ",
@@ -262,7 +264,7 @@ pub enum CanvasError {
 
 /// Заменяет холст документа целиком: карточку с текстом, объекты и стрелки. Объекты, которых нет в новом списке,
 /// удаляются вместе с их стрелками, остальные обновляются на месте (слой не меняется), новые добавляются сверху.
-/// Меняет время правки и автора, но не версию текста. Проверку холста (`domain::docs::check_canvas`) делает вызывающий,
+/// Меняет время правки, автора и версию холста, но не версию текста. Проверку холста (`domain::docs::check_canvas`) делает вызывающий,
 /// транзакцию тоже: при ошибке откатывать её должен он.
 pub async fn replace_canvas(
     conn: &mut PgConnection,
@@ -319,7 +321,7 @@ pub async fn replace_canvas(
     }
 
     sqlx::query(
-        "update docs set note_x = $2, note_y = $3, note_w = $4, updated_by = $5, updated_at = now() where id = $1",
+        "update docs set note_x = $2, note_y = $3, note_w = $4, updated_by = $5, updated_at = now(), canvas_rev = canvas_rev + 1 where id = $1",
     )
     .bind(id)
     .bind(note.x)

@@ -112,6 +112,7 @@ async fn new_document_is_empty_at_revision_one_and_goes_to_the_feed(pool: PgPool
     assert_eq!(doc["md"], "");
     assert_eq!(doc["mode"], "page");
     assert_eq!(doc["rev"], 1);
+    assert_eq!(doc["canvas_rev"], 0, "холст ещё ни разу не сохраняли");
     assert_eq!(doc["starred"], false);
     assert_eq!(doc["note"], json!({ "x": 40.0, "y": 36.0, "w": 440.0 }), "карточка с текстом, как в макете");
     assert_eq!(doc["objects"], json!([]));
@@ -527,6 +528,8 @@ async fn canvas_is_saved_as_a_whole(pool: PgPool) {
     assert_eq!(open["objects"][0]["color"], 3);
     assert_eq!(open["rev"], doc["rev"], "версия текста не меняется");
     assert_eq!(open["mode"], "edge");
+    assert_eq!(saved["canvas_rev"], 1, "версия холста растёт с каждым сохранением");
+    assert_eq!(open["canvas_rev"], 1);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -592,6 +595,7 @@ async fn saving_the_canvas_touches_the_edit_time_but_not_the_revision_or_the_fee
     c.ok(r, StatusCode::OK).await;
     let after = c.open(&doc).await;
     assert_eq!(after["rev"], doc["rev"]);
+    assert_eq!(after["canvas_rev"], 1);
     let at = |v: &Value| {
         time::OffsetDateTime::parse(str_field(v, "updated_at"), &time::format_description::well_known::Rfc3339).unwrap()
     };
