@@ -9,7 +9,7 @@ create type priority   as enum ('high', 'med', 'low');
 create type work_status as enum ('plan', 'progress', 'done');       -- модули и релизы
 create type obj_type   as enum ('sticky', 'rect', 'ellipse', 'text');
 create type doc_mode   as enum ('page', 'edge');
-create type act_kind   as enum ('move', 'create', 'delete', 'comment', 'code', 'doc', 'release', 'file');
+create type act_kind   as enum ('move', 'create', 'delete', 'comment', 'code', 'doc', 'release', 'file', 'module');   -- 'module' добавлена на этапе 4 (фильтр «Модули» в ленте)
 
 create table users (
   id uuid primary key default gen_random_uuid(),
@@ -55,7 +55,8 @@ create table modules (
   lead_id uuid references users on delete set null,
   status work_status not null default 'plan',
   date_from date, date_to date,
-  note text not null default ''
+  note text not null default '',
+  seq bigint generated always as identity   -- порядок добавления (в макете модули идут так, а не по датам)
 );
 create table milestones (
   id uuid primary key default gen_random_uuid(),
@@ -196,8 +197,12 @@ create index on tasks (project_id, column_id, position);
 | `POST /tasks/{id}/subtasks`, `PATCH /subtasks/{id}`, `DELETE /subtasks/{id}` | подзадачи |
 | `POST /tasks/{id}/comments` | комментарий |
 | `POST /tasks/{id}/files` (multipart), `DELETE /files/{id}` | вложения задачи |
-| `GET/POST/PATCH/DELETE /projects/{id}/modules`, `/milestones` | модули и вехи (прогресс считается на сервере по задачам) |
-| `GET/POST/PATCH/DELETE /projects/{id}/releases`, `/releases/{id}/items` | релизы и шаги чек-листа |
+| `POST /projects/{id}/modules`, `PATCH`/`DELETE /modules/{id}` | модули (список приходит в `GET /projects/{id}/board`; `tasks_total` и `tasks_done` считает сервер, «готово» — задача в колонке с отметкой «Готово») |
+| `POST /projects/{id}/milestones`, `PATCH`/`DELETE /milestones/{id}` | вехи (в ответе тоже `tasks_total` и `tasks_done`) |
+| `GET`/`POST /projects/{id}/releases`, `PATCH`/`DELETE /releases/{id}` | релизы вместе с чек-листом; новый релиз получает четыре стандартных шага |
+| `POST /releases/{id}/items`, `PATCH`/`DELETE /release-items/{id}` | шаги чек-листа |
+
+Бэклог отдельных ручек не имеет: это задачи с `column_id = null`. Порядок меняется тем же `PATCH /tasks/{id}` (`before_id`), «На доску» — `PATCH` с `column_id` первой колонки.
 | `GET/POST/DELETE /tags` | метки |
 | `GET /wiki`, `POST /wiki`, `PATCH /wiki/{id}` (в теле `md`, `title`, `parent_id`, `rev`), `DELETE /wiki/{id}` | страницы вики |
 | `GET /files?folder=&kind=&q=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов |
