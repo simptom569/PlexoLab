@@ -10,7 +10,16 @@ use sqlx::postgres::PgPoolOptions;
 pub use sqlx;
 pub use sqlx::PgPool;
 
+pub mod activity;
+pub mod columns;
+pub mod comments;
+pub mod files;
+pub mod modules;
+pub mod projects;
 pub mod seed;
+pub mod subtasks;
+pub mod tags;
+pub mod tasks;
 pub mod tokens;
 pub mod users;
 
