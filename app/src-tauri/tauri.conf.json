@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "PlexoLab",
   "version": "0.1.0",
-  "identifier": "com.example.plexolab",
+  "identifier": "com.simptom.plexolab",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",

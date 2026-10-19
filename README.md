@@ -50,10 +50,10 @@ deploy/                       systemd, Caddyfile, postgresql.conf, бэкапы 
 
 Перед первым запуском клиента: `npm --prefix app install`.
 
-## Что нужно заменить до выпуска
+## Идентификатор и иконка
 
-- **Идентификатор приложения.** В `app/src-tauri/tauri.conf.json` стоит заглушка `com.example.plexolab`. Нужен постоянный уникальный идентификатор вида `com.<название>.plexolab`. После выпуска его менять нельзя: Windows посчитает приложение другим.
-- **Иконка.** Сейчас используется `design/icon.png` (440×440), её копия лежит в `app/src/assets/icon.png`. Для хорошего качества `.icns` и крупных размеров нужна PNG 1024×1024 с прозрачным фоном. Чтобы заменить: положить новый файл на место `design/icon.png`, скопировать его в `app/src/assets/icon.png` и выполнить `npm --prefix app run tauri icon src/assets/icon.png`. Каталоги `icons/android` и `icons/ios` после этого удалить, мобильные сборки не нужны.
+- **Идентификатор приложения:** `com.simptom.plexolab` (`app/src-tauri/tauri.conf.json`). После выпуска его менять нельзя: Windows посчитает приложение другим, настройки и вход пропадут.
+- **Иконка (временная, можно заменить).** Сейчас используется `design/icon.png` (440×440), её копия лежит в `app/src/assets/icon.png`. Для хорошего качества `.icns` и крупных размеров нужна PNG 1024×1024 с прозрачным фоном. Чтобы заменить: положить новый файл на место `design/icon.png`, скопировать его в `app/src/assets/icon.png` и выполнить `npm --prefix app run tauri icon src/assets/icon.png`. Каталоги `icons/android` и `icons/ios` после этого удалить, мобильные сборки не нужны.
 
 ## Что нужно знать заранее
 
