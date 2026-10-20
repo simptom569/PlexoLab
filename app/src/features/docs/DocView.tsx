@@ -215,6 +215,8 @@ function LoadedDoc({ doc }: { doc: Doc }) {
               onOpenUrl={(url) => void openExternal(url)}
               autoEdit={autoEdit}
               onFinish={() => void draft.flush()}
+              restore={state.restore}
+              registerProbe={draft.setActiveProbe}
             />
           </div>
         </div>

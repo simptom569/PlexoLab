@@ -6,6 +6,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
 import type { Doc, SavedCanvas } from '../../lib/api/types'
+import { notifyMerged } from '../../lib/merged-notice'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -44,6 +45,7 @@ const docDeps: DraftDeps<Doc> = {
   patch: (id, body) => api.patch<Doc>(`/docs/${id}`, body),
   onSaved: cacheDocContent,
   onError: () => useToast.getState().show(SAVE_DOC_FAILED),
+  onMerged: (theirs) => notifyMerged(theirs.updated_by),
 }
 
 const canvasDeps: CanvasDraftDeps = {
@@ -93,6 +95,8 @@ export function useDocDraft(doc: Doc) {
   const draft = docDraftFor(doc)
   const state = useSyncExternalStore(draft.subscribe, draft.getState)
   useEffect(() => draft.adopt(doc), [draft, doc])
+  // редактор после слияния уже открыл нужный блок: подсказка больше не нужна
+  useEffect(() => draft.clearRestore(), [draft, state.resetKey])
   // уходя из документа, всё несохранённое отправляется сразу
   useEffect(() => () => void draft.flush(), [draft])
   return { draft, state }

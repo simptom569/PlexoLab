@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   TOOLS,
   append,
@@ -36,7 +36,17 @@ type MarkdownEditorProps = {
   autoEdit?: boolean
   /** Редактирование закончено (Esc, Ctrl+Enter, клик в сторону): владелец сохраняет без ожидания паузы */
   onFinish?: () => void
+  /**
+   * Открыть сразу этот блок (строки `[start, end)`) и поставить курсор в `caret` (позиция в тексте блока): так редактор
+   * после слияния с чужой версией продолжает с того места, где человек печатал. Читается один раз, при показе.
+   */
+  restore?: ActiveBlock | null
+  /** Владелец просит рассказать, какой блок открыт и где курсор: нужно в момент слияния. `null` — редактор закрыт. */
+  registerProbe?: (probe: (() => ActiveBlock | null) | null) => void
 }
+
+/** Открытый блок: строки `[start, end)` и позиция курсора в его тексте */
+export type ActiveBlock = { start: number; end: number; caret: number | null }
 
 /** Активный блок и его «жетон»: растёт, когда активным становится другой блок */
 type Active = Edit & { t: number }
@@ -48,11 +58,12 @@ type State = {
 }
 
 /** Редактор markdown в стиле Obsidian (vEditor, mdView и md* в макете). Логика клавиш и вставок лежит в `lib/markdown`. */
-export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl, autoEdit, onFinish }: MarkdownEditorProps) {
-  const [state, setState] = useState<State>(() => ({
-    edit: autoEdit ? { start: 0, end: 1, t: 1 } : null,
-    caret: autoEdit ? { pos: 0 } : null,
-  }))
+export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl, autoEdit, onFinish, restore, registerProbe }: MarkdownEditorProps) {
+  const [state, setState] = useState<State>(() =>
+    restore
+      ? { edit: { start: restore.start, end: restore.end, t: 1 }, caret: { pos: restore.caret } }
+      : { edit: autoEdit ? { start: 0, end: 1, t: 1 } : null, caret: autoEdit ? { pos: 0 } : null },
+  )
   const taRef = useRef<HTMLTextAreaElement>(null)
   // Актуальное значение «прямо сейчас»: обработчики событий иногда срабатывают раньше, чем React успеет отрисовать
   const mdRef = useRef(md)
@@ -61,6 +72,17 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
     mdRef.current = md
     editRef.current = state.edit
   })
+
+  // Слияние с чужой версией спрашивает, какой блок открыт и где курсор
+  useEffect(() => {
+    if (!registerProbe) return
+    registerProbe(() => {
+      const edit = editRef.current
+      const el = taRef.current
+      return edit ? { start: edit.start, end: edit.end, caret: el ? el.selectionStart : null } : null
+    })
+    return () => registerProbe(null)
+  }, [registerProbe])
 
   // Курсор и фокус после того, как поле получило новый текст
   useLayoutEffect(() => {

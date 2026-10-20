@@ -2,13 +2,17 @@
 //
 // Сохранение идёт с задержкой (600 мс после последней правки) и сразу при выходе из редактирования. Сервер хранит
 // номер версии `rev`: каждое сохранение отправляет ту версию, которую клиент видел последней. Если страницу успел
-// изменить другой участник, сервер отвечает 409 и отдаёт его версию. Тогда сохранение останавливается, и человек
-// выбирает: взять чужую версию или оставить свою. Черновик живёт вне компонента: если уйти со страницы, не дождавшись
+// изменить другой участник, сервер отвечает 409 и отдаёт его версию. Тогда клиент пробует слить правки как в git
+// (lib/merge.ts): три версии есть, это то, что я видел последним (`saved`), мой текст и чужой. Правки в разных местах
+// склеиваются и сохраняются поверх чужой версии. Если правки пересеклись, слить нельзя: сохранение останавливается, и
+// человек выбирает: взять чужую версию или оставить свою. Черновик живёт вне компонента: если уйти со страницы, не дождавшись
 // сохранения, оно всё равно закончится, а вернувшись, человек увидит свой текст, а не старый.
 // Один и тот же класс держит и страницы вики (`WikiPage`), и документы (`Doc`): им нужны только id, название, текст и версия.
 
 import { ApiError } from '../../lib/api/client'
 import type { WikiPage } from '../../lib/api/types'
+import { mapRange, mergeText } from '../../lib/merge'
+import type { ActiveBlock } from '../../components/MarkdownEditor'
 
 /** Всё, что черновику нужно знать о странице или документе */
 export type Versioned = { id: string; title: string; md: string; rev: number }
@@ -17,14 +21,18 @@ export type Versioned = { id: string; title: string; md: string; rev: number }
 export const SAVE_DELAY_MS = 600
 /** Через сколько повторять сохранение, если сервер не ответил */
 export const RETRY_MS = 5_000
+/** Сколько раз подряд пробуем слить правки, прежде чем отдать выбор человеку: иначе двое, быстро печатающих рядом, зациклились бы */
+export const MAX_MERGES = 3
 
 export type DraftState<P extends Versioned = WikiPage> = {
   title: string
   md: string
   /** Чужая версия, если страницу успели изменить; пока она есть, ничего не сохраняется */
   conflict: P | null
-  /** Растёт, когда текст заменили снаружи (чужая версия): редактор должен начаться заново */
+  /** Растёт, когда текст заменили снаружи (чужая версия, слияние): редактор должен начаться заново */
   resetKey: number
+  /** После слияния: какой блок открыть в новом редакторе и где поставить курсор, чтобы человек продолжил печатать */
+  restore: ActiveBlock | null
 }
 
 export type DraftDeps<P extends Versioned = WikiPage> = {
@@ -34,6 +42,8 @@ export type DraftDeps<P extends Versioned = WikiPage> = {
   onSaved: (page: P) => void
   /** Сохранить не вышло: сообщить человеку (повтор запланирован) */
   onError: () => void
+  /** Мои правки склеены с чужой версией `theirs`: сообщить человеку */
+  onMerged?: (theirs: P) => void
 }
 
 const isConflict = <P extends Versioned>(e: unknown): e is ApiError & { body: { current: P } } =>
@@ -50,6 +60,9 @@ export class PageDraft<P extends Versioned = WikiPage> {
   private md: string
   private conflict: P | null = null
   private resetKey = 0
+  private restore: ActiveBlock | null = null
+  private merges = 0
+  private probe: (() => ActiveBlock | null) | null = null
   private inFlight = false
   private disposed = false
   private again = false
@@ -76,6 +89,18 @@ export class PageDraft<P extends Versioned = WikiPage> {
   }
 
   getState = (): DraftState<P> => this.snapshot
+
+  /** Редактор сообщает, как узнать открытый блок и курсор; `null` — редактор закрыт */
+  setActiveProbe = (probe: (() => ActiveBlock | null) | null) => {
+    this.probe = probe
+  }
+
+  /** Редактор открыл блок из `restore`: больше он не нужен (иначе вернувшись на страницу, редактор открыл бы его снова) */
+  clearRestore() {
+    if (!this.restore) return
+    this.restore = null
+    this.snapshot = this.build()
+  }
 
   /** Есть ли то, что ещё не ушло на сервер */
   get dirty(): boolean {
@@ -135,6 +160,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     if (!theirs) return
     this.rev = theirs.rev
     this.conflict = null
+    this.merges = 0
     this.changed()
     void this.flush()
   }
@@ -142,7 +168,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
   // ----- внутреннее -----
 
   private build(): DraftState<P> {
-    return { title: this.title, md: this.md, conflict: this.conflict, resetKey: this.resetKey }
+    return { title: this.title, md: this.md, conflict: this.conflict, resetKey: this.resetKey, restore: this.restore }
   }
 
   private changed() {
@@ -163,8 +189,46 @@ export class PageDraft<P extends Versioned = WikiPage> {
     this.saved = { title: page.title, md: page.md }
     this.title = page.title
     this.md = page.md
+    this.merges = 0
+    this.restore = null
     if (textChanged) this.resetKey++
     this.changed()
+  }
+
+  /**
+   * Пробует слить мои правки с чужой версией. Получилось: в черновике уже общий текст, версия чужая, и сохранение
+   * идёт сразу. Не получилось (правки пересеклись): ничего не меняется, человек выбирает сам.
+   */
+  private merge(theirs: P): boolean {
+    if (this.merges >= MAX_MERGES) return false
+    // название: меняла одна сторона, значит берётся её значение; обе по-разному — выбор человека
+    const mineTitle = this.title.trim()
+    let title: string
+    if (mineTitle === this.saved.title) title = theirs.title
+    else if (theirs.title === this.saved.title || theirs.title === mineTitle) title = this.title
+    else return false
+    const merged = mergeText(this.saved.md, this.md, theirs.md)
+    if (!merged) return false
+
+    const active = this.probe?.() ?? null
+    const moved = active && mapRange(merged.map, active.start, active.end)
+    const textChanged = merged.md !== this.md
+    // что-то моё осталось поверх чужого: об этом стоит сказать; если моё уже было в чужой версии, объединять нечего
+    const combined = merged.md !== theirs.md || title !== theirs.title
+
+    this.merges++
+    this.rev = theirs.rev
+    this.saved = { title: theirs.title, md: theirs.md }
+    this.title = title
+    this.md = merged.md
+    if (textChanged) {
+      this.resetKey++
+      this.restore = moved && active ? { start: moved.start, end: moved.end, caret: active.caret } : null
+    }
+    this.changed()
+    this.again = true // сохранить объединённое сразу после текущего запроса
+    if (combined) this.deps.onMerged?.(theirs)
+    return true
   }
 
   /** Что отправить: только изменённое. Название сравнивается без пробелов по краям, их срезает сервер. */
@@ -190,8 +254,10 @@ export class PageDraft<P extends Versioned = WikiPage> {
       this.saveSucceeded(page, body)
     } catch (e) {
       if (isConflict<P>(e)) {
-        this.conflict = e.body.current
-        this.changed()
+        if (!this.merge(e.body.current)) {
+          this.conflict = e.body.current
+          this.changed()
+        }
       } else if (e instanceof ApiError && e.status === 404) {
         // страницу удалил другой участник: сохранять некуда, повторы и плашка с ошибкой были бы бесконечными
         this.dispose()
@@ -212,6 +278,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
 
   private saveSucceeded(page: P, sent: { title?: string; md?: string }) {
     this.rev = page.rev
+    this.merges = 0
     let replaced = false
     // отправленное поле теперь известно как есть на сервере; не отправленное, если его не трогали, подтягивается с сервера
     if (sent.title !== undefined) this.saved.title = page.title

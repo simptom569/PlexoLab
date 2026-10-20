@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api/client'
 import type { WikiPage } from '../../lib/api/types'
-import { PageDraft, RETRY_MS, SAVE_DELAY_MS, type DraftDeps } from './draft'
+import { MAX_MERGES, PageDraft, RETRY_MS, SAVE_DELAY_MS, type DraftDeps } from './draft'
 
 const page = (o: Partial<WikiPage> = {}): WikiPage => ({
   id: 'p1',
@@ -41,6 +41,7 @@ function setup(initial: WikiPage = page()) {
     }),
     onSaved: vi.fn(),
     onError: vi.fn(),
+    onMerged: vi.fn(),
   }
   const draft = new PageDraft(initial, deps)
   return {
@@ -205,6 +206,152 @@ describe('конфликт версий', () => {
     expect(t.server.page).toMatchObject({ rev: 3, md: 'Мой текст', title: 'Название соседа' })
     expect(t.draft.getState().conflict).toBeNull()
     expect(t.draft.getState().title).toBe('Название соседа')
+  })
+})
+
+describe('слияние при конфликте', () => {
+  const three = 'Первый\n\nВторой\n\nТретий'
+
+  it('правки в разных местах склеиваются и уходят на сервер поверх чужой версии', async () => {
+    const t = setup(page({ md: three }))
+    t.server.page = page({ rev: 2, md: 'Первый\n\nВторой\n\nТретий (сосед)' })
+    t.draft.setMd('Первый (я)\n\nВторой\n\nТретий')
+    await t.draft.flush()
+
+    expect(t.calls.map((c) => c.rev)).toEqual([1, 2])
+    expect(t.server.page).toMatchObject({ rev: 3, md: 'Первый (я)\n\nВторой\n\nТретий (сосед)' })
+    const s = t.draft.getState()
+    expect(s).toMatchObject({ md: 'Первый (я)\n\nВторой\n\nТретий (сосед)', conflict: null })
+    expect(s.resetKey, 'текст в редакторе заменился: он начинается заново').toBe(1)
+    expect(t.draft.dirty).toBe(false)
+    expect(t.deps.onMerged).toHaveBeenCalledTimes(1)
+    expect(t.deps.onMerged).toHaveBeenCalledWith(expect.objectContaining({ rev: 2 }))
+    expect(t.deps.onError).not.toHaveBeenCalled()
+  })
+
+  it('правки пересеклись: баннер, ничего не склеено и не сохранено', async () => {
+    const t = setup(page({ md: three }))
+    t.server.page = page({ rev: 2, md: 'Первый (сосед)\n\nВторой\n\nТретий' })
+    t.draft.setMd('Первый (я)\n\nВторой\n\nТретий')
+    await t.draft.flush()
+
+    expect(t.draft.getState().conflict).toMatchObject({ rev: 2, md: 'Первый (сосед)\n\nВторой\n\nТретий' })
+    expect(t.draft.getState()).toMatchObject({ md: 'Первый (я)\n\nВторой\n\nТретий', resetKey: 0 })
+    expect(t.calls).toHaveLength(1)
+    expect(t.deps.onMerged).not.toHaveBeenCalled()
+  })
+
+  it('мои правки уже есть в чужой версии: сохранять нечего, уведомления нет', async () => {
+    const t = setup(page({ md: three }))
+    t.server.page = page({ rev: 2, md: 'Первый (общий)\n\nВторой\n\nТретий' })
+    t.draft.setMd('Первый (общий)\n\nВторой\n\nТретий')
+    await t.draft.flush()
+
+    expect(t.calls).toHaveLength(1)
+    expect(t.draft.getState()).toMatchObject({ conflict: null, md: 'Первый (общий)\n\nВторой\n\nТретий' })
+    expect(t.draft.dirty).toBe(false)
+    expect(t.deps.onMerged).not.toHaveBeenCalled()
+  })
+
+  it('название поменял только сосед, текст только я: оба на месте', async () => {
+    const t = setup()
+    t.server.page = page({ rev: 2, title: 'Новое название' })
+    t.draft.setMd('Мой текст')
+    await t.draft.flush()
+
+    expect(t.calls.at(-1)).toEqual({ rev: 2, md: 'Мой текст' })
+    expect(t.server.page).toMatchObject({ rev: 3, title: 'Новое название', md: 'Мой текст' })
+    expect(t.draft.getState()).toMatchObject({ title: 'Новое название', md: 'Мой текст', conflict: null })
+  })
+
+  it('название поменял только я, текст только сосед: оба на месте', async () => {
+    const t = setup()
+    t.server.page = page({ rev: 2, md: 'Текст соседа' })
+    t.draft.setTitle('Моё название')
+    await t.draft.flush()
+
+    expect(t.calls.at(-1)).toEqual({ rev: 2, title: 'Моё название' })
+    expect(t.server.page).toMatchObject({ rev: 3, title: 'Моё название', md: 'Текст соседа' })
+    expect(t.draft.getState().md).toBe('Текст соседа')
+  })
+
+  it('названия разошлись: баннер', async () => {
+    const t = setup()
+    t.server.page = page({ rev: 2, title: 'Название соседа' })
+    t.draft.setTitle('Моё название')
+    await t.draft.flush()
+    expect(t.draft.getState().conflict).toMatchObject({ rev: 2 })
+    expect(t.calls).toHaveLength(1)
+  })
+
+  it(`не больше ${MAX_MERGES} слияний подряд: потом баннер`, async () => {
+    const calls: Body[] = []
+    let n = 1
+    const deps: DraftDeps = {
+      // сосед успевает сохраниться между каждой моей попыткой
+      patch: vi.fn(async (_id, body) => {
+        calls.push(body)
+        n++
+        throw new ApiError(409, 'conflict', 'Страницу изменил другой участник', {
+          code: 'conflict',
+          current: page({ rev: n, md: `Первый
+
+Второй
+
+Третий ${n}` }),
+        })
+      }),
+      onSaved: vi.fn(),
+      onError: vi.fn(),
+      onMerged: vi.fn(),
+    }
+    const draft = new PageDraft(page({ md: three }), deps)
+    draft.setMd('Первый (я)\n\nВторой\n\nТретий')
+    await draft.flush()
+
+    expect(calls).toHaveLength(MAX_MERGES + 1)
+    expect(draft.getState().conflict).toMatchObject({ rev: MAX_MERGES + 2 })
+    expect(deps.onMerged).toHaveBeenCalledTimes(MAX_MERGES)
+  })
+
+  it('открытый блок и курсор переезжают вместе с текстом', async () => {
+    const t = setup(page({ md: three }))
+    // я печатаю в третьем абзаце (строка 4), курсор после трёх букв
+    t.draft.setActiveProbe(() => ({ start: 4, end: 5, caret: 3 }))
+    t.server.page = page({ rev: 2, md: 'Новый\n\nПервый\n\nВторой\n\nТретий' })
+    t.draft.setMd('Первый\n\nВторой\n\nТретий (я)')
+    await t.draft.flush()
+
+    expect(t.draft.getState().md).toBe('Новый\n\nПервый\n\nВторой\n\nТретий (я)')
+    expect(t.draft.getState().restore).toEqual({ start: 6, end: 7, caret: 3 })
+
+    t.draft.clearRestore()
+    expect(t.draft.getState().restore, 'редактор открыл блок: больше он не нужен').toBeNull()
+  })
+
+  it('редактор закрыт: восстанавливать нечего', async () => {
+    const t = setup(page({ md: three }))
+    t.draft.setActiveProbe(() => null)
+    t.server.page = page({ rev: 2, md: 'Новый\n\nПервый\n\nВторой\n\nТретий' })
+    t.draft.setMd('Первый\n\nВторой\n\nТретий (я)')
+    await t.draft.flush()
+    expect(t.draft.getState().restore).toBeNull()
+    expect(t.draft.getState().resetKey).toBe(1)
+  })
+
+  it('«Загрузить его версию» после слияния не оставляет старый блок', async () => {
+    const t = setup(page({ md: three }))
+    t.draft.setActiveProbe(() => ({ start: 4, end: 5, caret: 0 }))
+    t.server.page = page({ rev: 2, md: 'Новый\n\nПервый\n\nВторой\n\nТретий' })
+    t.draft.setMd('Первый\n\nВторой\n\nТретий (я)')
+    await t.draft.flush()
+    expect(t.draft.getState().restore).not.toBeNull()
+
+    t.server.page = page({ rev: 4, md: 'Другое' })
+    t.draft.adopt(t.server.page)
+    t.draft.setMd('Чужое\n\nВторой\n\nТретий')
+    await t.draft.flush()
+    expect(t.draft.getState().restore).toBeNull()
   })
 })
 
