@@ -12,7 +12,7 @@ import { BoardSection } from './sections/BoardSection'
 import { DataSection } from './sections/DataSection'
 import { HotkeysSection } from './sections/HotkeysSection'
 import { ServerSection } from './sections/ServerSection'
-import { useDialogFocus } from './useDialogFocus'
+import { useDialogFocus } from '../../lib/useDialogFocus'
 
 type SectionProps = { connection: ConnectionStatus }
 
