@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { ThemeRoot } from '../../components/AppShell'
 import { BrandIcon } from '../../components/Brand'
-import { useUi } from '../../lib/ui-store'
+import { useDark } from '../../lib/useDark'
 
 type AuthLayoutProps = {
   title: string
@@ -12,7 +12,7 @@ type AuthLayoutProps = {
 
 /** Экраны до входа: карточка по центру на фоне приложения. Тема та же, что выбрана в приложении. */
 export function AuthLayout({ title, hint, children }: AuthLayoutProps) {
-  const dark = useUi((s) => s.theme === 'dark')
+  const dark = useDark()
   return (
     <ThemeRoot dark={dark}>
       <main className="main" style={{ alignItems: 'center', justifyContent: 'center' }}>

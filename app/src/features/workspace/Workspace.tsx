@@ -8,6 +8,7 @@ import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
+import { useDark } from '../../lib/useDark'
 import { SettingsModal } from '../settings/SettingsModal'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
@@ -39,10 +40,11 @@ export function Workspace() {
   const user = useSession((s) => s.user)
   const logout = useSession((s) => s.logout)
   const serverUrl = useSession((s) => s.serverUrl)
-  const { page, project, theme, menu, settingsTab, setPage, setProject, toggleTheme, toggleMenu, closeMenus, openSettings } = useUi()
+  const { page, project, menu, settingsTab, live, setPage, setProject, toggleTheme, toggleMenu, closeMenus, openSettings } = useUi()
+  const dark = useDark()
   const projects = useProjects()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
-  const connection = useRealtime(queryClient)
+  const connection = useRealtime(queryClient, live)
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
 
@@ -61,6 +63,9 @@ export function Workspace() {
     [list],
   )
 
+  // Окно настроек не должно пережить рабочее пространство: после выхода или потери входа оно не откроется само при следующем входе
+  useEffect(() => () => useUi.getState().closeSettings(), [])
+
   // Esc закрывает открытое меню
   useEffect(() => {
     if (!menu) return
@@ -78,7 +83,7 @@ export function Workspace() {
 
   return (
     <AppShell
-      dark={theme === 'dark'}
+      dark={dark}
       menuOpen={menu !== null}
       onCloseMenus={closeMenus}
       overlay={
@@ -99,14 +104,14 @@ export function Workspace() {
           user={{ name: user.name, role: user.role, tone: user.tone, email: user.email }}
           userMenuOpen={menu === 'user'}
           onToggleUserMenu={() => toggleMenu('user')}
-          dark={theme === 'dark'}
+          dark={dark}
           onToggleTheme={toggleTheme}
           onOpenSettings={(trigger) => {
             settingsOpener.current = trigger
             openSettings()
           }}
           serverUrl={serverUrl}
-          connection={connection}
+          connection={live ? connection : undefined}
           onLogout={() => {
             closeMenus() // иначе после следующего входа меню осталось бы открытым
             void logout()

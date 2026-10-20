@@ -8,6 +8,18 @@ import { readSettings, writeSettings } from './platform/storage'
 export const VIEWS = ['board', 'list', 'table', 'cal', 'gantt'] as const
 export type View = (typeof VIEWS)[number]
 
+/** Тема: светлая, тёмная или как в системе (следует настройке Windows) */
+export const THEMES = ['light', 'dark', 'system'] as const
+export type Theme = (typeof THEMES)[number]
+
+/** Полосы прокрутки: видны всегда, появляются при наведении и прокрутке, не видны совсем (прокрутка колесом работает) */
+export const SCROLLBAR_MODES = ['visible', 'quiet', 'hidden'] as const
+export type ScrollbarMode = (typeof SCROLLBAR_MODES)[number]
+
+/** С какого дня начинается неделя в календаре и диаграмме Ганта */
+export const WEEK_STARTS = ['mon', 'sun'] as const
+export type WeekStart = (typeof WEEK_STARTS)[number]
+
 export const DUE_FILTERS = ['any', 'overdue', 'week', 'none'] as const
 export type DueFilter = (typeof DUE_FILTERS)[number]
 
@@ -42,7 +54,11 @@ export const DEFAULT_DISPLAY: Display = { who: true, due: true, tags: true, prio
 export const settingsSchema = z.object({
   serverUrl: z.string().nullable().catch(null),
   lastEmail: z.string().catch(''),
-  theme: z.enum(['light', 'dark']).catch('light'),
+  theme: z.enum(THEMES).catch('light'),
+  scrollbars: z.enum(SCROLLBAR_MODES).catch('visible'),
+  weekStart: z.enum(WEEK_STARTS).catch('mon'),
+  /** Чужие изменения приходят по WebSocket; выключено — данные обновляются только при открытии экранов */
+  live: z.boolean().catch(true),
   page: z.enum(PAGE_IDS).catch('board'),
   project: z.string().nullable().catch(null),
   view: z.enum(VIEWS).catch('board'),

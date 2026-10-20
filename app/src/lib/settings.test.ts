@@ -10,6 +10,9 @@ describe('parseSettings', () => {
       serverUrl: null,
       lastEmail: '',
       theme: 'light',
+      scrollbars: 'visible',
+      weekStart: 'mon',
+      live: true,
       page: 'board',
       project: null,
       view: 'board',
@@ -21,6 +24,16 @@ describe('parseSettings', () => {
       actWho: 'all',
       actKind: 'all',
     })
+  })
+
+  it('тема «как в системе», полосы прокрутки, первый день недели и живые обновления хранятся', () => {
+    const s = parseSettings({ theme: 'system', scrollbars: 'quiet', weekStart: 'sun', live: false })
+    expect(s).toMatchObject({ theme: 'system', scrollbars: 'quiet', weekStart: 'sun', live: false })
+  })
+
+  it('мусор в этих настройках заменяется значением по умолчанию', () => {
+    const s = parseSettings({ theme: 'auto', scrollbars: 'thin', weekStart: 'tue', live: 'yes' })
+    expect(s).toMatchObject({ theme: 'light', scrollbars: 'visible', weekStart: 'mon', live: true })
   })
 
   it('фильтры ленты активности хранятся, мусор заменяется на «все»', () => {

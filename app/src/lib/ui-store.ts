@@ -1,12 +1,27 @@
 import { create } from 'zustand'
 import type { PageId } from './pages'
 import type { SettingsTab } from './settings-tabs'
-import { DEFAULT_SETTINGS, EMPTY_FILTERS, saveSettings, type Display, type DisplayKey, type DueFilter, type Filters, type Settings, type View } from './settings'
+import {
+  DEFAULT_DISPLAY,
+  DEFAULT_SETTINGS,
+  EMPTY_FILTERS,
+  saveSettings,
+  type Display,
+  type DisplayKey,
+  type DueFilter,
+  type Filters,
+  type ScrollbarMode,
+  type Settings,
+  type Theme,
+  type View,
+  type WeekStart,
+} from './settings'
+import { resolveDark } from './theme'
 
-export type Theme = Settings['theme']
+export type { Theme }
 
-type Persisted = Pick<Settings, 'theme' | 'page' | 'project' | 'view' | 'filters' | 'display'>
-const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'page', 'project', 'view', 'filters', 'display']
+type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'page' | 'project' | 'view' | 'filters' | 'display'>
+const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'page', 'project', 'view', 'filters', 'display']
 
 // Локальное состояние интерфейса. Часть сохраняется на диск (см. PERSISTED_KEYS), остальное живёт, пока открыто окно.
 type UiState = Persisted & {
@@ -27,7 +42,12 @@ type UiState = Persisted & {
   setPage: (page: PageId) => void
   setProject: (project: string) => void
   setView: (view: View) => void
+  /** Быстрое переключение из меню пользователя: на противоположную той, что видна сейчас */
   toggleTheme: () => void
+  setTheme: (theme: Theme) => void
+  setScrollbars: (mode: ScrollbarMode) => void
+  setWeekStart: (start: WeekStart) => void
+  setLive: (live: boolean) => void
   toggleMenu: (menu: string) => void
   closeMenus: () => void
   openSettings: (tab?: SettingsTab) => void
@@ -46,10 +66,15 @@ type UiState = Persisted & {
   setFilters: (filters: Filters) => void
   clearFilters: () => void
   toggleDisplay: (key: DisplayKey) => void
+  /** Поиск, фильтры, вид задач и «Отображение» карточки: к значениям по умолчанию */
+  resetView: () => void
 }
 
 export const useUi = create<UiState>()((set) => ({
   theme: DEFAULT_SETTINGS.theme,
+  scrollbars: DEFAULT_SETTINGS.scrollbars,
+  weekStart: DEFAULT_SETTINGS.weekStart,
+  live: DEFAULT_SETTINGS.live,
   page: DEFAULT_SETTINGS.page,
   project: DEFAULT_SETTINGS.project,
   view: DEFAULT_SETTINGS.view,
@@ -66,7 +91,11 @@ export const useUi = create<UiState>()((set) => ({
   setPage: (page) => set({ page, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setProject: (project) => set({ project, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setView: (view) => set({ view, menu: null }),
-  toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark', menu: null })),
+  toggleTheme: () => set((s) => ({ theme: resolveDark(s.theme) ? 'light' : 'dark', menu: null })),
+  setTheme: (theme) => set({ theme }),
+  setScrollbars: (scrollbars) => set({ scrollbars }),
+  setWeekStart: (weekStart) => set({ weekStart }),
+  setLive: (live) => set({ live }),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
   openSettings: (tab = 'account') => set({ settingsTab: tab, menu: null }),
@@ -89,11 +118,22 @@ export const useUi = create<UiState>()((set) => ({
   setFilters: (filters) => set({ filters }),
   clearFilters: () => set({ filters: { who: [], prio: [], tag: [], module: [], due: 'any' }, q: '' }),
   toggleDisplay: (key) => set((s) => ({ display: { ...s.display, [key]: !s.display[key] } as Display })),
+  resetView: () => set({ view: DEFAULT_SETTINGS.view, filters: EMPTY_FILTERS, display: DEFAULT_DISPLAY, q: '', menu: null }),
 }))
 
 /** Подставляет сохранённые настройки при запуске */
 export function hydrateUi(settings: Settings): void {
-  useUi.setState({ theme: settings.theme, page: settings.page, project: settings.project, view: settings.view, filters: settings.filters, display: settings.display })
+  useUi.setState({
+    theme: settings.theme,
+    scrollbars: settings.scrollbars,
+    weekStart: settings.weekStart,
+    live: settings.live,
+    page: settings.page,
+    project: settings.project,
+    view: settings.view,
+    filters: settings.filters,
+    display: settings.display,
+  })
 }
 
 // Изменения сохранённых полей уходят на диск

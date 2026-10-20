@@ -3,7 +3,8 @@
   не менялся.
 
   - Движок везде Chromium/WebKit (WebView2 в Tauri), поэтому ::-webkit-scrollbar. Свойства scrollbar-color и
-    scrollbar-width здесь нельзя: Chromium тогда игнорирует ::-webkit-scrollbar целиком.
+    scrollbar-width для оформления здесь нельзя: Chromium тогда игнорирует ::-webkit-scrollbar целиком. Исключение
+    только режим «Скрытые», где полоса и нужна выключенной.
   - Полоса 12 px, ползунок виден как капсула 6 px: прозрачная рамка 3 px + background-clip. При наведении рамка
     уменьшается до 2 px, и ползунок утолщается до 8 px. Кнопок-стрелок нет, дорожка прозрачная.
   - Цвета те же, что у рамок и подписей макета: --line-strong, при наведении --muted, при перетаскивании --accent.
@@ -52,6 +53,36 @@
   border-radius: 999px;
   background-color: var(--sb-thumb);
   background-clip: padding-box;
+}
+
+/*
+  Режимы из настроек (атрибут data-scrollbars на <html> ставит lib/scrollbars.ts).
+
+  - «Скрытые»: полосы нет совсем и места она не занимает, колесо мыши и тачпад листают как обычно.
+  - «Тихие»: ползунок прозрачный. Появляется, когда курсор над прокручиваемым блоком (data-scroll-hover) или блок только
+    что прокрутили (data-scrolling, держится меньше секунды); обе пометки ставит lib/scrollbars.ts. У окна полоса
+    появляется при прокрутке и когда курсор над самим ползунком: курсор почти всегда где-то над окном, и «наведение на
+    окно» сделало бы полосу постоянной.
+
+  Порядок важен. :hover и :active в правилах полосы Chromium считает только для самого ползунка и только в правилах без
+  предка (с «:root[...] » перед ними они молча не срабатывают), поэтому они общие и идут последними. Чтобы правила
+  «тихих» их не перебивали, у них нулевой вес (:where), а не повышенный.
+*/
+:root[data-scrollbars='hidden'],
+:root[data-scrollbars='hidden'] * {
+  scrollbar-width: none;
+}
+
+:root[data-scrollbars='hidden'] ::-webkit-scrollbar {
+  display: none;
+}
+
+:where(:root[data-scrollbars='quiet']) ::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+:where(:root[data-scrollbars='quiet']) :is([data-scroll-hover], [data-scrolling])::-webkit-scrollbar-thumb {
+  background-color: var(--sb-thumb);
 }
 
 ::-webkit-scrollbar-thumb:hover {
