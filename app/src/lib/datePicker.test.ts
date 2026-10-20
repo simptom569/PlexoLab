@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { addMonths, isIsoDate, moveCursor, pickerDays } from './datePicker'
+import { addMonths, finishDateEdit, isIsoDate, moveCursor, pickerDays } from './datePicker'
+
+describe('конец ввода в поле даты', () => {
+  it('новая полная дата сохраняется', () => {
+    expect(finishDateEdit('2026-10-10', false, '2026-10-23', true)).toEqual({ kind: 'save', value: '2026-10-10' })
+    expect(finishDateEdit('2026-10-10', false, '2026-10-23', false)).toEqual({ kind: 'save', value: '2026-10-10' })
+    expect(finishDateEdit('2026-10-10', false, '', true)).toEqual({ kind: 'save', value: '2026-10-10' })
+  })
+
+  it('та же дата: ничего не отправляется', () => {
+    expect(finishDateEdit('2026-10-23', false, '2026-10-23', true)).toEqual({ kind: 'keep' })
+    expect(finishDateEdit('', false, '', true)).toEqual({ kind: 'keep' })
+  })
+
+  it('недописанная дата возвращает прежнюю, а не стирает', () => {
+    expect(finishDateEdit('', true, '2026-10-23', true)).toEqual({ kind: 'revert' })
+    expect(finishDateEdit('', true, '', true)).toEqual({ kind: 'revert' })
+  })
+
+  it('пустое поле стирает дату только там, где её может не быть', () => {
+    expect(finishDateEdit('', false, '2026-10-23', true)).toEqual({ kind: 'save', value: '' })
+    expect(finishDateEdit('', false, '2026-10-23', false)).toEqual({ kind: 'revert' })
+  })
+})
 
 describe('календарик в поле даты', () => {
   it('isIsoDate: только настоящие даты', () => {

@@ -6,6 +6,20 @@ import type { WeekStart } from './settings'
 /** Настоящая дата `ГГГГ-ММ-ДД` (30 февраля и пустая строка — нет) */
 export const isIsoDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && iso(toMs(s)) === s
 
+export type DateEdit = { kind: 'keep' } | { kind: 'revert' } | { kind: 'save'; value: string }
+
+/**
+ * Что делать с полем даты, когда человек закончил его править (ушёл из поля, нажал Enter).
+ * `typed` — значение поля (пусто и при неполной дате), `incomplete` — введена только часть даты (`validity.badInput`),
+ * `saved` — то, что сохранено. Пустое поле — это «стереть дату», но только там, где даты может не быть.
+ */
+export function finishDateEdit(typed: string, incomplete: boolean, saved: string, clearable: boolean): DateEdit {
+  if (incomplete) return { kind: 'revert' }
+  if (typed === saved) return { kind: 'keep' }
+  if (typed === '' && !clearable) return { kind: 'revert' }
+  return { kind: 'save', value: typed }
+}
+
 export interface PickerDay {
   date: string
   num: number

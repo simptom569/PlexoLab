@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type KeyboardEvent, type RefObject } from 'react'
 import { cx } from '../lib/cx'
 import { MONF, MONTHS_GEN, weekdays } from '../lib/date'
-import { isIsoDate, moveCursor, pickerDays, addMonths } from '../lib/datePicker'
+import { addMonths, finishDateEdit, isIsoDate, moveCursor, pickerDays } from '../lib/datePicker'
 import { useDialogFocus } from '../lib/useDialogFocus'
+import { useDraft } from '../lib/useDraft'
 import { useToday } from '../lib/useToday'
 import { useUi } from '../lib/ui-store'
 import { Button, IconButton } from './Button'
@@ -156,23 +157,45 @@ type DateFieldProps = Omit<ComponentProps<'input'>, 'type' | 'value' | 'onChange
 /**
  * Поле с датой (.inp type="date") и своим календариком вместо окошка браузера, которое не поддаётся оформлению.
  * Ввод с клавиатуры по частям даты остаётся родным, значение то же `ГГГГ-ММ-ДД`.
+ *
+ * Пока дату печатают, поле живёт своим черновиком, а `onChange` вызывается, когда ввод закончен: при уходе из поля, по
+ * Enter или выборе дня в календарике. Иначе каждая цифра уходила бы наверх, а значение возвращалось бы с задержкой, и
+ * запись в поле посреди ввода заставляла бы браузер забыть первую цифру («1», «0» читались бы как два отдельных числа,
+ * а «0» как начало нового, то есть неполная дата, и поле стиралось).
  */
-export function DateField({ value, onChange, clearable = false, style, ...rest }: DateFieldProps) {
+export function DateField({ value, onChange, clearable = false, style, onBlur, onKeyDown, ...rest }: DateFieldProps) {
   const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useDraft(value)
   const field = useRef<HTMLSpanElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
   const close = useCallback(() => setOpen(false), [])
+
+  const finish = (el: HTMLInputElement) => {
+    const edit = finishDateEdit(el.value, el.validity.badInput, value, clearable)
+    if (edit.kind === 'save') onChange(edit.value)
+    else if (edit.kind === 'revert') {
+      // недописанные части даты браузер хранит сам: черновик мог совпасть с прежним значением, и React поле не трогает
+      setDraft(value)
+      el.value = value
+    }
+  }
 
   return (
     <span className="dp-field" ref={field}>
       <Input
         {...rest}
         type="date"
-        value={value}
+        value={draft}
         style={{ ...style, paddingRight: 30 }}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => {
+          finish(e.currentTarget)
+          onBlur?.(e)
+        }}
         onKeyDown={(e) => {
-          rest.onKeyDown?.(e)
+          onKeyDown?.(e)
+          // Enter, как в текстовых полях, заканчивает ввод
+          if (e.key === 'Enter') e.currentTarget.blur()
           // Как у родного поля: Alt+↓ и F4 открывают календарик
           if ((e.altKey && e.key === 'ArrowDown') || e.key === 'F4') {
             e.preventDefault()
@@ -195,10 +218,11 @@ export function DateField({ value, onChange, clearable = false, style, ...rest }
         <DatePopup
           anchor={field}
           opener={opener}
-          value={value}
+          value={draft}
           clearable={clearable}
           onPick={(next) => {
-            onChange(next)
+            setDraft(next)
+            if (next !== value) onChange(next)
             close()
           }}
           onClose={close}
