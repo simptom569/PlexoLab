@@ -1,0 +1,65 @@
+/*
+  Дополнение к макету, по просьбе владельца: свои полосы прокрутки вместо системных. styles.css (копия макета)
+  не менялся.
+
+  - Движок везде Chromium/WebKit (WebView2 в Tauri), поэтому ::-webkit-scrollbar. Свойства scrollbar-color и
+    scrollbar-width здесь нельзя: Chromium тогда игнорирует ::-webkit-scrollbar целиком.
+  - Полоса 12 px, ползунок виден как капсула 6 px: прозрачная рамка 3 px + background-clip. При наведении рамка
+    уменьшается до 2 px, и ползунок утолщается до 8 px. Кнопок-стрелок нет, дорожка прозрачная.
+  - Цвета те же, что у рамок и подписей макета: --line-strong, при наведении --muted, при перетаскивании --accent.
+  - Полоса окна лежит снаружи .app, а переменные темы объявлены на .app, поэтому для неё значения заданы на :root.
+    Тёмная тема находится через :has(.app.dark). Значения скопированы из styles.css (--line-strong, --muted,
+    --accent, --bg для дорожки окна); вложенные блоки (меню, панель задачи, канбан, холст, таблицы, код) берут их
+    наследованием.
+  - Дорожку окна красим не через html::-webkit-scrollbar-track: Chromium для полосы окна берёт стиль не с html, и
+    правило молча не срабатывает (под полосой оставалось белое полотно). Вместо этого фон :root в цвет --bg, а
+    дорожка везде прозрачная. Видимых изменений больше нет: .app и так занимает всё окно со своим --bg.
+*/
+:root {
+  --sb-thumb: #C3C8D3;
+  --sb-thumb-hover: #586072;
+  --sb-thumb-active: #3355E0;
+  --sb-root-bg: #F3F4F7;
+  background: var(--sb-root-bg);
+}
+
+:root:has(.app.dark) {
+  --sb-thumb: #3A4150;
+  --sb-thumb-hover: #9AA3B5;
+  --sb-thumb-active: #8FA5FF;
+  --sb-root-bg: #0E1014;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+::-webkit-scrollbar-thumb {
+  min-width: 40px;
+  min-height: 40px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: var(--sb-thumb);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  border-width: 2px;
+  background-color: var(--sb-thumb-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  border-width: 2px;
+  background-color: var(--sb-thumb-active);
+}
