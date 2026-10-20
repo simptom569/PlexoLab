@@ -1,0 +1,187 @@
+/*
+  Дополнение к макету, по просьбе владельца: окно «Настройки» (модалка с категориями слева) и тумблер. В макете их нет,
+  поэтому всё собрано из его деталей; styles.css (копия макета) не менялся.
+
+  - Окно: фон --surface, рамка --line, скругление 16px и тень как у .pop/.sheet. Заголовок категории и шапка строк берутся
+    у панели задачи: .dr-body (отступы и прокрутка), .dr-title (22px), .sec-title (14px), .fields/.f-row (форма).
+  - Слева пункты .nav (как в боковом меню), справа строки «название и пояснение / элемент управления».
+  - z-index 70 (подложка) и 75 (окно): выше панели задачи (60), ниже уведомлений (80).
+  - Тумблер: дорожка --line-strong, включённый --accent; ползунок --surface и --accent-ink. Переходов нет, как и во всём макете.
+  - Ниже 720px категории переносятся над содержимым в одну строку с прокруткой.
+*/
+.scrim.set-scrim {
+  z-index: 70;
+}
+
+.set-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(880px, calc(100vw - 32px));
+  height: min(600px, calc(100vh - 32px));
+  z-index: 75;
+  display: flex;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 14px 36px rgba(15, 20, 35, 0.2);
+}
+
+.set-nav {
+  flex: 0 0 220px;
+  padding: 16px 12px;
+  overflow-y: auto;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+}
+
+.set-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-nav-title {
+  padding: 0 10px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.set-main {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.set-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.set-title {
+  margin: 0;
+  padding-right: 40px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.set-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.set-row + .set-row {
+  border-top: 1px solid var(--line);
+}
+
+.set-text {
+  min-width: 0;
+}
+
+.set-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.set-desc {
+  margin-top: 2px;
+  max-width: 440px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.set-ctl {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switch {
+  flex: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.switch.on {
+  background: var(--accent);
+}
+
+.switch.on::after {
+  left: 18px;
+  background: var(--accent-ink);
+}
+
+.switch:disabled,
+.btn:disabled,
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.sw-btn.on {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+@media (max-width: 720px) {
+  .set-dialog {
+    flex-direction: column;
+  }
+
+  .set-nav {
+    flex: none;
+    padding: 10px 12px;
+    overflow: auto hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .set-nav-title {
+    display: none;
+  }
+
+  .set-tabs {
+    flex-direction: row;
+  }
+
+  .set-tabs .nav {
+    width: auto;
+    flex: none;
+    white-space: nowrap;
+  }
+}

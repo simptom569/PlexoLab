@@ -24,6 +24,7 @@ import {
   SearchField,
   Segmented,
   Sq,
+  Switch,
   Tag,
   Textarea,
   Tick,
@@ -99,6 +100,7 @@ function DemoCard({ id, title, drag }: { id: string; title: string; drag?: boole
 
 function Components() {
   const [view, setView] = useState<(typeof VIEW_OPTIONS)[number]['value']>('board')
+  const [live, setLive] = useState(true)
 
   return (
     <>
@@ -172,6 +174,23 @@ function Components() {
         <Row>
           <Cell label="Segmented">
             <Segmented label="Вид задач" options={VIEW_OPTIONS} value={view} onChange={setView} />
+          </Cell>
+        </Row>
+        <Row>
+          <Cell label="Switch (нажимается)">
+            <Switch label="Обновлять вживую" checked={live} onChange={setLive} />
+          </Cell>
+          <Cell label="выключен">
+            <Switch label="Выключен" checked={false} onChange={() => {}} />
+          </Cell>
+          <Cell label="включён">
+            <Switch label="Включён" checked onChange={() => {}} />
+          </Cell>
+          <Cell label="недоступен">
+            <Switch label="Недоступен, выключен" checked={false} disabled onChange={() => {}} />
+          </Cell>
+          <Cell label="недоступен, включён">
+            <Switch label="Недоступен, включён" checked disabled onChange={() => {}} />
           </Cell>
         </Row>
         <Row style={{ alignItems: 'flex-start' }}>
