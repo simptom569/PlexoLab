@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Avatar, Button, IconButton } from '../../components'
-import { mondayOf } from '../../lib/date'
+import { weekStartOf } from '../../lib/date'
 import { useUi } from '../../lib/ui-store'
 import { ganttLabel, ganttRows, ganttStart, ganttTicks, ganttToday } from './logic'
 import { colorVar, useModel } from './model'
@@ -9,8 +9,9 @@ import { describeTask } from './taskView'
 export function GanttView() {
   const m = useModel()
   const openTask = useUi((s) => s.openTask)
+  const weekStart = useUi((s) => s.weekStart)
   const [offset, setOffset] = useState(0)
-  const start = ganttStart(mondayOf(m.today), offset)
+  const start = ganttStart(weekStartOf(m.today, weekStart), offset)
   const ticks = ganttTicks(start)
   const rows = ganttRows(m.shown, start)
   const todayLeft = ganttToday(start, m.today)

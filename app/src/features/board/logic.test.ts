@@ -146,6 +146,22 @@ describe('календарь', () => {
     expect(calendarCells(2026, 7, [], TODAY), 'август 2026 с субботы, 31 день').toHaveLength(42)
   })
 
+  it('неделя с воскресенья: октябрь 2026 начинается с 27 сентября и кончается 31 октября', () => {
+    const cells = calendarCells(2026, 9, [], TODAY, 'sun')
+    expect(cells).toHaveLength(35)
+    expect(cells[0]).toMatchObject({ date: '2026-09-27', num: 27, inMonth: false })
+    expect(cells[4]).toMatchObject({ date: '2026-10-01', num: 1, inMonth: true })
+    expect(cells[34]).toMatchObject({ date: '2026-10-31', num: 31, inMonth: true })
+    expect(cells.filter((c) => c.inMonth)).toHaveLength(31)
+    expect(cells.filter((c) => c.today).map((c) => c.date)).toEqual([TODAY])
+  })
+
+  it('неделя с воскресенья: число недель меняется вместе с началом', () => {
+    expect(calendarCells(2026, 1, [], TODAY, 'sun'), 'февраль 2026 с воскресенья, ровно четыре недели').toHaveLength(28)
+    expect(calendarCells(2027, 1, [], TODAY, 'sun'), 'февраль 2027 с понедельника').toHaveLength(35)
+    expect(calendarCells(2026, 7, [], TODAY, 'sun'), 'август 2026 с субботы').toHaveLength(42)
+  })
+
   it('раскладывает задачи по сроку', () => {
     const a = task({ due_date: '2026-10-20' })
     const b = task({ due_date: '2026-10-20' })
@@ -174,6 +190,12 @@ describe('диаграмма Ганта', () => {
     expect(ganttLabel(start)).toBe('12 окт – 22 ноя')
     expect(ganttTicks(start).map((t) => t.label)).toEqual(['12 окт', '19 окт', '26 окт', '2 ноя', '9 ноя', '16 ноя'])
     expect(ganttTicks(start).map((t) => Math.round(t.left))).toEqual([0, 17, 33, 50, 67, 83])
+  })
+
+  it('окно можно начать с воскресенья: «сегодня» (воскресенье) тогда в самом начале шкалы', () => {
+    const sunday = ganttStart('2026-10-18', 0)
+    expect(ganttTicks(sunday).map((t) => t.label)).toEqual(['18 окт', '25 окт', '1 ноя', '8 ноя', '15 ноя', '22 ноя'])
+    expect(ganttToday(sunday, TODAY)).toBe(0)
   })
 
   it('«сегодня» на шкале и вне окна', () => {

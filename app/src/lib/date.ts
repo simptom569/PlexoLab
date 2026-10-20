@@ -1,10 +1,14 @@
 // Работа с датами `ГГГГ-ММ-ДД`: перенесено из макета без изменения поведения (toMs, iso, addD, fd, plural).
 // Всё считается по UTC, чтобы переход на летнее время не сдвигал дни.
 
+import type { WeekStart } from './settings'
+
 export const DAY = 86_400_000
 export const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 export const MONF = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+/** Подписи дней недели в порядке недели, которая начинается с `start` */
+export const weekdays = (start: WeekStart): string[] => (start === 'sun' ? [WEEKDAYS[6]!, ...WEEKDAYS.slice(0, 6)] : WEEKDAYS)
 /** Месяцы в родительном падеже: «15 октября» */
 export const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 
@@ -27,11 +31,14 @@ export const fd = (s: string | null | undefined): string => (s ? `${+s.slice(8, 
 export const todayIso = (now: Date = new Date()): string =>
   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
-/** Понедельник недели, в которую попадает день */
-export const mondayOf = (s: string): string => {
-  const weekday = (new Date(toMs(s)).getUTCDay() + 6) % 7 // 0 — понедельник
-  return addDays(s, -weekday)
+/** Сколько дней прошло от начала недели до дня `ms`: 0 — первый день недели */
+export const dayInWeek = (ms: number, start: WeekStart): number => {
+  const sunday0 = new Date(ms).getUTCDay() // 0 — воскресенье
+  return start === 'sun' ? sunday0 : (sunday0 + 6) % 7
 }
+
+/** Первый день недели (понедельник или воскресенье), в которую попадает день */
+export const weekStartOf = (s: string, start: WeekStart = 'mon'): string => addDays(s, -dayInWeek(toMs(s), start))
 
 /** Склонение числительных: 1 задача, 2 задачи, 5 задач */
 export function plural(n: number, one: string, few: string, many: string): string {

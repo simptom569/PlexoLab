@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button, IconButton } from '../../components'
 import { cx } from '../../lib/cx'
-import { MONF, WEEKDAYS } from '../../lib/date'
+import { MONF, weekdays } from '../../lib/date'
 import type { TaskCard } from '../../lib/api/types'
 import { toneAt } from '../../lib/tones'
 import { useUi } from '../../lib/ui-store'
@@ -50,8 +50,9 @@ export function PillOverlay({ id }: { id: string }) {
 export function CalendarView() {
   const m = useModel()
   const drag = useDragState()
+  const weekStart = useUi((s) => s.weekStart)
   const [month, setMonth] = useState(() => ({ year: +m.today.slice(0, 4), month: +m.today.slice(5, 7) - 1 }))
-  const cells = calendarCells(month.year, month.month, m.shown, m.today)
+  const cells = calendarCells(month.year, month.month, m.shown, m.today, weekStart)
   const dragged = drag.kind === 'card' ? m.onBoard.find((t) => t.id === drag.id) : undefined
   const shift = (delta: number) => () => setMonth(shiftMonth(month.year, month.month, delta))
 
@@ -67,7 +68,7 @@ export function CalendarView() {
       <div className="cal-scroll">
         <div className="cal-inner">
           <div className="cal-grid">
-            {WEEKDAYS.map((w) => (
+            {weekdays(weekStart).map((w) => (
               <div key={w} className="cal-wd">
                 {w}
               </div>

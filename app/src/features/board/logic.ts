@@ -1,9 +1,9 @@
 // Чистая логика доски: фильтры, срок, сортировка таблицы, календарь, диаграмма Ганта.
 // Перенесено из ctx, dueInfo и vBoard макета; ничего не знает про React и сеть.
 
-import { addDays, DAY, fd, iso, toMs } from '../../lib/date'
+import { addDays, DAY, dayInWeek, fd, iso, toMs } from '../../lib/date'
 import type { Column, TaskCard, User } from '../../lib/api/types'
-import type { Filters } from '../../lib/settings'
+import type { Filters, WeekStart } from '../../lib/settings'
 
 /** Значение фильтра «без исполнителя» и «без модуля» */
 export const NONE = '-'
@@ -92,10 +92,10 @@ export interface CalCell {
   tasks: TaskCard[]
 }
 
-/** Ячейки месяца целыми неделями (с понедельника): `year`, `month` (0..11), задачи по сроку */
-export function calendarCells(year: number, month: number, tasks: TaskCard[], today: string): CalCell[] {
+/** Ячейки месяца целыми неделями (с понедельника или воскресенья): `year`, `month` (0..11), задачи по сроку */
+export function calendarCells(year: number, month: number, tasks: TaskCard[], today: string, weekStart: WeekStart = 'mon'): CalCell[] {
   const first = Date.UTC(year, month, 1)
-  const offset = (new Date(first).getUTCDay() + 6) % 7
+  const offset = dayInWeek(first, weekStart)
   const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
   const weeks = Math.ceil((offset + daysInMonth) / 7)
   const cells: CalCell[] = []
@@ -144,8 +144,8 @@ export interface GanttRow {
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v))
 
-/** Начало окна: понедельник текущей недели, сдвинутый на `offset` шагов по 14 дней */
-export const ganttStart = (monday: string, offset: number): string => addDays(monday, offset * GANTT_STEP_DAYS)
+/** Начало окна: первый день текущей недели, сдвинутый на `offset` шагов по 14 дней */
+export const ganttStart = (weekStart: string, offset: number): string => addDays(weekStart, offset * GANTT_STEP_DAYS)
 
 export function ganttTicks(start: string): Array<{ left: number; label: string }> {
   return [0, 1, 2, 3, 4, 5].map((i) => ({ left: ((i * 7) / GANTT_DAYS) * 100, label: fd(addDays(start, i * 7)) }))

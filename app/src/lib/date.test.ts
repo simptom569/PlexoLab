@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, dayHeading, dayOf, fd, iso, mondayOf, plural, todayIso, toMs, whenText } from './date'
+import { addDays, dayHeading, dayInWeek, dayOf, fd, iso, plural, todayIso, toMs, weekdays, weekStartOf, whenText } from './date'
 
 describe('даты', () => {
   it('toMs и iso взаимно обратны', () => {
@@ -27,12 +27,32 @@ describe('даты', () => {
     expect(todayIso(new Date(2026, 0, 5))).toBe('2026-01-05')
   })
 
-  it('mondayOf: неделя начинается с понедельника', () => {
-    expect(mondayOf('2026-10-18')).toBe('2026-10-12') // воскресенье «сегодня» макета
-    expect(mondayOf('2026-10-12')).toBe('2026-10-12') // сам понедельник
-    expect(mondayOf('2026-10-14')).toBe('2026-10-12')
-    expect(mondayOf('2026-10-19')).toBe('2026-10-19')
-    expect(mondayOf('2027-01-01')).toBe('2026-12-28') // через границу года
+  it('weekStartOf: по умолчанию неделя начинается с понедельника', () => {
+    expect(weekStartOf('2026-10-18')).toBe('2026-10-12') // воскресенье «сегодня» макета
+    expect(weekStartOf('2026-10-12')).toBe('2026-10-12') // сам понедельник
+    expect(weekStartOf('2026-10-14')).toBe('2026-10-12')
+    expect(weekStartOf('2026-10-19')).toBe('2026-10-19')
+    expect(weekStartOf('2027-01-01')).toBe('2026-12-28') // через границу года
+  })
+
+  it('weekStartOf: неделя с воскресенья', () => {
+    expect(weekStartOf('2026-10-18', 'sun')).toBe('2026-10-18') // само воскресенье
+    expect(weekStartOf('2026-10-19', 'sun')).toBe('2026-10-18') // понедельник
+    expect(weekStartOf('2026-10-24', 'sun')).toBe('2026-10-18') // суббота
+    expect(weekStartOf('2027-01-01', 'sun')).toBe('2026-12-27') // через границу года
+  })
+
+  it('dayInWeek: порядковый номер дня в неделе', () => {
+    const sunday = toMs('2026-10-18')
+    expect(dayInWeek(sunday, 'mon')).toBe(6)
+    expect(dayInWeek(sunday, 'sun')).toBe(0)
+    expect(dayInWeek(sunday + 86_400_000, 'mon')).toBe(0) // понедельник
+    expect(dayInWeek(sunday + 86_400_000, 'sun')).toBe(1)
+  })
+
+  it('weekdays: подписи в порядке недели', () => {
+    expect(weekdays('mon')).toEqual(['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'])
+    expect(weekdays('sun')).toEqual(['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'])
   })
 })
 
