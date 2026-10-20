@@ -59,6 +59,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Выйти на всех устройствах: все refresh-токены пользователя удаляются, в том числе этого устройства. Токены доступа,
+         *     выданные раньше, действуют до конца своего срока (до 12 часов), обновить их уже нельзя. Повторный вызов тоже 204.
+         */
+        post: operations["logout_all"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Смена пароля. Все прежние сессии, и этого устройства тоже, завершаются, а в ответе приходит новая пара токенов:
+         *     человеку, который сменил пароль, заново входить не нужно. Токены доступа, выданные раньше, действуют до конца своего
+         *     срока (до 12 часов). Неверный текущий пароль это 400 `wrong_password`, а не 401: клиент принял бы 401 за потерянную
+         *     сессию.
+         */
+        post: operations["change_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -357,7 +399,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Изменить свой профиль: имя, подпись под именем, цвет аватара */
+        patch: operations["update_me"];
         trace?: never;
     };
     "/api/v1/milestones/{id}": {
@@ -847,6 +890,12 @@ export interface components {
             /** Format: float */
             y: number;
         };
+        ChangePasswordRequest: {
+            /** @description Пароль, с которым человек входит сейчас */
+            current_password: string;
+            /** @description Новый пароль: от 8 символов */
+            new_password: string;
+        };
         ColumnDto: {
             /** @description Токен цвета: muted | accent | warn | ok | b-fg | e-fg */
             color: string;
@@ -1029,7 +1078,7 @@ export interface components {
         };
         ErrorBody: {
             /**
-             * @description Машинный код ошибки: bad_request, unauthorized, invalid_credentials, ...
+             * @description Машинный код ошибки: bad_request, unauthorized, invalid_credentials, wrong_password, ...
              * @example invalid_credentials
              */
             code: string;
@@ -1436,6 +1485,27 @@ export interface components {
             status?: string | null;
             title?: string | null;
         };
+        /**
+         * @description Что человек может поменять в своём профиле. Не заданное остаётся как было. E-mail, права и пароль так не меняются:
+         *     лишние поля отклоняются, а не молча игнорируются.
+         */
+        UpdateProfile: {
+            /**
+             * @description Имя, от 1 до 60 символов
+             * @example Лена М.
+             */
+            name?: string | null;
+            /**
+             * @description Подпись под именем, до 40 символов; пустая строка очищает её
+             * @example Frontend
+             */
+            role?: string | null;
+            /**
+             * Format: int32
+             * @description Цвет аватара: 0..4 → av-a … av-e
+             */
+            tone?: number | null;
+        };
         UpdateRelease: {
             notes?: string | null;
             /** Format: date */
@@ -1709,6 +1779,75 @@ export interface operations {
             };
             /** @description Некорректный запрос */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    logout_all: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Все сессии пользователя завершены */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    change_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Пароль изменён, новая пара токенов для этого устройства */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Новый пароль не подходит (короче 8 символов, слишком длинный, совпадает с текущим) или текущий указан неверно (code = wrong_password) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена или пользователь удалён */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2778,6 +2917,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserDto"];
+                };
+            };
+            /** @description Нет действительного токена или пользователь удалён */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfile"];
+            };
+        };
+        responses: {
+            /** @description Профиль после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDto"];
+                };
+            };
+            /** @description Некорректное значение или поле, которое менять нельзя (e-mail, права, пароль) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Нет действительного токена или пользователь удалён */

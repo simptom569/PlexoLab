@@ -4,6 +4,7 @@ import type { components } from './schema'
 type S = components['schemas']
 
 export type User = S['UserDto']
+export type UpdateProfile = S['UpdateProfile']
 export type Project = S['ProjectDto']
 export type Column = S['ColumnDto']
 export type Tag = S['TagDto']

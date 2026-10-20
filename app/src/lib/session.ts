@@ -3,8 +3,8 @@
 
 import { create } from 'zustand'
 import * as authApi from './api/auth'
-import { ApiError, configureClient } from './api/client'
-import type { TokenResponse, User } from './api/types'
+import { api, ApiError, configureClient } from './api/client'
+import type { TokenResponse, UpdateProfile, User } from './api/types'
 import { NetworkError } from './platform/http'
 import { deleteRefreshToken, getRefreshToken, setRefreshToken } from './platform/secrets'
 import { getSettings, saveSettings } from './settings'
@@ -35,6 +35,15 @@ interface SessionState {
   /** Шаг 2. Бросает ApiError: 401 — неверный e-mail или пароль. */
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /** Сохранить изменения своего профиля (PATCH /me); в сессии остаётся то, что вернул сервер. Бросает ApiError. */
+  updateProfile: (patch: UpdateProfile) => Promise<void>
+  /**
+   * Сменить пароль. Сервер завершает все прежние сессии, и эту тоже, а этому устройству сразу выдаёт новую пару:
+   * заново входить не нужно. Бросает ApiError; неверный текущий пароль это 400 `wrong_password`, сессия остаётся.
+   */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>
+  /** Выйти на всех устройствах (POST /auth/logout-all), затем обычный выход здесь. Не вышло на сервере: остаёмся в системе. */
+  logoutEverywhere: () => Promise<void>
   /** Повторить вход после «нет связи» */
   retry: () => Promise<void>
   /** Новый токен доступа (один обмен на всех: refresh-токен одноразовый). null — войти заново. */
@@ -141,6 +150,20 @@ export const useSession = create<SessionState>()((set, get) => {
         await deleteRefreshToken(server)
       }
       set({ phase: 'login', accessToken: null, user: null })
+    },
+
+    async updateProfile(patch) {
+      set({ user: await api.patch<User>('/me', patch) })
+    },
+
+    async changePassword(currentPassword, newPassword) {
+      const tokens = await api.post<TokenResponse>('/auth/password', { current_password: currentPassword, new_password: newPassword })
+      await applyTokens(tokens)
+    },
+
+    async logoutEverywhere() {
+      await api.post('/auth/logout-all')
+      await get().logout() // refresh-токена на сервере уже нет: logout уберёт его и у нас
     },
 
     async retry() {

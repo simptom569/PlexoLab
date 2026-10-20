@@ -226,3 +226,71 @@ describe('выход и потеря сессии', () => {
     expect(vault.get(SERVER)).toBe('refresh1')
   })
 })
+
+describe('профиль, пароль и «выйти везде»', () => {
+  const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+  const lastRequest = () => {
+    const [url, init] = httpFetch.mock.calls.at(-1)! as [string, { method: string; body?: string }]
+    return { url, method: init.method, body: init.body ? JSON.parse(init.body) : undefined }
+  }
+
+  beforeEach(async () => {
+    saved(SERVER)
+    vault.set(SERVER, 'refresh0')
+    authApi.refresh.mockResolvedValue(tokens(1))
+    await state().boot()
+    authApi.refresh.mockReset()
+  })
+
+  it('профиль: уходит PATCH /me, в сессии остаётся ответ сервера', async () => {
+    const renamed = { ...lena, name: 'Лена К.', tone: 3 }
+    httpFetch.mockResolvedValueOnce(json(renamed))
+    await state().updateProfile({ name: '  Лена К. ', tone: 3 })
+    expect(lastRequest()).toMatchObject({ url: `${SERVER}/api/v1/me`, method: 'PATCH', body: { name: '  Лена К. ', tone: 3 } })
+    expect(state().user).toEqual(renamed)
+  })
+
+  it('профиль: сервер отказал, сессия прежняя, ошибка наверх', async () => {
+    httpFetch.mockResolvedValueOnce(json({ code: 'bad_request', message: 'Имя: от 1 до 60 символов' }, 400))
+    await expect(state().updateProfile({ name: '' })).rejects.toMatchObject({ status: 400, message: 'Имя: от 1 до 60 символов' })
+    expect(state().user).toEqual(lena)
+    expect(authApi.refresh).not.toHaveBeenCalled()
+  })
+
+  it('смена пароля: новая пара токенов запоминается, человек остаётся в системе', async () => {
+    httpFetch.mockResolvedValueOnce(json(tokens(2)))
+    await state().changePassword('старый-пароль', 'новый-пароль-1')
+    expect(lastRequest()).toMatchObject({
+      url: `${SERVER}/api/v1/auth/password`,
+      method: 'POST',
+      body: { current_password: 'старый-пароль', new_password: 'новый-пароль-1' },
+    })
+    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access2', user: lena })
+    expect(vault.get(SERVER)).toBe('refresh2')
+  })
+
+  it('смена пароля: неверный текущий пароль не выбрасывает из системы (это 400, не 401)', async () => {
+    httpFetch.mockResolvedValue(json({ code: 'wrong_password', message: 'Текущий пароль указан неверно' }, 400))
+    await expect(state().changePassword('не-тот', 'новый-пароль-1')).rejects.toMatchObject({ status: 400, code: 'wrong_password' })
+    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access1' })
+    expect(vault.get(SERVER)).toBe('refresh1')
+    expect(authApi.refresh).not.toHaveBeenCalled()
+  })
+
+  it('«выйти везде»: сначала сервер, потом выход здесь', async () => {
+    httpFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    authApi.logout.mockResolvedValue(undefined)
+    await state().logoutEverywhere()
+    expect(lastRequest()).toMatchObject({ url: `${SERVER}/api/v1/auth/logout-all`, method: 'POST' })
+    expect(vault.has(SERVER)).toBe(false)
+    expect(state()).toMatchObject({ phase: 'login', accessToken: null, user: null })
+  })
+
+  it('«выйти везде»: сервер не ответил, остаёмся в системе', async () => {
+    httpFetch.mockRejectedValueOnce(new NetworkError('Нет связи с сервером'))
+    await expect(state().logoutEverywhere()).rejects.toBeInstanceOf(NetworkError)
+    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access1' })
+    expect(vault.get(SERVER)).toBe('refresh1')
+    expect(authApi.logout).not.toHaveBeenCalled()
+  })
+})
