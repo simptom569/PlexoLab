@@ -13,6 +13,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:1420',
     locale: 'ru-RU',
+    // лента активности показывает время по часам браузера: чтобы тесты не зависели от пояса машины, всегда UTC
+    timezoneId: 'UTC',
     colorScheme: 'light',
     reducedMotion: 'reduce',
   },

@@ -19,9 +19,13 @@ export type OpenOptions = {
   url?: string
 }
 
-/** «Сегодня» как в макете: 18 октября 2026 (воскресенье) */
+/**
+ * «Сегодня» как в макете: 18 октября 2026 (воскресенье), полдень по UTC. Тот же момент сид считает «сейчас»
+ * (`seed --today`), а браузер работает в часовом поясе UTC (playwright.config.ts): лента получается одной и той же,
+ * на какой бы машине и в какой бы день ни шли тесты.
+ */
 export async function fixToday(page: Page) {
-  await page.clock.setFixedTime(new Date(`${MOCK_TODAY}T12:00:00`))
+  await page.clock.setFixedTime(new Date(`${MOCK_TODAY}T12:00:00Z`))
 }
 
 /** Стирает данные тестовой базы и заполняет их данными макета заново */
