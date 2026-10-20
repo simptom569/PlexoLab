@@ -1,9 +1,23 @@
 // Чтение данных с сервера через TanStack Query. Ключи собраны в одном месте, чтобы изменения (мутации)
 // и события WebSocket (этап 8) обращались к тем же самым записям кэша.
 
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api } from './client'
-import type { Board, Doc, DocSummary, FileList, Folder, Project, Release, TaskDetail, User, WikiNode, WikiPage } from './types'
+import type {
+  ActivityPage,
+  Board,
+  Doc,
+  DocSummary,
+  FileList,
+  Folder,
+  LinkGroup,
+  Project,
+  Release,
+  TaskDetail,
+  User,
+  WikiNode,
+  WikiPage,
+} from './types'
 
 export const keys = {
   projects: ['projects'] as const,
@@ -19,6 +33,10 @@ export const keys = {
   docs: ['docs'] as const,
   docSearch: (q: string) => ['docs', 'search', q] as const,
   doc: (id: string) => ['doc', id] as const,
+  /** Все ленты активности (при любых фильтрах) */
+  activity: ['activity'] as const,
+  activityFeed: (actor: string | null, kind: string | null) => ['activity', actor, kind] as const,
+  linkGroups: ['link-groups'] as const,
 }
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
@@ -77,3 +95,31 @@ export const useDoc = (id: string | null) =>
     queryFn: () => api.get<Doc>(`/docs/${id}`),
     enabled: id !== null,
   })
+
+/** Адрес страницы ленты: фильтры по участнику и типу и курсор следующей страницы */
+export function activityPath(actor: string | null, kind: string | null, before: string | null): string {
+  const params = new URLSearchParams()
+  if (actor) params.set('actor', actor)
+  if (kind) params.set('kind', kind)
+  if (before) params.set('before', before)
+  const query = params.toString()
+  return query ? `/activity?${query}` : '/activity'
+}
+
+/**
+ * Лента активности постранично (по 50). `actor` и `kind` — фильтры, null значит «все». Страницы дозагружаются
+ * `fetchNextPage`; при обновлении запрос перечитывает все загруженные страницы по порядку, поэтому стыки остаются целыми.
+ */
+export const useActivity = (actor: string | null, kind: string | null, enabled = true) =>
+  useInfiniteQuery({
+    queryKey: keys.activityFeed(actor, kind),
+    queryFn: ({ pageParam }) => api.get<ActivityPage>(activityPath(actor, kind, pageParam)),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next ?? null,
+    enabled,
+    // события появляются от действий на других экранах: при каждом открытии ленты читаем её заново
+    staleTime: 0,
+  })
+
+/** Группы ссылок команды вместе со ссылками */
+export const useLinkGroups = () => useQuery({ queryKey: keys.linkGroups, queryFn: () => api.get<LinkGroup[]>('/link-groups') })

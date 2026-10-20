@@ -4,6 +4,27 @@
  */
 
 export interface paths {
+    "/api/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Лента событий команды
+         * @description События всех проектов, новые первыми. Фильтры «Участник» и «Тип события» сочетаются. Страница — 50 событий;
+         *     пока есть более старые, в ответе приходит `next`, его передают как `before`.
+         */
+        get: operations["list_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -247,6 +268,76 @@ export interface paths {
         post?: never;
         /** Удалить пустую папку */
         delete: operations["delete_folder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/link-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Все группы со ссылками в порядке добавления */
+        get: operations["list_groups"];
+        put?: never;
+        /** Новая пустая группа в конце списка */
+        post: operations["create_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/link-groups/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить группу вместе со всеми её ссылками */
+        delete: operations["delete_group"];
+        options?: never;
+        head?: never;
+        /** Переименовать группу */
+        patch: operations["update_group"];
+        trace?: never;
+    };
+    "/api/v1/link-groups/{id}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Новая ссылка в конце группы. Адрес без `http://` и `https://` получает `https://`. */
+        post: operations["create_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/links/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Удалить ссылку */
+        delete: operations["delete_link"];
         options?: never;
         head?: never;
         patch?: never;
@@ -676,6 +767,37 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActivityDto: {
+            /**
+             * Format: uuid
+             * @description Кто сделал
+             */
+            actor_id: string;
+            /**
+             * @description Категория для цветной метки: tasks | comment | code | doc | release | file | module
+             * @example tasks
+             */
+            category: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Проект события; у вики, документов и файлов библиотеки проекта нет
+             */
+            project_id?: string | null;
+            /** @description Объект действия: «WEB-141 Тёмная тема для страницы настроек» */
+            target: string;
+            /** @description Что сделали: «перемещена в «На ревью»» */
+            text: string;
+        };
+        ActivityPageDto: {
+            /** @description От новых к старым, не больше 50 */
+            items: components["schemas"]["ActivityDto"][];
+            /** @description Курсор следующей страницы для `before`; `null`, если больше событий нет */
+            next?: string | null;
+        };
         /** @description Всё для первой загрузки доски одним ответом */
         BoardDto: {
             /** @description Колонки слева направо */
@@ -767,6 +889,18 @@ export interface components {
         };
         CreateFolder: {
             name: string;
+        };
+        CreateLink: {
+            description?: string | null;
+            title: string;
+            /**
+             * @description Адрес; без `http://` и `https://` сервер добавит `https://`
+             * @example example.com/repo
+             */
+            url: string;
+        };
+        CreateLinkGroup: {
+            title: string;
         };
         CreateMilestone: {
             /** Format: date */
@@ -949,6 +1083,29 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        LinkDto: {
+            /** @example Сервер и мобильное API */
+            description: string;
+            /** Format: uuid */
+            group_id: string;
+            /** Format: uuid */
+            id: string;
+            /** @example Репозиторий API */
+            title: string;
+            /**
+             * @description Всегда с `http://` или `https://`
+             * @example https://example.com/git/api
+             */
+            url: string;
+        };
+        LinkGroupDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description В порядке добавления */
+            links: components["schemas"]["LinkDto"][];
+            /** @example Код и сборка */
+            title: string;
         };
         LoginRequest: {
             /** @example lena@example.com */
@@ -1255,6 +1412,9 @@ export interface components {
             rev?: number | null;
             title?: string | null;
         };
+        UpdateLinkGroup: {
+            title: string;
+        };
         UpdateMilestone: {
             /** Format: date */
             due_date?: string | null;
@@ -1440,6 +1600,51 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Только события этого участника */
+                actor: string | null;
+                /** @description Только события этой категории: tasks | comment | code | doc | release | file | module */
+                kind: string | null;
+                /** @description Курсор из `next` предыдущего ответа: вернуть события старше того места */
+                before: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница ленты */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPageDto"];
+                };
+            };
+            /** @description Незнакомая категория или испорченный курсор */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -2291,6 +2496,263 @@ export interface operations {
             };
             /** @description В папке есть файлы */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_groups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Группы вместе со ссылками */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkGroupDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLinkGroup"];
+            };
+        };
+        responses: {
+            /** @description Группа создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkGroupDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Группа */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Группа удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой группы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Группа */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateLinkGroup"];
+            };
+        };
+        responses: {
+            /** @description Группа после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkGroupDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой группы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Группа */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLink"];
+            };
+        };
+        responses: {
+            /** @description Ссылка добавлена */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой группы */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    delete_link: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Ссылка */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ссылка удалена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой ссылки */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

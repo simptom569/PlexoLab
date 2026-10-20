@@ -5,6 +5,8 @@ export const DAY = 86_400_000
 export const MON = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек']
 export const MONF = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+/** Месяцы в родительном падеже: «15 октября» */
+export const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']
 
 export const toMs = (s: string): number => {
   const [y, m, d] = s.split('-').map(Number)
@@ -56,4 +58,16 @@ export function whenText(timestamp: string, now: Date = new Date()): string {
   }
   if (day === addDays(today, -1)) return `вчера, ${hhmm(at)}`
   return `${fd(day)}, ${hhmm(at)}`
+}
+
+/** День события по часам этого компьютера, `ГГГГ-ММ-ДД`: по нему лента собирается в группы */
+export const dayOf = (timestamp: string): string => todayIso(new Date(timestamp))
+
+/** Заголовок группы дня в ленте: «Сегодня», «Вчера», «15 октября» (с годом, если он не нынешний) */
+export function dayHeading(day: string, now: Date = new Date()): string {
+  const today = todayIso(now)
+  if (day === today) return 'Сегодня'
+  if (day === addDays(today, -1)) return 'Вчера'
+  const text = `${+day.slice(8, 10)} ${MONTHS_GEN[+day.slice(5, 7) - 1]}`
+  return day.slice(0, 4) === today.slice(0, 4) ? text : `${text} ${day.slice(0, 4)}`
 }

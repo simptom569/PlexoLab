@@ -6,16 +6,17 @@ import { useBoard, useProjects } from '../../lib/api/queries'
 import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
+import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
 import { BoardPage } from '../board/BoardPage'
 import { TaskDrawer } from '../board/TaskDrawer'
 import { DocsScreen } from '../docs/DocsScreen'
+import { LinksPage } from '../links/LinksPage'
 import { ModulesPage } from '../modules/ModulesPage'
 import { ReleasesPage } from '../releases/ReleasesPage'
 import { WikiScreen } from '../wiki/WikiScreen'
-import { PagePlaceholder } from './PagePlaceholder'
 
-/** Экраны, которые уже сделаны и зависят от проекта; остальные пока показывают заглушку */
+/** Экраны проекта: показываются для выбранного проекта */
 const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => ReactNode>> = {
   board: BoardPage,
   backlog: BacklogPage,
@@ -27,6 +28,8 @@ const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => Re
 const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
   wiki: WikiScreen,
   docs: DocsScreen,
+  activity: ActivityPage,
+  links: LinksPage,
 }
 
 export function Workspace() {
@@ -100,9 +103,7 @@ export function Workspace() {
         <TeamPage />
       ) : ProjectPage && projectId ? (
         <ProjectPage key={`${page}:${projectId}`} projectId={projectId} />
-      ) : (
-        <PagePlaceholder page={page} />
-      )}
+      ) : null}
     </AppShell>
   )
 }

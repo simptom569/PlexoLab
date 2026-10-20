@@ -15,6 +15,10 @@ export type DueFilter = (typeof DUE_FILTERS)[number]
 export const DISPLAY_KEYS = ['who', 'due', 'tags', 'prio', 'subs', 'pr', 'module'] as const
 export type DisplayKey = (typeof DISPLAY_KEYS)[number]
 
+/** Фильтр «Тип события» в ленте: категории сервера (GET /activity?kind=) и «все» */
+export const ACT_KINDS = ['all', 'tasks', 'comment', 'code', 'doc', 'release', 'file', 'module'] as const
+export type ActKind = (typeof ACT_KINDS)[number]
+
 export const filtersSchema = z.object({
   /** Идентификаторы исполнителей; '-' означает «без исполнителя» */
   who: z.array(z.string()).catch([]),
@@ -50,6 +54,9 @@ export const settingsSchema = z.object({
   docOpen: z.string().nullable().catch(null),
   /** В списке документов включён фильтр «Избранные» */
   docStar: z.boolean().catch(false),
+  /** Фильтры ленты активности: участник ('all' или его идентификатор) и тип события */
+  actWho: z.string().catch('all'),
+  actKind: z.enum(ACT_KINDS).catch('all'),
 })
 export type Settings = z.infer<typeof settingsSchema>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, fd, iso, mondayOf, plural, todayIso, toMs, whenText } from './date'
+import { addDays, dayHeading, dayOf, fd, iso, mondayOf, plural, todayIso, toMs, whenText } from './date'
 
 describe('даты', () => {
   it('toMs и iso взаимно обратны', () => {
@@ -62,5 +62,31 @@ describe('whenText', () => {
     expect(at(new Date(2026, 9, 17, 17, 40))).toBe('вчера, 17:40')
     expect(at(new Date(2026, 9, 17, 23, 59))).toBe('вчера, 23:59')
     expect(at(new Date(2026, 9, 12, 9, 5))).toBe('12 окт, 09:05')
+  })
+})
+
+describe('dayOf и dayHeading', () => {
+  const now = new Date(2026, 9, 18, 15, 0)
+
+  it('dayOf берёт день по местным часам, а не по UTC', () => {
+    expect(dayOf(new Date(2026, 9, 18, 0, 5).toISOString())).toBe('2026-10-18')
+    expect(dayOf(new Date(2026, 9, 18, 23, 55).toISOString())).toBe('2026-10-18')
+  })
+
+  it('заголовок: Сегодня, Вчера, день и месяц', () => {
+    expect(dayHeading('2026-10-18', now)).toBe('Сегодня')
+    expect(dayHeading('2026-10-17', now)).toBe('Вчера')
+    expect(dayHeading('2026-10-15', now)).toBe('15 октября')
+    expect(dayHeading('2026-01-01', now)).toBe('1 января')
+    expect(dayHeading('2026-05-09', now)).toBe('9 мая')
+  })
+
+  it('вчера считается и через границу месяца и года', () => {
+    expect(dayHeading('2026-09-30', new Date(2026, 9, 1, 9, 0))).toBe('Вчера')
+    expect(dayHeading('2025-12-31', new Date(2026, 0, 1, 9, 0))).toBe('Вчера')
+  })
+
+  it('из другого года добавляется год', () => {
+    expect(dayHeading('2025-12-30', now)).toBe('30 декабря 2025')
   })
 })

@@ -18,7 +18,14 @@ describe('parseSettings', () => {
       wikiPage: null,
       docOpen: null,
       docStar: false,
+      actWho: 'all',
+      actKind: 'all',
     })
+  })
+
+  it('фильтры ленты активности хранятся, мусор заменяется на «все»', () => {
+    expect(parseSettings({ actWho: 'u1', actKind: 'module' })).toMatchObject({ actWho: 'u1', actKind: 'module' })
+    expect(parseSettings({ actWho: 5, actKind: 'moves' })).toMatchObject({ actWho: 'all', actKind: 'all' })
   })
 
   it('последняя страница вики хранится строкой, мусор заменяется на null', () => {
