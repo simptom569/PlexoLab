@@ -27,8 +27,6 @@ PlexoLab: сервер
   'новый-пароль' | server user passwd --email lena@example.com --password-stdin
 ";
 
-pub const MIN_PASSWORD_LEN: usize = 8;
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Serve,
@@ -164,14 +162,9 @@ pub fn password_from_stdin(raw: &str) -> String {
     raw.trim_start_matches('\u{feff}').trim_end_matches(['\r', '\n']).to_owned()
 }
 
+/// Те же правила, что у смены пароля в приложении
 pub fn check_password(password: &str) -> Result<(), String> {
-    if password.chars().count() < MIN_PASSWORD_LEN {
-        return Err(format!("пароль короче {MIN_PASSWORD_LEN} символов"));
-    }
-    if password.len() > domain::auth::MAX_PASSWORD_LEN {
-        return Err("пароль слишком длинный".to_owned());
-    }
-    Ok(())
+    domain::auth::check_new_password(password)
 }
 
 #[cfg(test)]

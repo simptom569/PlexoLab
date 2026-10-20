@@ -7,5 +7,6 @@ pub mod docs;
 pub mod files;
 pub mod links;
 pub mod position;
+pub mod users;
 pub mod wiki;
 pub mod work;

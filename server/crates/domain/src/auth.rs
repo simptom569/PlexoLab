@@ -21,6 +21,8 @@ pub const REFRESH_TTL_DAYS: i64 = 30;
 pub const MIN_JWT_SECRET_LEN: usize = 32;
 /// Длиннее пароль не обрабатываем: argon2 дорогой, длинный пароль был бы способом нагрузить сервер
 pub const MAX_PASSWORD_LEN: usize = 1024;
+/// Новый пароль короче не принимается (и в консольной команде, и в смене пароля из приложения)
+pub const MIN_PASSWORD_LEN: usize = 8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthError {
@@ -55,6 +57,18 @@ pub fn hash_password(password: &str) -> Result<String, AuthError> {
 /// Проверяет пароль. Повреждённый хэш считается несовпадением.
 pub fn verify_password(password: &str, hash: &str) -> bool {
     Argon2::default().verify_password(password.as_bytes(), hash).is_ok()
+}
+
+/// Годится ли новый пароль: не короче `MIN_PASSWORD_LEN` символов и не длиннее `MAX_PASSWORD_LEN` байт.
+/// Текст ошибки написан для человека.
+pub fn check_new_password(password: &str) -> Result<(), String> {
+    if password.chars().count() < MIN_PASSWORD_LEN {
+        return Err(format!("Пароль короче {MIN_PASSWORD_LEN} символов"));
+    }
+    if password.len() > MAX_PASSWORD_LEN {
+        return Err("Пароль слишком длинный".to_owned());
+    }
+    Ok(())
 }
 
 /// Проверка «вхолостую» для несуществующего пользователя: по времени ответа нельзя отличить
@@ -130,6 +144,17 @@ mod tests {
         assert!(verify_password("correct horse", &hash));
         assert!(!verify_password("wrong horse", &hash));
         assert!(!verify_password("", &hash));
+    }
+
+    #[test]
+    fn new_password_must_be_long_enough_but_not_huge() {
+        assert!(check_new_password("12345678").is_ok(), "ровно минимум");
+        assert!(check_new_password("пароль-из-букв").is_ok());
+        assert!(check_new_password("1234567").is_err(), "на символ короче");
+        assert!(check_new_password("").is_err());
+        assert!(check_new_password("пароль7").is_err(), "считаются символы, а не байты: тут 7 символов и 13 байт");
+        assert!(check_new_password(&"x".repeat(MAX_PASSWORD_LEN)).is_ok());
+        assert!(check_new_password(&"x".repeat(MAX_PASSWORD_LEN + 1)).is_err());
     }
 
     #[test]
