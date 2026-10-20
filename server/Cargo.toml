@@ -19,6 +19,12 @@ time = { version = "0.3.55", features = ["parsing"] }
 tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
+# В отладочной сборке хранятся только номера строк, без полной отладочной информации: на Windows она раздувала
+# target/debug до десятков гигабайт (каждый тест и каждая зависимость со своими файлами .pdb). Файл и строка в
+# сообщении об ошибке остаются. Полная отладка в отладчике: `CARGO_PROFILE_DEV_DEBUG=true cargo build`.
+[profile.dev]
+debug = "line-tables-only"
+
 # Argon2 в debug-сборке считает пароль секундами: оптимизируем только его, остальной код отлаживается как обычно.
 [profile.dev.package.argon2]
 opt-level = 3

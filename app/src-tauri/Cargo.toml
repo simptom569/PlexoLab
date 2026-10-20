@@ -26,3 +26,8 @@ windows-native-keyring-store = { version = "1.1.0", default-features = false }
 
 [dev-dependencies]
 uuid = { version = "1.28.0", features = ["v4"] }
+
+# В отладочной сборке только номера строк, без полной отладочной информации: на Windows она раздувала
+# src-tauri/target до гигабайтов. Файл и строка в сообщении об ошибке остаются.
+[profile.dev]
+debug = "line-tables-only"
