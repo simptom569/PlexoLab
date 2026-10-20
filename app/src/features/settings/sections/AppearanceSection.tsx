@@ -1,39 +1,30 @@
-import { useState } from 'react'
 import { Segmented } from '../../../components'
+import type { ScrollbarMode, Theme } from '../../../lib/settings'
 import { useUi } from '../../../lib/ui-store'
 import { SettingGroup, SettingRow } from '../SettingRow'
 
-type ThemeChoice = 'light' | 'dark' | 'system'
-type ScrollbarMode = 'visible' | 'quiet' | 'hidden'
-
-const THEMES = [
+const THEMES: ReadonlyArray<{ value: Theme; label: string }> = [
   { value: 'light', label: 'Светлая' },
   { value: 'dark', label: 'Тёмная' },
   { value: 'system', label: 'Как в системе' },
-] as const
+]
 
-const SCROLLBARS = [
+const SCROLLBARS: ReadonlyArray<{ value: ScrollbarMode; label: string }> = [
   { value: 'visible', label: 'Видимые' },
   { value: 'quiet', label: 'Тихие' },
   { value: 'hidden', label: 'Скрытые' },
-] as const
+]
 
 export function AppearanceSection() {
   const theme = useUi((s) => s.theme)
-  const toggleTheme = useUi((s) => s.toggleTheme)
-  // Пока только вид: светлая и тёмная уже работают, остальное лишь выбирается
-  const [choice, setChoice] = useState<ThemeChoice>(theme)
-  const [scrollbars, setScrollbars] = useState<ScrollbarMode>('visible')
-
-  const chooseTheme = (next: ThemeChoice) => {
-    setChoice(next)
-    if (next !== 'system' && next !== theme) toggleTheme()
-  }
+  const setTheme = useUi((s) => s.setTheme)
+  const scrollbars = useUi((s) => s.scrollbars)
+  const setScrollbars = useUi((s) => s.setScrollbars)
 
   return (
     <SettingGroup>
       <SettingRow label="Тема" description="Оформление окна. «Как в системе» следует настройке Windows.">
-        <Segmented label="Тема" options={THEMES} value={choice} onChange={chooseTheme} />
+        <Segmented label="Тема" options={THEMES} value={theme} onChange={setTheme} />
       </SettingRow>
       <SettingRow
         label="Полосы прокрутки"

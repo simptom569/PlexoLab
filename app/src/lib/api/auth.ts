@@ -32,6 +32,13 @@ async function probe(origin: string): Promise<string> {
   return originOf(res.url) ?? origin
 }
 
+/** Проверка связи из настроек: за сколько миллисекунд ответил сервер. Бросает ошибку с понятным текстом. */
+export async function pingServer(origin: string): Promise<number> {
+  const started = performance.now()
+  await probe(origin)
+  return Math.round(performance.now() - started)
+}
+
 /**
  * Проверяет введённый адрес и возвращает рабочий. Без схемы пробует https и http одновременно
  * и предпочитает https. Бросает ошибку с понятным текстом.

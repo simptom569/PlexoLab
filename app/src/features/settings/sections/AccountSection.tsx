@@ -25,6 +25,7 @@ function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; 
 
 export function AccountSection() {
   const user = useSession((s) => s.user)
+  const logout = useSession((s) => s.logout)
   const [name, setName] = useState(user?.name ?? '')
   const [role, setRole] = useState(user?.role ?? '')
   const [tone, setTone] = useState(user?.tone ?? 0)
@@ -105,7 +106,7 @@ export function AccountSection() {
 
       <SettingGroup title="Выход">
         <SettingRow label="Выйти на этом компьютере" description="Входы на других компьютерах сохранятся.">
-          <Button>Выйти</Button>
+          <Button onClick={() => void logout()}>Выйти</Button>
         </SettingRow>
         <SettingRow label="Выйти на всех устройствах" description="Завершит все входы, в том числе этот. Войти придётся заново.">
           <Button danger>Выйти везде</Button>

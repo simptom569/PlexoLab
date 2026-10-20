@@ -1,16 +1,16 @@
-import { useState } from 'react'
 import { Segmented } from '../../../components'
+import type { WeekStart } from '../../../lib/settings'
+import { useUi } from '../../../lib/ui-store'
 import { SettingGroup, SettingRow } from '../SettingRow'
 
-type WeekStart = 'mon' | 'sun'
-
-const WEEK_STARTS = [
+const WEEK_STARTS: ReadonlyArray<{ value: WeekStart; label: string }> = [
   { value: 'mon', label: 'Понедельник' },
   { value: 'sun', label: 'Воскресенье' },
-] as const
+]
 
 export function BoardSection() {
-  const [weekStart, setWeekStart] = useState<WeekStart>('mon')
+  const weekStart = useUi((s) => s.weekStart)
+  const setWeekStart = useUi((s) => s.setWeekStart)
   return (
     <SettingGroup>
       <SettingRow label="Первый день недели" description="С него начинаются неделя в календаре и диаграмме Ганта.">

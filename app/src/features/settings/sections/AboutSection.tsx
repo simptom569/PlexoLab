@@ -2,9 +2,6 @@ import { Button } from '../../../components'
 import { BrandIcon } from '../../../components/Brand'
 import { SettingGroup, SettingRow } from '../SettingRow'
 
-// Версия из src-tauri/tauri.conf.json; когда дойдём до этапа 9, берём её у самого приложения (getVersion)
-const APP_VERSION = '0.1.0'
-
 export function AboutSection() {
   return (
     <>
@@ -18,7 +15,7 @@ export function AboutSection() {
       <SettingGroup>
         <SettingRow label="Версия приложения">
           <span className="mono" style={{ fontSize: 13 }}>
-            {APP_VERSION}
+            {__APP_VERSION__}
           </span>
         </SettingRow>
         <SettingRow soon label="Обновления" description="Приложение само проверит, вышла ли новая версия.">
