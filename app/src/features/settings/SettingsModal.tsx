@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { IconButton } from '../../components'
+import { Icon, IconButton, type IconName } from '../../components'
 import { cx } from '../../lib/cx'
 import type { ConnectionStatus } from '../../lib/realtime/connection'
 import { SETTINGS_TABS, SETTINGS_TAB_LABELS, type SettingsTab } from '../../lib/settings-tabs'
@@ -25,6 +25,18 @@ const SECTIONS: Record<SettingsTab, (props: SectionProps) => ReactNode> = {
   app: AppSection,
   hotkeys: HotkeysSection,
   about: AboutSection,
+}
+
+// Иконки категорий, как у пунктов бокового меню. «Доска» — та же иконка, что в боковом меню, остальные нарисованы в стиле макета.
+const TAB_ICONS: Record<SettingsTab, IconName> = {
+  account: 'user',
+  appearance: 'palette',
+  board: 'board',
+  server: 'server',
+  data: 'database',
+  app: 'window',
+  hotkeys: 'keyboard',
+  about: 'info',
 }
 
 const tabId = (tab: SettingsTab) => `set-tab-${tab}`
@@ -80,6 +92,7 @@ export function SettingsModal({
                 tabIndex={t === tab ? 0 : -1}
                 onClick={() => setSettingsTab(t)}
               >
+                <Icon name={TAB_ICONS[t]} />
                 {SETTINGS_TAB_LABELS[t]}
               </button>
             ))}

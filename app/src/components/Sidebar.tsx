@@ -175,9 +175,18 @@ export function Sidebar({
                 )}
               </div>
               <div role="separator" style={{ height: 1, margin: '2px 0', background: 'var(--line)' }} />
-              <MenuItem onClick={() => onOpenSettings(userButton.current)}>Настройки</MenuItem>
-              <MenuItem onClick={onToggleTheme}>{dark ? 'Светлая тема' : 'Тёмная тема'}</MenuItem>
-              <MenuItem onClick={onLogout}>Выйти</MenuItem>
+              <MenuItem onClick={() => onOpenSettings(userButton.current)}>
+                <Icon name="gear" sm />
+                Настройки
+              </MenuItem>
+              <MenuItem onClick={onToggleTheme}>
+                <Icon name={dark ? 'sun' : 'moon'} sm />
+                {dark ? 'Светлая тема' : 'Тёмная тема'}
+              </MenuItem>
+              <MenuItem onClick={onLogout}>
+                <Icon name="logout" sm />
+                Выйти
+              </MenuItem>
             </Popover>
           )}
         </Anchor>
