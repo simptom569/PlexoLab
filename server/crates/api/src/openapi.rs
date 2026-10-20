@@ -23,7 +23,9 @@ use utoipa::{
         (name = "releases", description = "Релизы и чек-лист выкатки"),
         (name = "wiki", description = "Страницы вики"),
         (name = "docs", description = "Документы и холст"),
-        (name = "files", description = "Библиотека файлов, папки, вложения задач")
+        (name = "files", description = "Библиотека файлов, папки, вложения задач"),
+        (name = "activity", description = "Лента активности команды"),
+        (name = "links", description = "Ссылки команды")
     )
 )]
 pub struct ApiDoc;

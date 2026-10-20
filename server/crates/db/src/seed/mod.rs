@@ -40,6 +40,16 @@ impl SeedOptions {
         let now = OffsetDateTime::now_utc();
         SeedOptions { today: now.date(), now, password: password.into() }
     }
+
+    /// «Сегодня» — заданный день, «сейчас» — полдень этого дня по UTC: лента («12 минут назад», «вчера, 18:20»)
+    /// получается одной и той же, в какой бы день ни запустили сид. Нужно тестам интерфейса с замороженными часами.
+    pub fn on(today: Date, password: impl Into<String>) -> Self {
+        SeedOptions {
+            today,
+            now: OffsetDateTime::new_utc(today, Time::from_hms(12, 0, 0).unwrap()),
+            password: password.into(),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]

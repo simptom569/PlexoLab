@@ -2,7 +2,8 @@
 //!
 //!   cargo run --bin seed                  заполнить пустую базу
 //!   cargo run --bin seed -- --reset       сначала стереть ВСЕ данные в базе
-//!   cargo run --bin seed -- --today 2026-10-18   считать «сегодня» этим днём (по умолчанию реальная дата)
+//!   cargo run --bin seed -- --today 2026-10-18   считать «сегодня» этим днём, а «сейчас» — полднем по UTC
+//!                                                (по умолчанию реальные дата и время)
 //!   cargo run --bin seed -- --password dev       пароль демо-пользователей (по умолчанию dev)
 //!
 //! Только для разработки: пользователи получают простой пароль.
@@ -47,10 +48,10 @@ async fn main() -> anyhow::Result<()> {
         db::seed::reset(&pool).await.context("не удалось очистить базу")?;
     }
 
-    let mut options = SeedOptions::now(password);
-    if let Some(day) = today {
-        options.today = day;
-    }
+    let options = match today {
+        Some(day) => SeedOptions::on(day, password),
+        None => SeedOptions::now(password),
+    };
     match db::seed::seed(&pool, &options).await {
         Ok(report) => {
             println!("База заполнена, «сегодня» = {}. Создано:\n{report}", options.today);

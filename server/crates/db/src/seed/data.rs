@@ -461,7 +461,10 @@ pub fn tasks() -> Vec<SeedTask> {
 pub type ActivityRow = (&'static str, &'static str, &'static str, &'static str, Option<&'static str>, When);
 
 pub const ACTIVITY: &[ActivityRow] = &[
-    ("Д", "PR #312", "влит в main", "code", Some("web"), When::MinutesAgo(12)),
+    // В макете здесь «PR #312 влит в main», но приложение «влит» не отмечает (решение владельца, этап 4): единственное
+    // событие кода — «добавлен PR», когда в задаче заполнили поле PR. Поэтому строка такая же, как её пишет сервер,
+    // с задачей из сида, у которой этот PR есть.
+    ("Д", "WEB-137 Неверные часовые пояса в календаре", "добавлен PR #315", "code", Some("web"), When::MinutesAgo(12)),
     ("С", "WEB-128 Ошибка 500 при пустом профиле", "перемещена в «Готово»", "move", Some("web"), When::HoursAgo(1)),
     (
         "Л",

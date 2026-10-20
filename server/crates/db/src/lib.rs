@@ -16,6 +16,7 @@ pub mod comments;
 pub mod docs;
 pub mod files;
 pub mod folders;
+pub mod links;
 pub mod modules;
 pub mod projects;
 pub mod releases;

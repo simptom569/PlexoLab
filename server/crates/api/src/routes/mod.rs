@@ -2,6 +2,7 @@ use utoipa_axum::router::OpenApiRouter;
 
 use crate::state::AppState;
 
+pub mod activity;
 pub mod auth;
 pub mod columns;
 pub mod docs;
@@ -9,6 +10,7 @@ pub mod docs_dto;
 pub mod dto;
 pub mod files;
 pub mod library_dto;
+pub mod links;
 pub mod modules;
 pub mod projects;
 pub mod releases;
@@ -31,4 +33,6 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(wiki::router())
         .merge(docs::router())
         .merge(files::router())
+        .merge(activity::router())
+        .merge(links::router())
 }

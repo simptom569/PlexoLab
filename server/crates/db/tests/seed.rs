@@ -199,11 +199,42 @@ async fn canvas_arrows_connect_objects_of_the_same_document(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn activity_is_ordered_like_the_feed(pool: PgPool) {
     seed(&pool, &mock_options()).await.unwrap();
-    let first: String = db::sqlx::query_scalar("select target from activity order by created_at desc limit 1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(first, "PR #312", "самое свежее событие: «12 минут назад»");
+    let (target, text): (String, String) =
+        db::sqlx::query_as("select target, text from activity order by created_at desc limit 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    // в макете «PR #312 влит в main»; приложение «влит» не отмечает, поэтому в сиде событие такое, каким его пишет сервер
+    assert_eq!(
+        (target.as_str(), text.as_str()),
+        ("WEB-137 Неверные часовые пояса в календаре", "добавлен PR #315"),
+        "самое свежее событие: «12 минут назад»"
+    );
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn seed_on_a_given_day_puts_the_feed_relative_to_noon_of_that_day(pool: PgPool) {
+    let day = Date::from_calendar_date(2026, Month::October, 18).unwrap();
+    seed(&pool, &SeedOptions::on(day, "dev")).await.unwrap();
+    let times: Vec<String> = db::sqlx::query_scalar(
+        "select to_char(created_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI') from activity order by created_at desc",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        times,
+        [
+            "2026-10-18 11:48", // 12 минут назад
+            "2026-10-18 11:00", // 1 час назад
+            "2026-10-18 09:00", // 3 часа назад
+            "2026-10-17 18:20", // вчера, 18:20
+            "2026-10-17 15:02",
+            "2026-10-17 12:10",
+            "2026-10-15 11:40", // 15 окт, 11:40
+            "2026-10-15 10:05",
+        ]
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
