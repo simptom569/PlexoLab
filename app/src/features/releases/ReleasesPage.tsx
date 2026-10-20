@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, EmptyState, Icon, IconButton, Input, PageHead, Panel, ProgressBar, Textarea, Tick, TitleInput } from '../../components'
+import { Button, DateField, EmptyState, Icon, IconButton, Input, PageHead, Panel, ProgressBar, Textarea, Tick, TitleInput } from '../../components'
 import { useReleases } from '../../lib/api/queries'
 import type { Milestone, Release, ReleaseItem, UpdateRelease } from '../../lib/api/types'
 import { addDays } from '../../lib/date'
@@ -54,11 +54,10 @@ function MilestoneRow({ milestone }: { milestone: Milestone }) {
           {` · ${tasksText(milestone.tasks_done, milestone.tasks_total)}`}
         </span>
       </div>
-      <Input
-        type="date"
+      <DateField
         aria-label="Дата вехи"
         value={milestone.due_date}
-        onChange={(e) => e.target.value && updateMilestone.mutate({ id: milestone.id, patch: { due_date: e.target.value } })}
+        onChange={(v) => v && updateMilestone.mutate({ id: milestone.id, patch: { due_date: v } })}
       />
       <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 10 }}>
         <ProgressBar ok={pct === 100} pct={pct} style={{ flex: 1 }} />
@@ -92,7 +91,7 @@ function NewMilestone() {
           if (e.key === 'Enter') add()
         }}
       />
-      <Input type="date" aria-label="Дата новой вехи" value={date} onChange={(e) => setDate(e.target.value)} />
+      <DateField clearable aria-label="Дата новой вехи" value={date} onChange={setDate} />
       <div style={{ gridColumn: '1 / -1' }}>
         <Button onClick={add}>Добавить веху</Button>
       </div>
@@ -178,11 +177,10 @@ function ReleaseCard({ release, mutations }: { release: Release; mutations: Rele
           {RELEASE_STATUS_LABELS[status]}
         </button>
         <span style={{ flex: 1 }} />
-        <Input
-          type="date"
+        <DateField
           aria-label="Дата релиза"
           value={release.release_date}
-          onChange={(e) => e.target.value && update({ release_date: e.target.value })}
+          onChange={(v) => v && update({ release_date: v })}
         />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

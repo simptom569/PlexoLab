@@ -1,0 +1,106 @@
+/*
+  Дополнение к макету, по просьбе владельца: свой календарик в полях с датой. В макете это обычный <input type="date">,
+  у которого окошко выбора рисует браузер и оформлению не поддаётся. Поле осталось тем же (.inp), родную иконку
+  скрыли, рядом своя кнопка. Окно собрано из деталей макета; styles.css (копия макета) не менялся.
+
+  - Окно: .pop (фон, рамка, скругление 14px, тень), шапка с месяцем как у календаря доски (.cal-head: стрелки .icon-btn
+    и название месяца), подписи дней как .cal-wd (12px, 700, --muted), нижняя строка с кнопками .btn-ghost.
+  - День: 28px высотой (как .icon-btn), скругление 8px (как .menu-item), текст 13px. Наведение --surface2.
+    Сегодня — рамка и текст --accent (на доске это залитый круг, здесь он занят выбранным днём).
+    Выбранный — заливка --accent и текст --accent-ink, как .btn-primary. Дни соседних месяцев приглушены (.cal-cell.out: .65).
+  - Иконка в поле: 22px (как .cal-num), скругление 6px (как .cal-pill), цвета .icon-btn.
+  - Окно position:fixed (задаётся в разметке): .sheet и другие области с overflow:hidden его не обрежут. z-index тот же, что
+    у .pop (40), подложка — .backdrop (30).
+*/
+.dp-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dp-field > input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.dp-btn {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.pop.dp {
+  gap: 8px;
+}
+
+.dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dp-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.dp-row + .dp-row {
+  margin-top: 2px;
+}
+
+.dp-wd {
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+}
+
+.dp-day {
+  width: 100%;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dp-day:hover {
+  background: var(--surface2);
+}
+
+.dp-day.out {
+  color: var(--muted);
+  opacity: 0.65;
+}
+
+.dp-day.today {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.dp-day.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.dp-day.on:hover {
+  filter: brightness(1.08);
+}
+
+.dp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}

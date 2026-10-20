@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Avatar, Button, Icon, IconButton, Input, Opt, Pill, PriorityBars, ProgressBar, Textarea, Tick } from '../../components'
+import { Avatar, Button, DateField, Icon, IconButton, Input, Opt, Pill, PriorityBars, ProgressBar, Textarea, Tick } from '../../components'
 import { useTask } from '../../lib/api/queries'
 import type { Comment, Subtask, TaskCard, TaskDetail, UpdateTask } from '../../lib/api/types'
 import { cx } from '../../lib/cx'
@@ -107,10 +107,10 @@ function Fields({ task }: { task: TaskCard }) {
       </Row>
       <Row label="Срок">
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)' }}>
-          Начало <Input type="date" value={task.start_date ?? ''} onChange={(e) => update({ start_date: e.target.value || null })} />
+          Начало <DateField clearable value={task.start_date ?? ''} onChange={(v) => update({ start_date: v || null })} />
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)' }}>
-          Срок <Input type="date" value={task.due_date ?? ''} onChange={(e) => update({ due_date: e.target.value || null })} />
+          Срок <DateField clearable value={task.due_date ?? ''} onChange={(v) => update({ due_date: v || null })} />
         </label>
       </Row>
       <Row label="Приоритет">

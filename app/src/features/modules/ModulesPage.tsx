@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Avatar, Button, EmptyState, Input, PageHead, Panel, ProgressBar, TitleInput } from '../../components'
+import { Avatar, Button, DateField, EmptyState, Input, PageHead, Panel, ProgressBar, TitleInput } from '../../components'
 import type { Module, TaskCard, UpdateModule } from '../../lib/api/types'
 import { MODULE_STATUS_LABELS, NEXT_STATUS, type WorkStatus } from '../../lib/domain'
 import { percent, tasksText } from '../../lib/progress'
@@ -83,20 +83,20 @@ function ModuleCard({ module }: { module: Module }) {
         </button>
         <label style={{ fontSize: 12, color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
           с
-          <Input
-            type="date"
+          <DateField
+            clearable
             style={{ padding: '4px 8px', fontSize: 12 }}
             value={module.date_from ?? ''}
-            onChange={(e) => update({ date_from: e.target.value || null })}
+            onChange={(v) => update({ date_from: v || null })}
           />
         </label>
         <label style={{ fontSize: 12, color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
           по
-          <Input
-            type="date"
+          <DateField
+            clearable
             style={{ padding: '4px 8px', fontSize: 12 }}
             value={module.date_to ?? ''}
-            onChange={(e) => update({ date_to: e.target.value || null })}
+            onChange={(v) => update({ date_to: v || null })}
           />
         </label>
       </div>
