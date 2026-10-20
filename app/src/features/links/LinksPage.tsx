@@ -107,7 +107,7 @@ export function LinksPage() {
       <header className="head">
         <div className="head-l">
           <h1 className="h1">Ссылки команды</h1>
-          <p className="sub">Всё, что нужно под рукой: репозитории, мониторинг, дизайн, окружения. Адреса в макете условные.</p>
+          <p className="sub">Всё, что нужно под рукой: репозитории, мониторинг, дизайн, окружения. Нажми на карточку, и ссылка откроется в браузере.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Input
