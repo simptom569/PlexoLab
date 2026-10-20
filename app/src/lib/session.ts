@@ -37,6 +37,8 @@ interface SessionState {
   logout: () => Promise<void>
   /** Повторить вход после «нет связи» */
   retry: () => Promise<void>
+  /** Новый токен доступа (один обмен на всех: refresh-токен одноразовый). null — войти заново. */
+  refreshAccessToken: () => Promise<string | null>
 }
 
 export const useSession = create<SessionState>()((set, get) => {
@@ -145,5 +147,7 @@ export const useSession = create<SessionState>()((set, get) => {
       set({ phase: 'booting' })
       await silentLogin()
     },
+
+    refreshAccessToken,
   }
 })

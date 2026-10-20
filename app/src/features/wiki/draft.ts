@@ -192,6 +192,9 @@ export class PageDraft<P extends Versioned = WikiPage> {
       if (isConflict<P>(e)) {
         this.conflict = e.body.current
         this.changed()
+      } else if (e instanceof ApiError && e.status === 404) {
+        // страницу удалил другой участник: сохранять некуда, повторы и плашка с ошибкой были бы бесконечными
+        this.dispose()
       } else {
         if (!this.disposed) {
           this.deps.onError()

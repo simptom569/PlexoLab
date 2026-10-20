@@ -3,6 +3,8 @@ import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
 import { Toast } from '../../components/Toast'
 import { useBoard, useProjects } from '../../lib/api/queries'
+import { queryClient } from '../../lib/query'
+import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
@@ -37,6 +39,8 @@ export function Workspace() {
   const logout = useSession((s) => s.logout)
   const { page, project, theme, menu, setPage, setProject, toggleTheme, toggleMenu, closeMenus } = useUi()
   const projects = useProjects()
+  // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
+  const connection = useRealtime(queryClient)
 
   // Открытый проект: сохранённый, если он ещё существует, иначе первый
   const list = projects.data
@@ -92,6 +96,7 @@ export function Workspace() {
           onToggleUserMenu={() => toggleMenu('user')}
           dark={theme === 'dark'}
           onToggleTheme={toggleTheme}
+          connection={connection}
           onLogout={() => {
             closeMenus() // иначе после следующего входа меню осталось бы открытым
             void logout()

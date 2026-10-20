@@ -1,4 +1,5 @@
 import { cx } from '../lib/cx'
+import type { ConnectionStatus } from '../lib/realtime/connection'
 import { PAGE_LABELS, type PageId } from '../lib/pages'
 import { Avatar } from './Avatar'
 import { BrandIcon } from './Brand'
@@ -10,6 +11,27 @@ import { Sq } from './Shapes'
 
 export type SidebarProject = { id: string; name: string; color: string }
 export type SidebarUser = { name: string; role: string; tone: number }
+
+// Точка связи с сервером на аватаре. В макете её нет (добавлена по плану этапа 8), поэтому собрана из его переменных и
+// лежит поверх аватара, не меняя размеров и положения ничего вокруг.
+const CONNECTION: Record<ConnectionStatus, { color: string; text: string }> = {
+  open: { color: 'var(--ok)', text: 'Связь с сервером есть: изменения других участников видны сразу' },
+  connecting: { color: 'var(--warn)', text: 'Подключаюсь к серверу…' },
+  offline: { color: 'var(--bug-fg)', text: 'Нет связи с сервером, пробую подключиться снова' },
+}
+
+function ConnectionDot({ status }: { status: ConnectionStatus }) {
+  const { color, text } = CONNECTION[status]
+  return (
+    <span
+      role="img"
+      aria-label={text}
+      title={text}
+      data-connection={status}
+      style={{ position: 'absolute', right: -1, bottom: -1, width: 10, height: 10, borderRadius: '50%', background: color, boxShadow: '0 0 0 2px var(--surface)' }}
+    />
+  )
+}
 
 const NAV: Array<{ id: PageId; icon: IconName }> = [
   { id: 'board', icon: 'board' },
@@ -35,6 +57,8 @@ type SidebarProps = {
   dark: boolean
   onToggleTheme: () => void
   onLogout: () => void
+  /** Состояние связи для точки на аватаре; не задано — точки нет (витрина компонентов) */
+  connection?: ConnectionStatus
 }
 
 export function Sidebar({
@@ -50,6 +74,7 @@ export function Sidebar({
   dark,
   onToggleTheme,
   onLogout,
+  connection,
 }: SidebarProps) {
   return (
     <aside className="side">
@@ -118,7 +143,10 @@ export function Sidebar({
               textAlign: 'left',
             }}
           >
-            <Avatar name={user.name} tone={user.tone} size="lg" decorative />
+            <span style={{ position: 'relative', display: 'inline-flex', flex: 'none' }}>
+              <Avatar name={user.name} tone={user.tone} size="lg" decorative />
+              {connection && <ConnectionDot status={connection} />}
+            </span>
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
               <strong style={{ fontSize: 14 }}>{user.name}</strong>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{user.role}</span>

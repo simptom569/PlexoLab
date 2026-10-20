@@ -2,6 +2,7 @@
 // и повторяет запрос. Если обновить не вышло, сессия считается потерянной и человек возвращается на экран входа.
 
 import { httpFetch } from '../platform/http'
+import { CLIENT_ID } from '../realtime/clientId'
 
 export class ApiError extends Error {
   readonly status: number
@@ -63,6 +64,8 @@ async function call(method: Method, path: string, payload: Payload, { accept = '
       method,
       headers: {
         Accept: accept,
+        // сервер вернёт эту метку в событиях об изменении, и мы пропустим их: свои изменения экран уже показал
+        'X-Client-Id': CLIENT_ID,
         // у формы тип содержимого с границей частей выставляет сам fetch
         ...(payload.json !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

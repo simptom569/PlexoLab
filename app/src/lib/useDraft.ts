@@ -1,10 +1,28 @@
 import { useState, type ChangeEvent, type KeyboardEvent } from 'react'
 
+export type DraftState = {
+  /** Последнее значение с сервера, которое видел черновик */
+  value: string
+  /** Что сейчас в поле */
+  draft: string
+}
+
+/**
+ * Пришло значение с сервера. Если человек в поле ничего не менял, поле берёт новое значение (сохранили, откатили,
+ * другой участник поправил). Если менял, его текст остаётся: чужая правка не должна стирать то, что он печатает.
+ * Когда он закончит, его текст сохранится поверх (последняя запись побеждает, как и раньше).
+ */
+export function syncDraft(state: DraftState, value: string): DraftState {
+  if (state.value === value) return state
+  const untouched = state.draft === state.value
+  return { value, draft: untouched ? value : state.draft }
+}
+
 /** Черновик поля: правится локально, а на сервер уходит по blur или Enter, не на каждую букву */
 export function useDraft(value: string) {
-  const [state, setState] = useState({ value, draft: value })
-  // значение пришло новое (сохранили, обновили с сервера): черновик начинается заново
-  if (state.value !== value) setState({ value, draft: value })
+  const [state, setState] = useState<DraftState>({ value, draft: value })
+  // значение пришло новое (сохранили, обновили с сервера): см. syncDraft
+  if (state.value !== value) setState(syncDraft(state, value))
   const setDraft = (draft: string) => setState((s) => ({ ...s, draft }))
   return [state.draft, setDraft] as const
 }
@@ -26,8 +44,12 @@ export function useDraftField(value: string, onCommit: (next: string) => void, {
   const commit = () => {
     const next = trim ? draft.trim() : draft
     if (!allowEmpty && !next.trim()) setDraft(value)
-    else if (next !== value) onCommit(next)
-    else if (draft !== next) setDraft(next) // убрали пробелы по краям, но значение прежнее
+    else if (next !== value) {
+      onCommit(next)
+      // поле показывает то, что ушло на сервер (без пробелов по краям): так оно совпадёт с новым значением,
+      // а не будет считаться недописанным
+      setDraft(next)
+    } else if (draft !== next) setDraft(next) // убрали пробелы по краям, но значение прежнее
   }
 
   return {

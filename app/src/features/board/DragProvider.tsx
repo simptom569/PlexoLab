@@ -3,6 +3,7 @@ import {
   type DragEndEvent, type DragMoveEvent, type DragStartEvent,
 } from '@dnd-kit/core'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { setBusy } from '../../lib/busy'
 import { DragContext, IDLE, targetAt, type DragData, type DragKind, type DragState } from './dnd'
 
 interface ProviderProps {
@@ -22,6 +23,12 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
     ref.current = next
     setState(next)
   }, [])
+
+  // пока тащим, чужие изменения не перечитываются: доска «выдернула» бы карточку из-под указателя (lib/busy.ts)
+  useEffect(() => {
+    setBusy('drag', state.kind !== null)
+    return () => setBusy('drag', false)
+  }, [state.kind])
 
   // пока тащим, текст на странице не выделяется
   useEffect(() => {
