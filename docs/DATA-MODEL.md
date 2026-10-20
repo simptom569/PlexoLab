@@ -212,8 +212,9 @@ create index on tasks (project_id, column_id, position);
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
 | `GET /docs?q=&starred=`, `POST /docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы. Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке, `null` — в конец) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
 | `PUT /docs/{id}/canvas` | сохранить сразу карточку с текстом, объекты и стрелки холста (тело — полный список, идентификаторы объектов выдаёт клиент); в одной транзакции, ответ с новой `canvas_rev` |
-| `GET /activity?actor=&kind=&before=` | лента, постранично по 50 |
-| `GET/POST/PATCH/DELETE /link-groups`, `/links` | ссылки команды |
+| `GET /activity?actor=&kind=&before=` | лента, постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc`, `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
+| `GET/POST /link-groups`, `PATCH/DELETE /link-groups/{id}` | группы ссылок команды (список сразу со ссылками), переименование, удаление вместе со ссылками |
+| `POST /link-groups/{id}/links`, `DELETE /links/{id}` | добавить ссылку в конец группы (`https://` добавляется, если нет схемы), удалить. Правки ссылки нет: в макете её нельзя править |
 | `GET /healthz` | проверка живости (без токена) |
 
 Запись в `activity` делает сервер сам в той же транзакции, что и действие. Клиент её не создаёт.
