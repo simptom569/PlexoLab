@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 mod multipart;
 pub use multipart::multipart_body;
 
-use api::{AppState, router};
+use api::{AppState, Event, router};
 use axum::{
     Router,
     body::Body,
@@ -27,6 +27,13 @@ pub const SECRET: &str = "integration-test-secret-integration-test";
 
 pub fn app(pool: PgPool) -> Router {
     router(AppState::new(pool, SECRET))
+}
+
+/// Приложение вместе с каналом его событий: так тест слышит, что разослал сервер
+pub fn app_and_events(pool: PgPool) -> (Router, api::events::Events) {
+    let state = AppState::new(pool, SECRET);
+    let events = state.events.clone();
+    (router(state), events)
 }
 
 /// Приложение с отдельной папкой данных и лимитом загрузки
@@ -137,6 +144,8 @@ pub async fn login_ok(app: &Router, email: &str, password: &str) -> Value {
 /// Пользователь, уже вошедший в систему
 pub struct Ctx {
     pub app: Router,
+    /// Канал событий приложения: `subscribe()` до действия, `drain` после
+    pub events: api::events::Events,
     pub pool: PgPool,
     pub token: String,
     pub user: User,
@@ -151,10 +160,29 @@ impl Ctx {
     pub async fn with_upload_limit(pool: PgPool, max_upload_bytes: u64) -> Ctx {
         let user = make_user(&pool, "tester@example.com", "Тестер Т.", "test-password").await;
         let dir = TestDir::new();
-        let app = app_with_storage(pool.clone(), &dir.0, max_upload_bytes);
+        let state = AppState::new(pool.clone(), SECRET).with_data_dir(&dir.0).with_max_upload_bytes(max_upload_bytes);
+        let events = state.events.clone();
+        let app = router(state);
         let tokens = login_ok(&app, "tester@example.com", "test-password").await;
         let token = str_field(&tokens, "access_token").to_owned();
-        Ctx { app, pool, token, user, dir }
+        Ctx { app, events, pool, token, user, dir }
+    }
+
+    /// Запрос от клиента с меткой `X-Client-Id`
+    pub async fn send_as(&self, client: &str, method: Method, uri: &str, body: Option<Value>) -> Reply {
+        let mut req = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(AUTHORIZATION, format!("Bearer {}", self.token))
+            .header("x-client-id", client);
+        let body = match body {
+            Some(b) => {
+                req = req.header(CONTENT_TYPE, "application/json");
+                Body::from(b.to_string())
+            }
+            None => Body::empty(),
+        };
+        reply(self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap()).await
     }
 
     pub async fn get(&self, uri: &str) -> Reply {
@@ -204,6 +232,17 @@ impl Ctx {
         assert_eq!(r.status, status, "тело ответа: {}", r.body);
         r.body
     }
+}
+
+/// События, которые успели прийти в канал: (тип, id, проект). Вызывать после запроса: слой рассылает событие до ответа.
+pub fn drain(
+    rx: &mut tokio::sync::broadcast::Receiver<std::sync::Arc<Event>>,
+) -> Vec<(&'static str, Option<Uuid>, Option<Uuid>)> {
+    let mut out = Vec::new();
+    while let Ok(event) = rx.try_recv() {
+        out.push((event.kind, event.id, event.project_id));
+    }
+    out
 }
 
 pub fn id_of(v: &Value) -> Uuid {

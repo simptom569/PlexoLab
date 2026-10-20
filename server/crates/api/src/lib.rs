@@ -1,9 +1,9 @@
-//! HTTP-слой PlexoLab: роуты, middleware, OpenAPI (WebSocket появится на этапе 8).
+//! HTTP-слой PlexoLab: роуты, middleware, OpenAPI, WebSocket с событиями для живых обновлений.
 
 use std::sync::Arc;
 
 use anyhow::Context;
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, middleware::from_fn_with_state, routing::get};
 use tower_http::{
     LatencyUnit,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
@@ -15,16 +15,19 @@ use utoipa_axum::router::OpenApiRouter;
 pub mod config;
 pub mod cors;
 pub mod error;
+pub mod events;
 pub mod extract;
 mod openapi;
 pub mod routes;
 pub mod serde_helpers;
 pub mod state;
 mod storage;
+pub mod ws;
 
 pub use config::Config;
 pub use error::{ApiError, ApiResult};
-pub use state::AppState;
+pub use events::Event;
+pub use state::{AppState, Realtime};
 
 /// Схема OpenAPI в виде JSON. Для неё не нужны ни база, ни запущенный сервер: так клиент получает типы.
 pub fn openapi_document() -> serde_json::Value {
@@ -34,13 +37,16 @@ pub fn openapi_document() -> serde_json::Value {
     serde_json::to_value(&api).expect("схема OpenAPI сериализуется")
 }
 
-/// Собирает приложение: `/healthz`, ручки `/api/v1/...` и, если включено, `/api/v1/openapi.json`.
+/// Собирает приложение: `/healthz`, ручки `/api/v1/...`, WebSocket `/api/v1/ws` и, если включено, `/api/v1/openapi.json`.
 /// CORS добавляет вызывающий (`cors::layer`), чтобы он оборачивал всё, включая ответы 404.
 pub fn router(state: AppState) -> Router {
     let (v1, _) =
         OpenApiRouter::with_openapi(openapi::ApiDoc::openapi()).nest("/api/v1", routes::v1()).split_for_parts();
 
-    let mut app = Router::new().route("/healthz", get(healthz));
+    // события рассылаются после успешного ответа ручки записи, то есть после commit (см. events.rs)
+    let v1 = v1.route_layer(from_fn_with_state(state.clone(), events::publish_events));
+
+    let mut app = Router::new().route("/healthz", get(healthz)).route("/api/v1/ws", get(ws::handler));
     if state.expose_openapi {
         let api_json = Arc::new(openapi_document());
         app = app.route("/api/v1/openapi.json", get(move || async move { Json(api_json) }));
@@ -69,12 +75,18 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         .with_openapi(config.expose_openapi)
         .with_data_dir(config.data_dir.clone())
         .with_max_upload_bytes(config.max_upload_bytes);
-    let app = router(state).layer(cors::layer(&config.cors_origins));
+    let app = router(state.clone()).layer(cors::layer(&config.cors_origins));
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await
         .with_context(|| format!("не удалось занять адрес {}", config.bind_addr))?;
     tracing::info!(addr = %config.bind_addr, "сервер слушает");
-    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            // открытые WebSocket закрываются сами: иначе остановка ждала бы их, пока клиенты не уйдут
+            state.begin_shutdown();
+        })
+        .await?;
     Ok(())
 }
 

@@ -1,7 +1,35 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use db::PgPool;
 use domain::files::DEFAULT_MAX_UPLOAD_BYTES;
+use tokio::sync::{Semaphore, watch};
+
+use crate::events::{DEFAULT_CAPACITY, Events};
+
+/// Настройки живых обновлений (WebSocket). Значения по умолчанию рассчитаны на команду из нескольких человек; тестам
+/// нужны короткие паузы.
+#[derive(Debug, Clone)]
+pub struct Realtime {
+    /// Сколько ждать первое сообщение с токеном после подключения
+    pub auth_timeout: Duration,
+    /// Как часто сервер шлёт `ping`; клиент отвечает `pong`
+    pub heartbeat: Duration,
+    /// Сколько можно молчать (ни одного сообщения от клиента), прежде чем соединение считается мёртвым
+    pub idle_timeout: Duration,
+    /// Сколько соединений держать одновременно: больше не принимаются (503)
+    pub max_connections: usize,
+}
+
+impl Default for Realtime {
+    fn default() -> Self {
+        Realtime {
+            auth_timeout: Duration::from_secs(10),
+            heartbeat: Duration::from_secs(25),
+            idle_timeout: Duration::from_secs(70),
+            max_connections: 100,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -14,16 +42,28 @@ pub struct AppState {
     pub data_dir: PathBuf,
     /// Самый большой допустимый файл при загрузке, байты
     pub max_upload_bytes: u64,
+    /// События для живых обновлений: сюда пишет слой над ручками, отсюда читают WebSocket-соединения
+    pub events: Events,
+    pub realtime: Realtime,
+    /// Свободные места под соединения WebSocket
+    pub connections: Arc<Semaphore>,
+    /// `true`, когда сервер останавливается: соединения закрываются сами, иначе остановка ждала бы их вечно
+    pub shutdown: Arc<watch::Sender<bool>>,
 }
 
 impl AppState {
     pub fn new(pool: PgPool, jwt_secret: &str) -> Self {
+        let realtime = Realtime::default();
         AppState {
             pool,
             jwt_secret: jwt_secret.as_bytes().into(),
             expose_openapi: false,
             data_dir: PathBuf::from("./data"),
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
+            events: Events::new(DEFAULT_CAPACITY),
+            connections: Arc::new(Semaphore::new(realtime.max_connections)),
+            realtime,
+            shutdown: Arc::new(watch::channel(false).0),
         }
     }
 
@@ -40,5 +80,23 @@ impl AppState {
     pub fn with_openapi(mut self, expose: bool) -> Self {
         self.expose_openapi = expose;
         self
+    }
+
+    /// Свои паузы и лимит соединений (для тестов)
+    pub fn with_realtime(mut self, realtime: Realtime) -> Self {
+        self.connections = Arc::new(Semaphore::new(realtime.max_connections));
+        self.realtime = realtime;
+        self
+    }
+
+    /// Канал событий другой ёмкости (для тестов отставшего получателя)
+    pub fn with_event_capacity(mut self, capacity: usize) -> Self {
+        self.events = Events::new(capacity);
+        self
+    }
+
+    /// Сообщить соединениям, что сервер останавливается
+    pub fn begin_shutdown(&self) {
+        self.shutdown.send_replace(true);
     }
 }

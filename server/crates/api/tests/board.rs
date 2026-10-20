@@ -24,10 +24,10 @@ async fn seeded(pool: PgPool) -> Ctx {
         password: "dev".into(),
     };
     seed(&pool, &options).await.unwrap();
-    let app = app(pool.clone());
+    let (app, events) = app_and_events(pool.clone());
     let tokens = login_ok(&app, "lena@example.com", "dev").await;
     let user = db::users::find_by_email(&pool, "lena@example.com").await.unwrap().unwrap();
-    Ctx { app, pool, token: str_field(&tokens, "access_token").to_owned(), user, dir: common::TestDir::new() }
+    Ctx { app, events, pool, token: str_field(&tokens, "access_token").to_owned(), user, dir: common::TestDir::new() }
 }
 
 // ===== Проекты и доска =====
