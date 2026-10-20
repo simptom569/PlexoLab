@@ -12,7 +12,7 @@ const REFRESH_PREFIX = 'plexolab.refresh@'
 export type OpenOptions = {
   email?: string
   password?: string
-  theme?: 'light' | 'dark'
+  theme?: 'light' | 'dark' | 'system'
   /** Что добавить к сохранённым настройкам (вид, фильтры и т. п.) */
   settings?: Record<string, unknown>
   /** Страница приложения, по умолчанию корень */

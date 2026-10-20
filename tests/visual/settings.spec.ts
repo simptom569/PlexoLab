@@ -1,20 +1,11 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { openApp, SERVER } from './fixtures'
+import { openSettings, USER_BUTTON } from './settings-helpers'
 
 // Окно «Настройки» (модалка с категориями слева) и шапка меню пользователя. В макете их нет, поэтому эталона
 // из design/screenshots нет: снимки окна свои, в обеих темах. Обновить: npm run update
 
 const TABS = ['Аккаунт', 'Внешний вид', 'Доска', 'Связь с сервером', 'Данные', 'Приложение', 'Горячие клавиши', 'О программе']
-const USER_BUTTON = /Лена М\.\s*Frontend/
-
-async function openSettings(page: Page) {
-  await page.getByRole('button', { name: USER_BUTTON }).click()
-  await page.getByRole('menuitem', { name: 'Настройки' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Настройки' })
-  await expect(dialog).toBeVisible()
-  return dialog
-}
-
 test.describe('меню пользователя', () => {
   test.beforeEach(async ({ page }) => {
     await openApp(page)
