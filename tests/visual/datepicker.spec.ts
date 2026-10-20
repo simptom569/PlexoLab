@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openApp, resetData, SERVER } from './fixtures'
-import { switchToDark } from './helpers'
+import { fillDate, switchToDark } from './helpers'
 
 test.beforeEach(() => resetData())
 
@@ -123,7 +123,7 @@ test.describe('календарик в поле даты', () => {
   test('ввод с клавиатуры по частям даты остаётся родным', async ({ page }) => {
     await openApp(page, { settings: { page: 'releases' } })
     const field = row(page, 'Релиз 2.9.0').getByLabel('Дата вехи')
-    await field.fill('2026-11-25')
+    await fillDate(field, '2026-11-25')
     await expect.poll(async () => (await milestones(page)).map((m) => m.due_date)).toContain('2026-11-25')
   })
 
@@ -176,5 +176,109 @@ test.describe('календарик в поле даты', () => {
     // фон окна — --surface тёмной темы (#161921)
     expect(colors.surface.toLowerCase()).toBe('#161921')
     expect(colors.bg).toBe('rgb(22, 25, 33)')
+  })
+})
+
+test.describe('ввод даты цифрами с клавиатуры', () => {
+  /** Запросы правки, которые ушли на сервер: пока человек печатает, их быть не должно */
+  const watchPatches = (page: Page) => {
+    const sent: string[] = []
+    page.on('request', (r) => r.method() === 'PATCH' && sent.push(r.postData() ?? ''))
+    return sent
+  }
+  /** Ставит курсор в первую часть даты (день) */
+  const clickDay = async (page: Page, field: Locator) => {
+    const box = (await field.boundingBox())!
+    await page.mouse.click(box.x + 14, box.y + box.height / 2)
+  }
+  const raw = (field: Locator) => field.evaluate((el: HTMLInputElement) => ({ value: el.value, incomplete: el.validity.badInput }))
+  const openTask = async (page: Page) => {
+    await openApp(page)
+    await page.locator('[data-card-id]', { hasText: 'WEB-144' }).click()
+    return drawer(page).getByLabel('Срок') // 2026-10-23
+  }
+  const leave = (page: Page) => drawer(page).getByRole('textbox', { name: 'Название задачи' }).click()
+
+  test('«10.10» и год подряд: поле не стирается, на сервер уходит одна правка при выходе из поля', async ({ page }) => {
+    const sent = watchPatches(page)
+    const field = await openTask(page)
+    await clickDay(page, field)
+    await page.keyboard.type('1010')
+    await expect.poll(() => raw(field)).toEqual({ value: '2026-10-10', incomplete: false })
+    await page.keyboard.type('2027')
+    await expect.poll(() => raw(field)).toEqual({ value: '2027-10-10', incomplete: false })
+    // пока поле в фокусе, на сервер ничего не ушло, в том числе и промежуточные годы 0002, 0020, 0202
+    await page.waitForTimeout(300)
+    expect(sent).toEqual([])
+    expect((await task(page, 'WEB-144')).due_date).toBe('2026-10-23')
+
+    await leave(page)
+    await expect.poll(async () => (await task(page, 'WEB-144')).due_date).toBe('2027-10-10')
+    expect(sent).toEqual(['{"due_date":"2027-10-10"}'])
+    await expect(field).toHaveValue('2027-10-10')
+  })
+
+  test('первая цифра ноль («05.05») не стирает поле', async ({ page }) => {
+    const field = await openTask(page)
+    await clickDay(page, field)
+    await page.keyboard.type('0505')
+    await expect.poll(() => raw(field)).toEqual({ value: '2026-05-05', incomplete: false })
+    await leave(page)
+    await expect.poll(async () => (await task(page, 'WEB-144')).due_date).toBe('2026-05-05')
+  })
+
+  test('год поверх готовой даты: «20» не стирает остальное', async ({ page }) => {
+    const field = await openTask(page)
+    await clickDay(page, field)
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight') // год
+    await page.keyboard.type('20')
+    // «0020-10-23» — настоящая дата, поле не должно стереться, пока год дописывают
+    await expect.poll(() => raw(field)).toEqual({ value: '0020-10-23', incomplete: false })
+    await page.keyboard.type('26')
+    await expect.poll(() => raw(field)).toEqual({ value: '2026-10-23', incomplete: false })
+  })
+
+  test('недописанная дата при выходе возвращает прежнюю и ничего не отправляет', async ({ page }) => {
+    const sent = watchPatches(page)
+    const field = await openTask(page)
+    await clickDay(page, field)
+    await page.keyboard.press('Backspace') // стёрт только день
+    await expect.poll(() => raw(field)).toEqual({ value: '', incomplete: true })
+    await leave(page)
+    await expect(field).toHaveValue('2026-10-23')
+    expect(await raw(field)).toEqual({ value: '2026-10-23', incomplete: false })
+    await page.waitForTimeout(300)
+    expect(sent).toEqual([])
+  })
+
+  test('Enter заканчивает ввод и сохраняет дату вехи', async ({ page }) => {
+    await openApp(page, { settings: { page: 'releases' } })
+    const field = row(page, 'Релиз 2.9.0').getByLabel('Дата вехи')
+    await clickDay(page, field)
+    await page.keyboard.type('15')
+    await expect.poll(() => raw(field)).toEqual({ value: '2026-11-15', incomplete: false })
+    expect((await milestones(page)).map((m) => m.due_date)).not.toContain('2026-11-15')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await milestones(page)).map((m) => m.due_date)).toContain('2026-11-15')
+  })
+
+  test('у обязательной даты (веха) пустое поле не стирает дату', async ({ page }) => {
+    const sent = watchPatches(page)
+    await openApp(page, { settings: { page: 'releases' } })
+    const field = row(page, 'Релиз 2.9.0').getByLabel('Дата вехи')
+    await field.fill('')
+    await field.blur()
+    await expect(field).toHaveValue('2026-11-20')
+    await page.waitForTimeout(300)
+    expect(sent).toEqual([])
+  })
+
+  test('выбор дня в календарике сохраняется сразу, без выхода из поля', async ({ page }) => {
+    const field = await openTask(page)
+    await opener(field).click()
+    await picker(page).getByRole('button', { name: '28 октября 2026' }).click()
+    await expect(field).toHaveValue('2026-10-28')
+    await expect.poll(async () => (await task(page, 'WEB-144')).due_date).toBe('2026-10-28')
   })
 })

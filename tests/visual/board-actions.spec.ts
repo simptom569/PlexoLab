@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openApp, resetData, SERVER } from './fixtures'
+import { fillDate } from './helpers'
 
 test.beforeEach(() => resetData())
 
@@ -351,8 +352,8 @@ test.describe('панель задачи', () => {
     await expect(cards(page, 'На ревью').last()).toContainText('WEB-151')
     await d.getByRole('button', { name: 'Игорь П.' }).click()
     await d.getByRole('button', { name: 'Низкий' }).click()
-    await d.getByLabel('Срок').fill('2026-11-03')
-    await d.getByLabel('Начало').fill('2026-10-28')
+    await fillDate(d.getByLabel('Срок'), '2026-11-03')
+    await fillDate(d.getByLabel('Начало'), '2026-10-28')
     await d.getByRole('button', { name: 'Уведомления' }).click()
     await d.getByRole('button', { name: 'Релиз 2.9.0' }).click()
     const pr = d.getByRole('textbox', { name: 'Номер PR' })
@@ -383,7 +384,7 @@ test.describe('панель задачи', () => {
     const d = drawer(page)
     await d.getByRole('button', { name: 'Никто' }).click()
     await d.getByRole('button', { name: 'Не выбран' }).first().click() // модуль
-    await d.getByLabel('Срок').fill('')
+    await fillDate(d.getByLabel('Срок'), '')
     await expect(card(page, 'WEB-144').locator('.avatar')).toHaveAttribute('aria-label', 'Без исполнителя')
     await expect(card(page, 'WEB-144').getByText('23 окт')).toHaveCount(0)
     await expect

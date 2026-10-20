@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { compareToReference, type Rect } from './compare'
 import { openApp, resetData } from './fixtures'
-import { textRects } from './helpers'
+import { fillDate, textRects } from './helpers'
 import { MAX_DIFF_RATIO } from './tolerance'
 
 // Всё правее бокового меню: меню сверяется отдельно (sidebar.spec.ts)
@@ -299,9 +299,9 @@ test.describe('модули', () => {
     const dateFrom = async () => (await webBoard(page)).modules.find((m) => m.title === 'Надёжность')?.date_from
     const from = card(page, 'Надёжность').locator('input[type=date]').first()
     await expect(from).toHaveValue('2026-11-02')
-    await from.fill('2026-11-05')
+    await fillDate(from, '2026-11-05')
     await expect.poll(dateFrom).toBe('2026-11-05')
-    await from.fill('')
+    await fillDate(from, '')
     await expect.poll(dateFrom).toBeNull()
     await page.reload()
     await expect(card(page, 'Надёжность').locator('input[type=date]').first()).toHaveValue('')
@@ -411,7 +411,7 @@ test.describe('вехи', () => {
     await expect(rows(page).nth(2).getByLabel('Дата вехи')).toHaveValue('2026-11-01')
 
     await title.fill('С датой')
-    await page.getByLabel('Дата новой вехи').fill('2026-10-19')
+    await fillDate(page.getByLabel('Дата новой вехи'), '2026-10-19')
     await title.press('Enter')
     await expect(rows(page).nth(0).getByLabel('Название вехи')).toHaveValue('С датой')
     await expect(rows(page).nth(0)).toContainText('через 1 дн.')
@@ -421,7 +421,7 @@ test.describe('вехи', () => {
   test('дата и название меняются; просроченная веха подписана красным', async ({ page }) => {
     await openApp(page, { settings: { page: 'releases' } })
     const first = rows(page).nth(0)
-    await first.getByLabel('Дата вехи').fill('2026-10-15')
+    await fillDate(first.getByLabel('Дата вехи'), '2026-10-15')
     await expect(rows(page).nth(0)).toContainText('просрочена на 3 дн.')
     await expect(rows(page).nth(0).locator('.late')).toHaveText('просрочена на 3 дн.')
     await first.getByLabel('Название вехи').fill('Релиз 2.8.1')
@@ -553,7 +553,7 @@ test.describe('релизы', () => {
     const c = page.locator('.panel').filter({ has: page.getByLabel('Версия', { exact: true }) }).first()
     await expect(c.getByLabel('Версия', { exact: true })).toHaveValue('2.9.0')
     await c.getByLabel('Список изменений').fill('• Тёмная тема\n• SSO')
-    await c.getByLabel('Дата релиза').fill('2026-12-01')
+    await fillDate(c.getByLabel('Дата релиза'), '2026-12-01')
     await c.getByLabel('Версия', { exact: true }).fill('2.9.1')
     await c.getByLabel('Версия', { exact: true }).press('Enter')
     await expect.poll(async () => (await webReleases(page)).map((r) => [r.version, r.release_date, r.notes])).toContainEqual(['2.9.1', '2026-12-01', '• Тёмная тема\n• SSO'])

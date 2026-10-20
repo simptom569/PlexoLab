@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import type { Rect } from './compare'
 
 /** Ждёт, пока страница загрузится и подгрузятся шрифты Manrope и JetBrains Mono */
@@ -48,6 +48,15 @@ export async function textRects(page: Page, region: Rect): Promise<Rect[]> {
     }
     return out
   }, region)
+}
+
+/**
+ * Ставит дату в поле и заканчивает ввод. Поле даты отправляет значение наверх, когда человек ушёл из него (пока он печатает,
+ * оно живёт своим черновиком), а `fill` фокус не снимает.
+ */
+export async function fillDate(field: Locator, value: string) {
+  await field.fill(value)
+  await field.blur()
 }
 
 /** Включает тёмную тему так, как это делает пользователь: меню на карточке пользователя */
