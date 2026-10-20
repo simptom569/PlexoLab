@@ -227,7 +227,7 @@ describe('выход и потеря сессии', () => {
   })
 })
 
-describe('профиль, пароль и «выйти везде»', () => {
+describe('профиль и пароль', () => {
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
   const lastRequest = () => {
     const [url, init] = httpFetch.mock.calls.at(-1)! as [string, { method: string; body?: string }]
@@ -275,22 +275,5 @@ describe('профиль, пароль и «выйти везде»', () => {
     expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access1' })
     expect(vault.get(SERVER)).toBe('refresh1')
     expect(authApi.refresh).not.toHaveBeenCalled()
-  })
-
-  it('«выйти везде»: сначала сервер, потом выход здесь', async () => {
-    httpFetch.mockResolvedValueOnce(new Response(null, { status: 204 }))
-    authApi.logout.mockResolvedValue(undefined)
-    await state().logoutEverywhere()
-    expect(lastRequest()).toMatchObject({ url: `${SERVER}/api/v1/auth/logout-all`, method: 'POST' })
-    expect(vault.has(SERVER)).toBe(false)
-    expect(state()).toMatchObject({ phase: 'login', accessToken: null, user: null })
-  })
-
-  it('«выйти везде»: сервер не ответил, остаёмся в системе', async () => {
-    httpFetch.mockRejectedValueOnce(new NetworkError('Нет связи с сервером'))
-    await expect(state().logoutEverywhere()).rejects.toBeInstanceOf(NetworkError)
-    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access1' })
-    expect(vault.get(SERVER)).toBe('refresh1')
-    expect(authApi.logout).not.toHaveBeenCalled()
   })
 })

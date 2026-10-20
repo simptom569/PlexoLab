@@ -2,7 +2,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import { openApp, resetData, SERVER } from './fixtures'
 import { openSettings, USER_BUTTON } from './settings-helpers'
 
-// Настройки → «Аккаунт»: профиль, смена пароля, «выйти везде». Тесты меняют имя и пароль, поэтому данные возвращаются
+// Настройки → «Аккаунт»: профиль и смена пароля. Тесты меняют имя и пароль, поэтому данные возвращаются
 // к данным макета и до каждого теста, и после последнего.
 
 test.beforeEach(() => resetData())
@@ -206,39 +206,5 @@ test.describe('смена пароля', () => {
     await dialog.getByRole('button', { name: 'Сменить пароль' }).click()
     await expect(dialog.getByLabel('Текущий')).toHaveValue('')
     await expect(dialog.getByLabel('Новый')).toHaveValue('')
-  })
-})
-
-// ===== Выйти везде =====
-
-test.describe('«Выйти на всех устройствах»', () => {
-  test('в два нажатия: человек возвращается на экран входа, все его сессии завершены', async ({ page }) => {
-    await openApp(page)
-    const other = await anotherSession(page)
-    const dialog = await openSettings(page)
-
-    await dialog.getByRole('button', { name: 'Выйти везде' }).click()
-    await expect(dialog.getByRole('button', { name: 'Точно выйти везде?' })).toBeVisible()
-    await expect(page.getByRole('navigation', { name: 'Основная навигация' }), 'после первого нажатия ничего не случилось').toBeVisible()
-    await dialog.getByRole('button', { name: 'Точно выйти везде?' }).click()
-
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Вход')
-    expect(await refreshStatus(page, other), 'другое устройство тоже вышло').toBe(401)
-    // сам пароль не менялся
-    await page.getByLabel('Пароль').fill(OLD)
-    await page.getByRole('button', { name: 'Войти' }).click()
-    await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible()
-    await expect(page.getByRole('dialog', { name: 'Настройки' })).toHaveCount(0)
-  })
-
-  test('сервер не ответил: понятное сообщение, человек остаётся в системе', async ({ page }) => {
-    await openApp(page)
-    const dialog = await openSettings(page)
-    await page.route('**/auth/logout-all', (route) => route.abort())
-    await dialog.getByRole('button', { name: 'Выйти везде' }).click()
-    await dialog.getByRole('button', { name: 'Точно выйти везде?' }).click()
-    await expect(dialog.getByRole('alert')).toHaveText('Нет связи с сервером')
-    await expect(dialog.getByRole('button', { name: 'Выйти везде' }), 'вопрос «Точно?» снят').toBeVisible()
-    await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible()
   })
 })

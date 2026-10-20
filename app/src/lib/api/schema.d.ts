@@ -59,26 +59,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/logout-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Выйти на всех устройствах: все refresh-токены пользователя удаляются, в том числе этого устройства. Токены доступа,
-         *     выданные раньше, действуют до конца своего срока (до 12 часов), обновить их уже нельзя. Повторный вызов тоже 204.
-         */
-        post: operations["logout_all"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/password": {
         parameters: {
             query?: never;
@@ -1779,33 +1759,6 @@ export interface operations {
             };
             /** @description Некорректный запрос */
             400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    logout_all: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Все сессии пользователя завершены */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Нет действительного токена */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };

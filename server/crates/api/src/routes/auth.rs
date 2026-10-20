@@ -18,7 +18,6 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(login))
         .routes(routes!(refresh))
         .routes(routes!(logout))
-        .routes(routes!(logout_all))
         .routes(routes!(change_password))
 }
 
@@ -158,23 +157,6 @@ async fn refresh(
 )]
 async fn logout(State(state): State<AppState>, ApiJson(req): ApiJson<RefreshRequest>) -> ApiResult<StatusCode> {
     db::tokens::delete(&state.pool, &auth::hash_refresh_token(req.refresh_token.trim())).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// Выйти на всех устройствах: все refresh-токены пользователя удаляются, в том числе этого устройства. Токены доступа,
-/// выданные раньше, действуют до конца своего срока (до 12 часов), обновить их уже нельзя. Повторный вызов тоже 204.
-#[utoipa::path(
-    post,
-    path = "/auth/logout-all",
-    tag = "auth",
-    security(("bearer" = [])),
-    responses(
-        (status = 204, description = "Все сессии пользователя завершены"),
-        (status = 401, description = "Нет действительного токена", body = ErrorBody),
-    )
-)]
-async fn logout_all(auth: AuthUser, State(state): State<AppState>) -> ApiResult<StatusCode> {
-    db::tokens::delete_all_for_user(&state.pool, auth.id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

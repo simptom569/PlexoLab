@@ -42,8 +42,6 @@ interface SessionState {
    * заново входить не нужно. Бросает ApiError; неверный текущий пароль это 400 `wrong_password`, сессия остаётся.
    */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>
-  /** Выйти на всех устройствах (POST /auth/logout-all), затем обычный выход здесь. Не вышло на сервере: остаёмся в системе. */
-  logoutEverywhere: () => Promise<void>
   /** Повторить вход после «нет связи» */
   retry: () => Promise<void>
   /** Новый токен доступа (один обмен на всех: refresh-токен одноразовый). null — войти заново. */
@@ -159,11 +157,6 @@ export const useSession = create<SessionState>()((set, get) => {
     async changePassword(currentPassword, newPassword) {
       const tokens = await api.post<TokenResponse>('/auth/password', { current_password: currentPassword, new_password: newPassword })
       await applyTokens(tokens)
-    },
-
-    async logoutEverywhere() {
-      await api.post('/auth/logout-all')
-      await get().logout() // refresh-токена на сервере уже нет: logout уберёт его и у нас
     },
 
     async retry() {

@@ -1,4 +1,4 @@
-//! Профиль, смена пароля и «выйти везде» на настоящем Postgres (временная база на каждый тест).
+//! Профиль и смена пароля на настоящем Postgres (временная база на каждый тест).
 
 mod common;
 
@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 const ME: &str = "/api/v1/me";
 const USERS: &str = "/api/v1/users";
 const PASSWORD: &str = "/api/v1/auth/password";
-const LOGOUT_ALL: &str = "/api/v1/auth/logout-all";
 const REFRESH: &str = "/api/v1/auth/refresh";
 const EMAIL: &str = "tester@example.com";
 const OLD: &str = "test-password";
@@ -257,53 +256,11 @@ async fn change_password_rejects_malformed_requests(pool: PgPool) {
     }
 }
 
-// ===== Выйти везде =====
-
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn logout_all_ends_every_session_of_this_user_and_only_this_user(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
-    make_user(&pool, "bob@example.com", "Боб Б.", "bob-password").await;
-    let bob = login_ok(&c.app, "bob@example.com", "bob-password").await;
-    let phone = another_device(&c).await;
-    let laptop = another_device(&c).await;
-
-    let r = send(&c.app, Method::POST, LOGOUT_ALL, None, Some(str_field(&laptop, "access_token"))).await;
-    assert_eq!(r.status, StatusCode::NO_CONTENT);
-    assert!(r.body.is_null());
-
-    assert_eq!(refresh_status(&c, &phone).await, StatusCode::UNAUTHORIZED, "телефон вышел");
-    assert_eq!(refresh_status(&c, &laptop).await, StatusCode::UNAUTHORIZED, "и сам ноутбук тоже");
-    assert_eq!(refresh_status(&c, &bob).await, StatusCode::OK, "сессия другого человека цела");
-    login_ok(&c.app, EMAIL, OLD).await; // сам пароль не менялся: войти заново можно
-
-    // токен доступа, выданный раньше, действует до конца срока (до 12 часов): так устроен JWT, как и при смене пароля
-    assert_eq!(get(&c.app, ME, Some(str_field(&phone, "access_token"))).await.status, StatusCode::OK);
-}
-
-#[sqlx::test(migrator = "db::MIGRATOR")]
-async fn logout_all_can_be_repeated(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    for _ in 0..2 {
-        let r = send(&c.app, Method::POST, LOGOUT_ALL, None, Some(&c.token)).await;
-        assert_eq!(r.status, StatusCode::NO_CONTENT);
-    }
-}
-
-#[sqlx::test(migrator = "db::MIGRATOR")]
-async fn logout_all_needs_a_token(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let device = another_device(&c).await;
-    let r = send(&c.app, Method::POST, LOGOUT_ALL, None, None).await;
-    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(refresh_status(&c, &device).await, StatusCode::OK, "без токена чужие сессии не трогаются");
-}
-
-#[sqlx::test(migrator = "db::MIGRATOR")]
-async fn auth_changes_send_no_events(pool: PgPool) {
+async fn password_change_sends_no_events(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let device = another_device(&c).await;
     let mut rx = c.events.subscribe();
     c.ok(change_password(&c, str_field(&device, "access_token"), OLD, NEW).await, StatusCode::OK).await;
-    send(&c.app, Method::POST, LOGOUT_ALL, None, Some(&c.token)).await;
-    assert!(drain(&mut rx).is_empty(), "пароль и сессии других людей не касаются, рассылать нечего");
+    assert!(drain(&mut rx).is_empty(), "пароль других людей не касается, рассылать нечего");
 }

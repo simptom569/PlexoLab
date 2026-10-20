@@ -46,7 +46,6 @@ export function AccountSection() {
   const updateProfile = useSession((s) => s.updateProfile)
   const changePassword = useSession((s) => s.changePassword)
   const logout = useSession((s) => s.logout)
-  const logoutEverywhere = useSession((s) => s.logoutEverywhere)
   const queryClient = useQueryClient()
 
   const [name, setName] = useState(user?.name ?? '')
@@ -59,9 +58,6 @@ export function AccountSection() {
   const [next, setNext] = useState('')
   const [again, setAgain] = useState('')
   const [password, setPassword] = useState<Saving>({ state: 'idle' })
-
-  const [confirmEverywhere, setConfirmEverywhere] = useState(false)
-  const [everywhere, setEverywhere] = useState<string | null>(null)
 
   if (!user) return null
 
@@ -107,16 +103,6 @@ export function AccountSection() {
       setPassword({ state: 'saved' })
     } catch (e) {
       setPassword({ state: 'error', text: errorText(e) })
-    }
-  }
-
-  const leaveEverywhere = async () => {
-    if (!confirmEverywhere) return setConfirmEverywhere(true)
-    try {
-      await logoutEverywhere()
-    } catch (e) {
-      setConfirmEverywhere(false)
-      setEverywhere(errorText(e))
     }
   }
 
@@ -255,19 +241,6 @@ export function AccountSection() {
       <SettingGroup title="Выход">
         <SettingRow label="Выйти на этом компьютере" description="Входы на других компьютерах сохранятся.">
           <Button onClick={() => void logout()}>Выйти</Button>
-        </SettingRow>
-        <SettingRow
-          label="Выйти на всех устройствах"
-          description={
-            <>
-              Завершит все входы, в том числе этот. Войти придётся заново.
-              {everywhere && <Problem>{everywhere}</Problem>}
-            </>
-          }
-        >
-          <Button danger onClick={leaveEverywhere}>
-            {confirmEverywhere ? 'Точно выйти везде?' : 'Выйти везде'}
-          </Button>
         </SettingRow>
       </SettingGroup>
     </>
