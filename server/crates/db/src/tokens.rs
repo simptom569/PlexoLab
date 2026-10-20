@@ -1,6 +1,6 @@
 //! Refresh-токены. В базе лежит только sha256 токена, использованный токен удаляется (ротация).
 
-use sqlx::{PgConnection, PgPool};
+use sqlx::{PgConnection, PgExecutor, PgPool};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -32,6 +32,13 @@ pub async fn take(conn: &mut PgConnection, token_hash: &str) -> Result<Option<Uu
 pub async fn delete(pool: &PgPool, token_hash: &str) -> Result<(), sqlx::Error> {
     sqlx::query("delete from refresh_tokens where token_hash = $1").bind(token_hash).execute(pool).await?;
     Ok(())
+}
+
+/// Завершает все сессии пользователя: удаляет все его refresh-токены, возвращает сколько их было.
+/// Работает и на пуле, и внутри транзакции.
+pub async fn delete_all_for_user<'e>(ex: impl PgExecutor<'e>, user_id: Uuid) -> Result<u64, sqlx::Error> {
+    let r = sqlx::query("delete from refresh_tokens where user_id = $1").bind(user_id).execute(ex).await?;
+    Ok(r.rows_affected())
 }
 
 /// Чистит просроченные токены пользователя (вызывается при входе)

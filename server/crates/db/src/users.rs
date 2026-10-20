@@ -1,4 +1,4 @@
-use sqlx::{PgExecutor, PgPool, Row};
+use sqlx::{PgConnection, PgExecutor, PgPool, Row};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -82,9 +82,38 @@ pub async fn change_password(pool: &PgPool, email: &str, password_hash: &str) ->
     .fetch_optional(&mut *tx)
     .await?
     .ok_or(ChangePasswordError::NotFound)?;
-    sqlx::query("delete from refresh_tokens where user_id = $1").bind(user.id).execute(&mut *tx).await?;
+    crate::tokens::delete_all_for_user(&mut *tx, user.id).await?;
     tx.commit().await?;
     Ok(user)
+}
+
+/// Заменяет только хэш пароля. Сессии не трогает: чьи сессии и когда завершать, решает вызывающий
+/// (при смене пароля из приложения текущую сессию заменяют новой, остальные завершают).
+pub async fn set_password(conn: &mut PgConnection, id: Uuid, password_hash: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("update users set password_hash = $2 where id = $1").bind(id).bind(password_hash).execute(conn).await?;
+    Ok(())
+}
+
+/// Правка профиля самим человеком. Не заданное (`None`) остаётся как было; пустая строка в `role` очищает подпись.
+/// `None` в ответе — такого пользователя нет.
+pub async fn update_profile(
+    pool: &PgPool,
+    id: Uuid,
+    name: Option<&str>,
+    role: Option<&str>,
+    tone: Option<i16>,
+) -> Result<Option<User>, sqlx::Error> {
+    sqlx::query_as::<_, User>(
+        "update users set name = coalesce($2, name), role = coalesce($3, role), tone = coalesce($4, tone) \
+         where id = $1 \
+         returning id, email, name, role, tone, is_admin, password_hash, created_at",
+    )
+    .bind(id)
+    .bind(name)
+    .bind(role)
+    .bind(tone)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn find_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
