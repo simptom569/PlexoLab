@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ErrorBody {
-    /// Машинный код ошибки: bad_request, unauthorized, invalid_credentials, ...
+    /// Машинный код ошибки: bad_request, unauthorized, invalid_credentials, wrong_password, ...
     #[schema(example = "invalid_credentials")]
     pub code: String,
     /// Текст для пользователя
@@ -28,6 +28,9 @@ pub enum ApiError {
     InvalidCredentials,
     #[error("Сессия недействительна или просрочена, войдите заново")]
     InvalidRefreshToken,
+    /// Неверный текущий пароль при смене пароля. Это 400, а не 401: клиент принял бы 401 за потерянную сессию.
+    #[error("Текущий пароль указан неверно")]
+    WrongPassword,
     #[error("Недостаточно прав")]
     Forbidden,
     #[error("Не найдено")]
@@ -45,7 +48,7 @@ pub type ApiResult<T> = Result<T, ApiError>;
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
-            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::BadRequest(_) | ApiError::WrongPassword => StatusCode::BAD_REQUEST,
             ApiError::Unauthorized | ApiError::InvalidCredentials | ApiError::InvalidRefreshToken => {
                 StatusCode::UNAUTHORIZED
             }
@@ -63,6 +66,7 @@ impl ApiError {
             ApiError::Unauthorized => "unauthorized",
             ApiError::InvalidCredentials => "invalid_credentials",
             ApiError::InvalidRefreshToken => "invalid_refresh_token",
+            ApiError::WrongPassword => "wrong_password",
             ApiError::Forbidden => "forbidden",
             ApiError::NotFound => "not_found",
             ApiError::Conflict(_) => "conflict",

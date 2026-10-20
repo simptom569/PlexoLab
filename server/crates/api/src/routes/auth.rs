@@ -9,12 +9,25 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use super::users::UserDto;
 use crate::{
     error::{ApiError, ApiResult, ErrorBody},
-    extract::ApiJson,
+    extract::{ApiJson, AuthUser},
     state::AppState,
 };
 
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(login)).routes(routes!(refresh)).routes(routes!(logout))
+    OpenApiRouter::new()
+        .routes(routes!(login))
+        .routes(routes!(refresh))
+        .routes(routes!(logout))
+        .routes(routes!(logout_all))
+        .routes(routes!(change_password))
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ChangePasswordRequest {
+    /// Пароль, с которым человек входит сейчас
+    pub current_password: String,
+    /// Новый пароль: от 8 символов
+    pub new_password: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -146,4 +159,67 @@ async fn refresh(
 async fn logout(State(state): State<AppState>, ApiJson(req): ApiJson<RefreshRequest>) -> ApiResult<StatusCode> {
     db::tokens::delete(&state.pool, &auth::hash_refresh_token(req.refresh_token.trim())).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Выйти на всех устройствах: все refresh-токены пользователя удаляются, в том числе этого устройства. Токены доступа,
+/// выданные раньше, действуют до конца своего срока (до 12 часов), обновить их уже нельзя. Повторный вызов тоже 204.
+#[utoipa::path(
+    post,
+    path = "/auth/logout-all",
+    tag = "auth",
+    security(("bearer" = [])),
+    responses(
+        (status = 204, description = "Все сессии пользователя завершены"),
+        (status = 401, description = "Нет действительного токена", body = ErrorBody),
+    )
+)]
+async fn logout_all(auth: AuthUser, State(state): State<AppState>) -> ApiResult<StatusCode> {
+    db::tokens::delete_all_for_user(&state.pool, auth.id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Смена пароля. Все прежние сессии, и этого устройства тоже, завершаются, а в ответе приходит новая пара токенов:
+/// человеку, который сменил пароль, заново входить не нужно. Токены доступа, выданные раньше, действуют до конца своего
+/// срока (до 12 часов). Неверный текущий пароль это 400 `wrong_password`, а не 401: клиент принял бы 401 за потерянную
+/// сессию.
+#[utoipa::path(
+    post,
+    path = "/auth/password",
+    tag = "auth",
+    security(("bearer" = [])),
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Пароль изменён, новая пара токенов для этого устройства", body = TokenResponse),
+        (status = 400, description = "Новый пароль не подходит (короче 8 символов, слишком длинный, совпадает с текущим) или текущий указан неверно (code = wrong_password)", body = ErrorBody),
+        (status = 401, description = "Нет действительного токена или пользователь удалён", body = ErrorBody),
+    )
+)]
+async fn change_password(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiJson(req): ApiJson<ChangePasswordRequest>,
+) -> ApiResult<Json<TokenResponse>> {
+    if req.current_password.is_empty() || req.current_password.len() > auth::MAX_PASSWORD_LEN {
+        return Err(ApiError::BadRequest("Укажите текущий пароль".into()));
+    }
+    auth::check_new_password(&req.new_password).map_err(ApiError::BadRequest)?;
+    if req.new_password == req.current_password {
+        return Err(ApiError::BadRequest("Новый пароль совпадает с текущим".into()));
+    }
+
+    let user = db::users::find_by_id(&state.pool, auth.id).await?.ok_or(ApiError::Unauthorized)?;
+    let (current, hash) = (req.current_password, user.password_hash.clone());
+    if !blocking(move || auth::verify_password(&current, &hash)).await? {
+        return Err(ApiError::WrongPassword);
+    }
+    let new_password = req.new_password;
+    let new_hash = blocking(move || auth::hash_password(&new_password)).await??;
+
+    // замена пароля, завершение всех сессий и новая пара для этого устройства: всё или ничего
+    let mut tx = state.pool.begin().await?;
+    db::users::set_password(&mut tx, user.id, &new_hash).await?;
+    db::tokens::delete_all_for_user(&mut *tx, user.id).await?;
+    let tokens = issue_tokens(&state, &mut tx, user).await?;
+    tx.commit().await?;
+    Ok(Json(tokens))
 }

@@ -140,6 +140,8 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("DELETE", "/files/{id}",               &[one("file.changed"), ACTIVITY]),
     ("POST",   "/folders",                  &[all("file.changed")]),
     ("DELETE", "/folders/{id}",             &[all("file.changed")]),
+    // участники: человек поменял своё имя, подпись или цвет аватара; клиенты перечитывают список участников
+    ("PATCH",  "/me",                       &[all("user.changed")]),
     // ссылки команды
     ("POST",   "/link-groups",              &[all("link.changed")]),
     ("PATCH",  "/link-groups/{id}",         &[one("link.changed")]),
