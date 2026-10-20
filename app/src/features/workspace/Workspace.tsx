@@ -1,4 +1,4 @@
-import { useEffect, useMemo, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
 import { Toast } from '../../components/Toast'
@@ -8,6 +8,7 @@ import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
+import { SettingsModal } from '../settings/SettingsModal'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
 import { BoardPage } from '../board/BoardPage'
@@ -37,10 +38,13 @@ const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
 export function Workspace() {
   const user = useSession((s) => s.user)
   const logout = useSession((s) => s.logout)
-  const { page, project, theme, menu, setPage, setProject, toggleTheme, toggleMenu, closeMenus } = useUi()
+  const serverUrl = useSession((s) => s.serverUrl)
+  const { page, project, theme, menu, settingsTab, setPage, setProject, toggleTheme, toggleMenu, closeMenus, openSettings } = useUi()
   const projects = useProjects()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient)
+  // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
+  const settingsOpener = useRef<HTMLElement | null>(null)
 
   // Открытый проект: сохранённый, если он ещё существует, иначе первый
   const list = projects.data
@@ -80,6 +84,7 @@ export function Workspace() {
       overlay={
         <>
           {projectId ? <TaskDrawer projectId={projectId} /> : null}
+          {settingsTab ? <SettingsModal tab={settingsTab} connection={connection} returnFocus={settingsOpener} /> : null}
           <Toast />
         </>
       }
@@ -91,11 +96,16 @@ export function Workspace() {
           projects={sidebarProjects}
           projectId={projectId ?? ''}
           onProject={setProject}
-          user={{ name: user.name, role: user.role, tone: user.tone }}
+          user={{ name: user.name, role: user.role, tone: user.tone, email: user.email }}
           userMenuOpen={menu === 'user'}
           onToggleUserMenu={() => toggleMenu('user')}
           dark={theme === 'dark'}
           onToggleTheme={toggleTheme}
+          onOpenSettings={(trigger) => {
+            settingsOpener.current = trigger
+            openSettings()
+          }}
+          serverUrl={serverUrl}
           connection={connection}
           onLogout={() => {
             closeMenus() // иначе после следующего входа меню осталось бы открытым

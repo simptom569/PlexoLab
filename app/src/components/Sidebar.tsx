@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { cx } from '../lib/cx'
+import { CONNECTION_VIEW } from '../lib/connection-view'
 import type { ConnectionStatus } from '../lib/realtime/connection'
 import { PAGE_LABELS, type PageId } from '../lib/pages'
 import { Avatar } from './Avatar'
@@ -10,18 +12,12 @@ import { Count } from './Tag'
 import { Sq } from './Shapes'
 
 export type SidebarProject = { id: string; name: string; color: string }
-export type SidebarUser = { name: string; role: string; tone: number }
+export type SidebarUser = { name: string; role: string; tone: number; email: string }
 
 // Точка связи с сервером на аватаре. В макете её нет (добавлена по плану этапа 8), поэтому собрана из его переменных и
 // лежит поверх аватара, не меняя размеров и положения ничего вокруг.
-const CONNECTION: Record<ConnectionStatus, { color: string; text: string }> = {
-  open: { color: 'var(--ok)', text: 'Связь с сервером есть: изменения других участников видны сразу' },
-  connecting: { color: 'var(--warn)', text: 'Подключаюсь к серверу…' },
-  offline: { color: 'var(--bug-fg)', text: 'Нет связи с сервером, пробую подключиться снова' },
-}
-
 function ConnectionDot({ status }: { status: ConnectionStatus }) {
-  const { color, text } = CONNECTION[status]
+  const { color, text } = CONNECTION_VIEW[status]
   return (
     <span
       role="img"
@@ -56,9 +52,13 @@ type SidebarProps = {
   onToggleUserMenu: () => void
   dark: boolean
   onToggleTheme: () => void
+  /** trigger — карточка пользователя: на неё вернётся фокус, когда окно настроек закроют */
+  onOpenSettings: (trigger: HTMLElement | null) => void
   onLogout: () => void
   /** Состояние связи для точки на аватаре; не задано — точки нет (витрина компонентов) */
   connection?: ConnectionStatus
+  /** Адрес сервера для шапки меню пользователя */
+  serverUrl?: string | null
 }
 
 export function Sidebar({
@@ -73,9 +73,12 @@ export function Sidebar({
   onToggleUserMenu,
   dark,
   onToggleTheme,
+  onOpenSettings,
   onLogout,
   connection,
+  serverUrl,
 }: SidebarProps) {
+  const userButton = useRef<HTMLButtonElement>(null)
   return (
     <aside className="side">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 6px' }}>
@@ -128,6 +131,7 @@ export function Sidebar({
       <div style={{ marginTop: 'auto', padding: '14px 6px 0', borderTop: '1px solid var(--line)' }}>
         <Anchor>
           <button
+            ref={userButton}
             type="button"
             aria-haspopup="menu"
             aria-expanded={userMenuOpen}
@@ -154,6 +158,24 @@ export function Sidebar({
           </button>
           {userMenuOpen && (
             <Popover small role="menu" aria-label="Меню пользователя" style={{ top: 'auto', bottom: 'calc(100% + 8px)' }}>
+              <div role="group" aria-label="Учётная запись" style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 10px 8px', minWidth: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.email}>
+                  {user.email}
+                </span>
+                {connection && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)' }} title={CONNECTION_VIEW[connection].text}>
+                    <span className="sw" style={{ background: CONNECTION_VIEW[connection].color }} />
+                    {CONNECTION_VIEW[connection].label}
+                  </span>
+                )}
+                {serverUrl && (
+                  <span className="mono" style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={serverUrl}>
+                    {serverUrl}
+                  </span>
+                )}
+              </div>
+              <div role="separator" style={{ height: 1, margin: '2px 0', background: 'var(--line)' }} />
+              <MenuItem onClick={() => onOpenSettings(userButton.current)}>Настройки</MenuItem>
               <MenuItem onClick={onToggleTheme}>{dark ? 'Светлая тема' : 'Тёмная тема'}</MenuItem>
               <MenuItem onClick={onLogout}>Выйти</MenuItem>
             </Popover>

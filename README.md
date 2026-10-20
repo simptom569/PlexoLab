@@ -27,8 +27,10 @@ server/                       бэкенд (cargo workspace)
 app/                          клиент: Vite + React + TypeScript
   src/styles/styles.css       копия design/styles.css, не править
   src/styles/shell.css        дополнение к макету: боковое меню закреплено на высоту окна
+  src/styles/scrollbar.css    дополнение к макету: свои полосы прокрутки в цветах темы
+  src/styles/settings.css     дополнение к макету: окно «Настройки» и тумблер
   src/components/             общие компоненты (кнопки, чипы, аватары, поповеры ...), AppShell, Sidebar
-  src/features/               экраны; showcase: витрина компонентов (только в разработке)
+  src/features/               экраны; showcase: витрина компонентов (только в разработке); settings: окно «Настройки»
   src/lib/                    утилиты, цвета TONES, состояние интерфейса (zustand)
   src-tauri/                  оболочка Tauri 2
 tests/visual/                 Playwright: сравнение с design/screenshots и снимки витрины

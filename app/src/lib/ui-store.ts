@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { PageId } from './pages'
+import type { SettingsTab } from './settings-tabs'
 import { DEFAULT_SETTINGS, EMPTY_FILTERS, saveSettings, type Display, type DisplayKey, type DueFilter, type Filters, type Settings, type View } from './settings'
 
 export type Theme = Settings['theme']
@@ -20,6 +21,8 @@ type UiState = Persisted & {
   focusTitle: boolean
   /** Что просит подтверждения удаления: 'mod:<id>', 'ms:<id>', 'rel:<id>' (confirm в макете). Одно на весь экран. */
   confirm: string | null
+  /** Открытое окно настроек: выбранная категория, null — окно закрыто */
+  settingsTab: SettingsTab | null
 
   setPage: (page: PageId) => void
   setProject: (project: string) => void
@@ -27,6 +30,9 @@ type UiState = Persisted & {
   toggleTheme: () => void
   toggleMenu: (menu: string) => void
   closeMenus: () => void
+  openSettings: (tab?: SettingsTab) => void
+  closeSettings: () => void
+  setSettingsTab: (tab: SettingsTab) => void
   setQuery: (q: string) => void
   openTask: (id: string, options?: { focusTitle?: boolean }) => void
   closeTask: () => void
@@ -55,6 +61,7 @@ export const useUi = create<UiState>()((set) => ({
   confirmDelete: false,
   focusTitle: false,
   confirm: null,
+  settingsTab: null,
 
   setPage: (page) => set({ page, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setProject: (project) => set({ project, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
@@ -62,6 +69,9 @@ export const useUi = create<UiState>()((set) => ({
   toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark', menu: null })),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
+  openSettings: (tab = 'account') => set({ settingsTab: tab, menu: null }),
+  closeSettings: () => set({ settingsTab: null }),
+  setSettingsTab: (settingsTab) => set({ settingsTab }),
   setQuery: (q) => set({ q }),
   openTask: (id, options) => set({ openTaskId: id, confirmDelete: false, focusTitle: !!options?.focusTitle }),
   closeTask: () => set({ openTaskId: null, confirmDelete: false, focusTitle: false }),
