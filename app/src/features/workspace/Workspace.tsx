@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
 import { Toast } from '../../components/Toast'
-import { useBoard, useProjects } from '../../lib/api/queries'
+import { useBoard, useProjects, useUsers } from '../../lib/api/queries'
 import { queryClient } from '../../lib/query'
 import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
@@ -47,6 +47,16 @@ export function Workspace() {
   const connection = useRealtime(queryClient, live)
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
+
+  // Свой профиль могли поменять на другом устройстве: когда список участников пришёл заново, подтягиваем его в сессию
+  // (боковое меню, «мои задачи» и комментарии берут «себя» оттуда). Следим только за списком, а не за сессией: сразу
+  // после своей правки в сессии уже новое, а список ещё старый, и сверка по сессии вернула бы старое имя на миг.
+  const users = useUsers()
+  useEffect(() => {
+    const me = useSession.getState().user
+    const mine = users.data?.find((u) => u.id === me?.id)
+    if (me && mine && (mine.name !== me.name || mine.role !== me.role || mine.tone !== me.tone)) useSession.setState({ user: mine })
+  }, [users.data])
 
   // Открытый проект: сохранённый, если он ещё существует, иначе первый
   const list = projects.data

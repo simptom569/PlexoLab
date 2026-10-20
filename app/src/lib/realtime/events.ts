@@ -91,6 +91,9 @@ export function queryKeysFor(e: ServerEvent): QueryKey[] {
       return [keys.files, keys.folders, ALL_TASKS]
     case 'link.changed':
       return [keys.linkGroups]
+    // имя и цвет аватара участника видны везде: в списках, карточках, комментариях и ленте
+    case 'user.changed':
+      return [keys.users]
     case 'activity.created':
       return [keys.activity]
     default:

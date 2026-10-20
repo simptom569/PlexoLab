@@ -88,6 +88,10 @@ describe('queryKeysFor', () => {
     expect(queryKeysFor(event('activity.created'))).toEqual([keys.activity])
   })
 
+  it('участник сменил имя, подпись или цвет аватара: перечитывается список участников', () => {
+    expect(queryKeysFor(event('user.changed'))).toEqual([keys.users])
+  })
+
   it('незнакомое событие ничего не перечитывает', () => {
     expect(queryKeysFor(event('something.new'))).toEqual([])
   })
