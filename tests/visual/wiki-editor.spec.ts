@@ -1,7 +1,7 @@
 // Редактор markdown: клавиши, панель форматирования, отрисованные блоки. Что за клавишей стоит, разобрано юнит-тестами
 // и сверкой с макетом (app/src/lib/markdown); здесь проверяется, что всё это подключено в живом окне.
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { resetData } from './fixtures'
 import { blocks, editor, expectSaved, makePage, openPageById } from './wiki-helpers'
 
@@ -280,4 +280,52 @@ test.describe('ссылки', () => {
     await expect(editor(page)).toHaveCount(0)
     expect(context.pages()).toHaveLength(1)
   })
+})
+
+// такую таблицу вставляет кнопка панели (app/src/lib/markdown/tools.ts)
+const PANEL_TABLE = '| Колонка 1 | Колонка 2 | Колонка 3 |\n| --- | --- | --- |\n|  |  |  |'
+const wideTable = (cols: number) => {
+  const row = (t: string) => '| ' + Array.from({ length: cols }, (_, i) => `${t}${i + 1}`).join(' | ') + ' |'
+  return [row('Колонка '), '| ' + Array(cols).fill('---').join(' | ') + ' |', row('яч ')].join('\n')
+}
+
+/** На сколько пикселей содержимое таблицы больше её окна: по ширине и по высоте */
+const overflow = (page: Page) => page.locator('.md-tbl').evaluate((el) => [el.scrollWidth - el.clientWidth, el.scrollHeight - el.clientHeight])
+
+test.describe('таблица', () => {
+  test('таблица из панели помещается целиком: лишней прокрутки нет ни вправо, ни вниз', async ({ page }) => {
+    const id = await makePage(page, 'Таблица', PANEL_TABLE)
+    await openPageById(page, id)
+    expect(await overflow(page)).toEqual([0, 0])
+  })
+
+  test('широкая таблица прокручивается вправо (столбцы не уже 110px), вниз прокрутки нет', async ({ page }) => {
+    const id = await makePage(page, 'Широкая', wideTable(12))
+    await openPageById(page, id)
+    const [x, y] = await overflow(page)
+    expect(x).toBeGreaterThan(100)
+    expect(y).toBe(0)
+  })
+
+  test('границы последнего столбца и последней строки не рисуются (их заменяет рамка таблицы), остальные на месте', async ({ page }) => {
+    const id = await makePage(page, 'Границы', PANEL_TABLE)
+    await openPageById(page, id)
+    const cells = page.locator('.md-cell')
+    await expect(cells).toHaveCount(6)
+    const border = (i: number) => cells.nth(i).evaluate((el) => [getComputedStyle(el).borderRightWidth, getComputedStyle(el).borderBottomWidth])
+    expect(await border(0)).toEqual(['1px', '1px']) // шапка, первый столбец
+    expect(await border(2)).toEqual(['0px', '1px']) // шапка, последний столбец
+    expect(await border(3)).toEqual(['1px', '0px']) // последняя строка
+    expect(await border(5)).toEqual(['0px', '0px']) // угол
+    expect(await page.locator('.md-tbl').evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe('1px')
+  })
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`снимок таблицы (${theme})`, async ({ page }) => {
+      const id = await makePage(page, 'Снимок таблицы', PANEL_TABLE)
+      await openPageById(page, id, theme)
+      await page.mouse.move(8, 8)
+      await expect(page.locator('.md-tbl')).toHaveScreenshot(`table-${theme}.png`)
+    })
+  }
 })
