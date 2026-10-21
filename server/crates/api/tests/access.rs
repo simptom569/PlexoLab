@@ -20,7 +20,7 @@ use uuid::Uuid;
 enum Kind {
     /// Без токена: вход и обновление токена
     Public,
-    /// Любому вошедшему: свои данные и общие данные приложения (вики, библиотека; документы и ссылки до этапа П5)
+    /// Любому вошедшему: свои данные и общие данные приложения (вики и библиотека файлов)
     Open,
     /// Приглашение: действует только приглашённый
     Invitee,
@@ -47,6 +47,9 @@ enum Of {
     Tag,
     Inv,
     File,
+    Doc,
+    Group,
+    Link,
 }
 
 use Of::*;
@@ -63,7 +66,6 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("GET",    "/me",                                  Nothing,      Open),
     ("PATCH",  "/me",                                  Nothing,      Open),
     ("GET",    "/users",                               Nothing,      Open),
-    ("GET",    "/activity",                            Nothing,      Open), // отбирает события только моих проектов (activity.rs)
     // проекты, участники, приглашения
     ("GET",    "/projects",                            Nothing,      Open),
     ("POST",   "/projects",                            Nothing,      Open),
@@ -72,6 +74,7 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("POST",   "/projects/{id}/unarchive",             Proj,   AdminOnly),
     ("GET",    "/projects/{id}/board",                 Proj,   Scoped),
     ("GET",    "/projects/{id}/members",               Proj,   Scoped),
+    ("GET",    "/projects/{id}/activity",              Proj,   Scoped), // события проекта и общие (вики)
     ("PATCH",  "/projects/{id}/members/{user_id}",     Proj,   AdminOnly),
     ("DELETE", "/projects/{id}/members/{user_id}",     Proj,   AdminOnly),
     ("POST",   "/projects/{id}/invites",               Proj,   AdminOnly),
@@ -125,20 +128,20 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("GET",    "/folders",                             Nothing,      Open),
     ("POST",   "/folders",                             Nothing,      Open),
     ("DELETE", "/folders/{id}",                        Nothing,      Open),
-    // документы и ссылки: общие до этапа П5, потом станут данными проекта
-    ("GET",    "/docs",                                Nothing,      Open),
-    ("POST",   "/docs",                                Nothing,      Open),
-    ("GET",    "/docs/{id}",                           Nothing,      Open),
-    ("PATCH",  "/docs/{id}",                           Nothing,      Open),
-    ("DELETE", "/docs/{id}",                           Nothing,      Open),
-    ("PUT",    "/docs/{id}/canvas",                    Nothing,      Open),
-    ("PUT",    "/docs/{id}/star",                      Nothing,      Open),
-    ("GET",    "/link-groups",                         Nothing,      Open),
-    ("POST",   "/link-groups",                         Nothing,      Open),
-    ("PATCH",  "/link-groups/{id}",                    Nothing,      Open),
-    ("DELETE", "/link-groups/{id}",                    Nothing,      Open),
-    ("POST",   "/link-groups/{id}/links",              Nothing,      Open),
-    ("DELETE", "/links/{id}",                          Nothing,      Open),
+    // документы и ссылки принадлежат проекту: только его участники
+    ("GET",    "/projects/{id}/docs",                  Proj,   Scoped),
+    ("POST",   "/projects/{id}/docs",                  Proj,   Scoped),
+    ("GET",    "/docs/{id}",                           Doc,    Scoped),
+    ("PATCH",  "/docs/{id}",                           Doc,    Scoped),
+    ("DELETE", "/docs/{id}",                           Doc,    Scoped),
+    ("PUT",    "/docs/{id}/canvas",                    Doc,    Scoped),
+    ("PUT",    "/docs/{id}/star",                      Doc,    Scoped),
+    ("GET",    "/projects/{id}/link-groups",           Proj,   Scoped),
+    ("POST",   "/projects/{id}/link-groups",           Proj,   Scoped),
+    ("PATCH",  "/link-groups/{id}",                    Group,  Scoped),
+    ("DELETE", "/link-groups/{id}",                    Group,  Scoped),
+    ("POST",   "/link-groups/{id}/links",              Group,  Scoped),
+    ("DELETE", "/links/{id}",                          Link,   Scoped),
 ];
 
 /// Все адреса из схемы OpenAPI без префикса `/api/v1`: (метод, адрес)
@@ -202,6 +205,9 @@ struct World {
     tag: Uuid,
     invite: Uuid,
     file: Uuid,
+    doc: Uuid,
+    group: Uuid,
+    link: Uuid,
 }
 
 impl World {
@@ -264,6 +270,22 @@ impl World {
         );
         let files =
             c.ok(c.upload(&format!("{t}/files"), &[file_part("вложение.txt", b"1")]).await, StatusCode::CREATED).await;
+        let doc =
+            id_of(&c.ok(c.post(&format!("{p}/docs"), json!({ "title": "Документ" })).await, StatusCode::CREATED).await);
+        let group = id_of(
+            &c.ok(c.post(&format!("{p}/link-groups"), json!({ "title": "Группа" })).await, StatusCode::CREATED).await,
+        );
+        let link = id_of(
+            &c.ok(
+                c.post(
+                    &format!("/api/v1/link-groups/{group}/links"),
+                    json!({ "title": "Ссылка", "url": "example.com" }),
+                )
+                .await,
+                StatusCode::CREATED,
+            )
+            .await,
+        );
         World {
             project: f.project,
             column,
@@ -276,6 +298,9 @@ impl World {
             tag,
             invite,
             file: id_of(&files[0]),
+            doc,
+            group,
+            link,
         }
     }
 
@@ -293,6 +318,9 @@ impl World {
             Tag => self.tag,
             Inv => self.invite,
             File => self.file,
+            Doc => self.doc,
+            Group => self.group,
+            Link => self.link,
         }
     }
 }
@@ -320,6 +348,15 @@ fn body(method: &str, path: &str, w: &World) -> Option<Value> {
         ("PATCH", "/releases/{id}") => json!({ "status": "progress" }),
         ("POST", "/releases/{id}/items") => json!({ "title": "Ещё пункт" }),
         ("PATCH", "/release-items/{id}") => json!({ "done": true }),
+        ("POST", "/projects/{id}/docs") => json!({ "title": "Ещё документ" }),
+        ("PATCH", "/docs/{id}") => json!({ "title": "Другое", "rev": 1 }),
+        ("PUT", "/docs/{id}/canvas") => {
+            json!({ "note": { "x": 24.0, "y": 28.0, "w": 400.0 }, "objects": [], "links": [] })
+        }
+        ("PUT", "/docs/{id}/star") => json!({ "starred": true }),
+        ("POST", "/projects/{id}/link-groups") => json!({ "title": "Ещё группа" }),
+        ("PATCH", "/link-groups/{id}") => json!({ "title": "Другая" }),
+        ("POST", "/link-groups/{id}/links") => json!({ "title": "Ещё ссылка", "url": "example.org" }),
         _ => {
             let _ = w;
             return Option::None;
@@ -470,7 +507,7 @@ async fn a_tag_of_another_project_cannot_be_put_on_a_task(pool: PgPool) {
 // ===== Лента =====
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn the_activity_feed_shows_only_my_projects_and_shared_events(pool: PgPool) {
+async fn the_activity_feed_of_a_project_shows_its_events_and_shared_ones_only_to_its_members(pool: PgPool) {
     let f = Fx::new(pool).await;
     let stranger = f.c.another("stranger@example.com", "Посторонний").await;
     f.task(Some(f.todo), "Секретная задача").await;
@@ -479,11 +516,16 @@ async fn the_activity_feed_shows_only_my_projects_and_shared_events(pool: PgPool
     let targets = |feed: &Value| -> Vec<String> {
         feed["items"].as_array().unwrap().iter().map(|e| str_field(e, "target").to_owned()).collect()
     };
-    let mine = f.c.ok(f.c.get("/api/v1/activity").await, StatusCode::OK).await;
+    let own =
+        stranger.ok(stranger.post("/api/v1/projects", json!({ "name": "Свой" })).await, StatusCode::CREATED).await;
+    let mine = f.c.ok(f.c.get(&format!("/api/v1/projects/{}/activity", f.project)).await, StatusCode::OK).await;
     assert!(targets(&mine).iter().any(|t| t.contains("Секретная задача")));
-    let theirs = stranger.ok(stranger.get("/api/v1/activity").await, StatusCode::OK).await;
+    let theirs =
+        stranger.ok(stranger.get(&format!("/api/v1/projects/{}/activity", id_of(&own))).await, StatusCode::OK).await;
     assert!(!targets(&theirs).iter().any(|t| t.contains("Секретная задача")), "события чужого проекта не видны");
-    assert!(targets(&theirs).iter().any(|t| t.contains("Общая страница")), "события вики видны всем");
+    assert!(targets(&theirs).iter().any(|t| t.contains("Общая страница")), "события вики видны в ленте любого проекта");
+    let foreign = stranger.get(&format!("/api/v1/projects/{}/activity", f.project)).await;
+    assert_eq!(foreign.status, StatusCode::NOT_FOUND, "ленту чужого проекта не прочитать");
 }
 
 // ===== Вложения =====
@@ -538,6 +580,15 @@ async fn events_name_their_audience(pool: PgPool) {
     // общие данные: вики идёт всем
     f.c.ok(f.c.post("/api/v1/wiki", json!({ "title": "Страница" })).await, StatusCode::CREATED).await;
     assert_eq!(audiences(&mut rx), [("wiki.updated", Audience::Everyone), ("activity.created", Audience::Everyone)]);
+
+    // документы и ссылки принадлежат проекту: их события тоже только его участникам
+    f.c.ok(f.c.post(&format!("{p}/docs"), json!({ "title": "Документ" })).await, StatusCode::CREATED).await;
+    assert_eq!(
+        audiences(&mut rx),
+        [("doc.updated", Audience::Project(f.project)), ("activity.created", Audience::Project(f.project))]
+    );
+    f.c.ok(f.c.post(&format!("{p}/link-groups"), json!({ "title": "Группа" })).await, StatusCode::CREATED).await;
+    assert_eq!(audiences(&mut rx), [("link.changed", Audience::Project(f.project))]);
 
     // приглашение: участникам проекта «что-то изменилось», приглашённому его личное событие
     let invite =

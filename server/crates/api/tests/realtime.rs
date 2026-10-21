@@ -239,17 +239,19 @@ async fn change_made_over_rest_reaches_the_socket_with_the_origin(pool: PgPool) 
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn every_connected_client_gets_every_event(pool: PgPool) {
-    let rt = start(pool, |s| s).await;
+    let rt = start(pool.clone(), |s| s).await;
+    let project = make_project(&pool, "WEB", "Web-приложение", "accent").await;
+    let groups = format!("/api/v1/projects/{project}/link-groups");
     let mut a = rt.ready().await;
     let mut b = rt.ready().await;
     let mut c = rt.ready().await;
-    rest(&rt, "x", "POST", "/api/v1/link-groups", json!({ "title": "Код" })).await;
+    rest(&rt, "x", "POST", &groups, json!({ "title": "Код" })).await;
     for ws in [&mut a, &mut b, &mut c] {
         assert_eq!(next_json(ws).await["type"], "link.changed");
     }
     // отключившийся не мешает остальным
     drop(b);
-    rest(&rt, "x", "POST", "/api/v1/link-groups", json!({ "title": "Ещё" })).await;
+    rest(&rt, "x", "POST", &groups, json!({ "title": "Ещё" })).await;
     for ws in [&mut a, &mut c] {
         assert_eq!(next_json(ws).await["type"], "link.changed");
     }

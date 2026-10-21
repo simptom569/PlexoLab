@@ -1,4 +1,5 @@
-//! Лента активности на настоящем Postgres: страницы по 50, курсор, фильтры по участнику и типу, ошибки в запросе.
+//! Лента проекта на настоящем Postgres: страницы по 50, курсор, фильтры по участнику и типу, ошибки в запросе, события
+//! только своего проекта плюс общие (вики), отказ постороннему.
 
 mod common;
 
@@ -35,8 +36,21 @@ async fn many(pool: &PgPool, actor: Uuid, n: usize) {
     .unwrap();
 }
 
+/// Контекст теста: проект «Web-приложение», ленту которого читают
+async fn ctx(pool: PgPool) -> Ctx {
+    let c = Ctx::new(pool.clone()).await;
+    make_project(&pool, "WEB", "Web-приложение", "accent").await;
+    c
+}
+
+/// Проект теста: первый по порядку создания
+async fn project_of(pool: &PgPool) -> Uuid {
+    db::sqlx::query_scalar("select id from projects order by seq limit 1").fetch_one(pool).await.unwrap()
+}
+
 async fn feed(c: &Ctx, query: &str) -> Value {
-    let r = c.get(&format!("/api/v1/activity{query}")).await;
+    let project = project_of(&c.pool).await;
+    let r = c.get(&format!("/api/v1/projects/{project}/activity{query}")).await;
     c.ok(r, StatusCode::OK).await
 }
 
@@ -50,14 +64,14 @@ fn next(page: &Value) -> Option<String> {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn feed_of_an_empty_database_is_empty(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     assert_eq!(feed(&c, "").await, json!({ "items": [], "next": null }));
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn events_come_newest_first_with_their_fields(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
-    let project = make_project(&pool, "WEB", "Web-приложение", "accent").await;
+    let c = ctx(pool.clone()).await;
+    let project = project_of(&pool).await;
     db::sqlx::query("insert into activity (actor_id, project_id, kind, target, text, created_at) values ($1, $2, 'move', 'WEB-1 Задача', 'перемещена в «Готово»', '2026-10-17 18:20:00+00')")
         .bind(c.user.id)
         .bind(project)
@@ -75,7 +89,7 @@ async fn events_come_newest_first_with_their_fields(pool: PgPool) {
     assert_eq!(doc["category"], "doc");
     assert_eq!(doc["text"], "обновлена");
     assert_eq!(doc["actor_id"], c.user.id.to_string());
-    assert_eq!(doc["project_id"], Value::Null, "у страницы вики проекта нет");
+    assert_eq!(doc["project_id"], Value::Null, "у страницы вики проекта нет, но в ленте проекта она есть");
     assert_eq!(doc["created_at"], "2026-10-18T09:00:00Z");
     assert!(Uuid::parse_str(str_field(doc, "id")).is_ok());
 
@@ -87,7 +101,7 @@ async fn events_come_newest_first_with_their_fields(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn every_event_type_has_a_category(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     let kinds: Vec<String> =
         db::sqlx::query_scalar("select unnest(enum_range(null::act_kind))::text").fetch_all(&pool).await.unwrap();
     assert!(kinds.len() >= 9, "типы событий: {kinds:?}");
@@ -110,7 +124,7 @@ async fn every_event_type_has_a_category(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn feed_is_paged_by_fifty_through_the_cursor(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     many(&pool, c.user.id, 120).await;
 
     let first = feed(&c, "").await;
@@ -133,7 +147,7 @@ async fn feed_is_paged_by_fifty_through_the_cursor(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn exactly_one_page_has_no_cursor(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     many(&pool, c.user.id, 50).await;
     let page = feed(&c, "").await;
     assert_eq!(page["items"].as_array().unwrap().len(), 50);
@@ -150,7 +164,7 @@ async fn exactly_one_page_has_no_cursor(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn events_with_the_same_time_are_neither_lost_nor_repeated(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     for i in 0..120 {
         event(&pool, c.user.id, "comment", &format!("Одно время {i}"), "тест", "2026-10-18 12:00:00+00").await;
     }
@@ -171,7 +185,7 @@ async fn events_with_the_same_time_are_neither_lost_nor_repeated(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn event_added_while_paging_does_not_shift_the_next_page(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     many(&pool, c.user.id, 60).await;
     let first = feed(&c, "").await;
     let cursor = next(&first).unwrap();
@@ -186,7 +200,7 @@ async fn event_added_while_paging_does_not_shift_the_next_page(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn feed_is_filtered_by_actor_and_category(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     let other = make_user(&pool, "other@example.com", "Другой Д.", "password-123").await;
     event(&pool, c.user.id, "move", "WEB-1 А", "перемещена", "2026-10-18 10:00:00+00").await;
     event(&pool, c.user.id, "create", "WEB-2 Б", "создана", "2026-10-18 10:01:00+00").await;
@@ -211,7 +225,7 @@ async fn feed_is_filtered_by_actor_and_category(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn filters_work_together_with_the_cursor(pool: PgPool) {
-    let c = Ctx::new(pool.clone()).await;
+    let c = ctx(pool.clone()).await;
     let other = make_user(&pool, "other@example.com", "Другой Д.", "password-123").await;
     many(&pool, c.user.id, 70).await;
     // между ними «чужие» события: они не должны попасть в страницы и сбивать курсор
@@ -234,7 +248,7 @@ async fn filters_work_together_with_the_cursor(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn bad_query_is_rejected(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     for query in [
         "?kind=all",
         "?kind=",
@@ -245,7 +259,7 @@ async fn bad_query_is_rejected(pool: PgPool) {
         "?before=9223372036854775807_00000000-0000-0000-0000-000000000000",
         "?actor=не-uuid",
     ] {
-        let r = c.get(&format!("/api/v1/activity{query}")).await;
+        let r = c.get(&format!("/api/v1/projects/{}/activity{query}", project_of(&c.pool).await)).await;
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "{query}: {}", r.body);
         assert_eq!(r.body["code"], "bad_request");
     }
@@ -253,8 +267,9 @@ async fn bad_query_is_rejected(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn feed_needs_a_token(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let r = send(&c.app, axum::http::Method::GET, "/api/v1/activity", None, None).await;
+    let c = ctx(pool).await;
+    let uri = format!("/api/v1/projects/{}/activity", project_of(&c.pool).await);
+    let r = send(&c.app, axum::http::Method::GET, &uri, None, None).await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
 }
 
@@ -283,4 +298,56 @@ async fn actions_on_other_pages_show_up_in_the_feed(pool: PgPool) {
     );
     assert!(items.iter().all(|e| e["actor_id"] == f.c.user.id.to_string() && e["project_id"] == f.project.to_string()));
     assert_eq!(targets(&feed(&f.c, "?kind=comment").await), ["WEB-1 Новая задача"]);
+}
+
+// ===== Лента проекта: свои события, общие и чужие =====
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn feed_has_the_events_of_its_project_and_the_common_ones_but_not_another_projects(pool: PgPool) {
+    let c = ctx(pool.clone()).await;
+    let mine = project_of(&pool).await;
+    let other = make_project(&pool, "API", "Мобильный API", "warn").await;
+    for (project, target, at) in [
+        (Some(mine), "WEB-1 Моя задача", "2026-10-18 10:00:00+00"),
+        (Some(other), "API-1 Чужая задача", "2026-10-18 10:01:00+00"),
+        (None, "Страница «Архитектура»", "2026-10-18 10:02:00+00"),
+    ] {
+        db::sqlx::query(
+            "insert into activity (actor_id, project_id, kind, target, text, created_at) values ($1, $2, 'create', $3, 'создана', $4::timestamptz)",
+        )
+        .bind(c.user.id)
+        .bind(project)
+        .bind(target)
+        .bind(at)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(
+        targets(&feed(&c, "").await),
+        ["Страница «Архитектура»", "WEB-1 Моя задача"],
+        "свои и общие, чужого проекта нет"
+    );
+    let r = c.get(&format!("/api/v1/projects/{other}/activity")).await;
+    let page = c.ok(r, StatusCode::OK).await;
+    assert_eq!(
+        targets(&page),
+        ["Страница «Архитектура»", "API-1 Чужая задача"],
+        "у другого проекта своя лента, общие события те же"
+    );
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_stranger_gets_no_feed_of_a_project_and_a_missing_project_is_the_same_nothing(pool: PgPool) {
+    let c = ctx(pool.clone()).await;
+    let project = project_of(&pool).await;
+    event(&pool, c.user.id, "comment", "Тайна", "тест", "2026-10-18 10:00:00+00").await;
+    let stranger = c.another("stranger@example.com", "Посторонний").await;
+
+    let uri = format!("/api/v1/projects/{project}/activity");
+    assert_eq!(stranger.get(&uri).await.status, StatusCode::NOT_FOUND);
+    let missing = format!("/api/v1/projects/{}/activity", Uuid::new_v4());
+    assert_eq!(c.get(&missing).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(c.get(&uri).await.status, StatusCode::OK);
 }

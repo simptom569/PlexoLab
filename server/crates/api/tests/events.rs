@@ -171,8 +171,10 @@ async fn work_changes_send_events(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn wiki_and_doc_changes_send_events(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
     let mut rx = c.events.subscribe();
+    let p = f.project;
 
     let page = c.ok(c.post(&url("/wiki"), json!({ "title": "Архитектура" })).await, StatusCode::CREATED).await;
     assert_eq!(drain(&mut rx), [all("wiki.updated"), all(ACTIVITY)]);
@@ -187,23 +189,32 @@ async fn wiki_and_doc_changes_send_events(pool: PgPool) {
         "файлы страницы открепились"
     );
 
-    let doc = c.ok(c.post(&url("/docs"), json!({ "title": "Схема", "mode": "edge" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [all("doc.updated"), all(ACTIVITY)]);
+    let doc = c
+        .ok(
+            c.post(&url(&format!("/projects/{p}/docs")), json!({ "title": "Схема", "mode": "edge" })).await,
+            StatusCode::CREATED,
+        )
+        .await;
+    assert_eq!(
+        drain(&mut rx),
+        [in_project("doc.updated", p), in_project(ACTIVITY, p)],
+        "документ принадлежит проекту: событие только его участникам"
+    );
     let d = id_of(&doc);
     c.ok(c.patch(&url(&format!("/docs/{d}")), json!({ "rev": doc["rev"], "md": "текст" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("doc.updated", d), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "doc.updated", d), pall(p, ACTIVITY)]);
     c.ok(c.patch(&url(&format!("/docs/{d}")), json!({ "mode": "page" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("doc.updated", d), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "doc.updated", d), pall(p, ACTIVITY)]);
     let canvas = json!({ "note": { "x": 24.0, "y": 28.0, "w": 400.0 }, "objects": [], "links": [] });
     c.ok(c.put_json(&url(&format!("/docs/{d}/canvas")), canvas).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("doc.canvas", d)], "холст: отдельное событие, и в ленту он не пишет");
+    assert_eq!(drain(&mut rx), [pon(p, "doc.canvas", d)], "холст: отдельное событие, и в ленту он не пишет");
     assert_eq!(
         c.put_json(&url(&format!("/docs/{d}/star")), json!({ "starred": true })).await.status,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(drain(&mut rx), [on("doc.updated", d)]);
+    assert_eq!(drain(&mut rx), [pon(p, "doc.updated", d)]);
     assert_eq!(c.delete(&url(&format!("/docs/{d}"))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("doc.updated", d), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "doc.updated", d), pall(p, ACTIVITY)]);
 }
 
 // ===== Файлы =====
@@ -237,25 +248,29 @@ async fn file_changes_send_events(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_changes_send_events(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
     let mut rx = c.events.subscribe();
+    let p = f.project;
 
-    let group = c.ok(c.post(&url("/link-groups"), json!({ "title": "Код" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [all("link.changed")]);
+    let group = c
+        .ok(c.post(&url(&format!("/projects/{p}/link-groups")), json!({ "title": "Код" })).await, StatusCode::CREATED)
+        .await;
+    assert_eq!(drain(&mut rx), [in_project("link.changed", p)]);
     let g = id_of(&group);
     c.ok(c.patch(&url(&format!("/link-groups/{g}")), json!({ "title": "Код и сборка" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("link.changed", g)]);
+    assert_eq!(drain(&mut rx), [pon(p, "link.changed", g)]);
     let link = c
         .ok(
             c.post(&url(&format!("/link-groups/{g}/links")), json!({ "title": "Репо", "url": "example.com" })).await,
             StatusCode::CREATED,
         )
         .await;
-    assert_eq!(drain(&mut rx), [on("link.changed", g)]);
+    assert_eq!(drain(&mut rx), [pon(p, "link.changed", g)]);
     assert_eq!(c.delete(&url(&format!("/links/{}", id_of(&link)))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [all("link.changed")]);
+    assert_eq!(drain(&mut rx), [pall(p, "link.changed")]);
     assert_eq!(c.delete(&url(&format!("/link-groups/{g}"))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("link.changed", g)]);
+    assert_eq!(drain(&mut rx), [pon(p, "link.changed", g)]);
 }
 
 // ===== Когда событий быть не должно =====
@@ -272,8 +287,9 @@ async fn reads_and_failed_requests_send_nothing(pool: PgPool) {
     for path in [
         format!("/projects/{}/board", f.project),
         format!("/tasks/{t}"),
-        "/activity".into(),
-        "/link-groups".into(),
+        format!("/projects/{}/activity", f.project),
+        format!("/projects/{}/link-groups", f.project),
+        format!("/projects/{}/docs", f.project),
         "/wiki".into(),
     ] {
         c.ok(c.get(&url(&path)).await, StatusCode::OK).await;
@@ -316,8 +332,10 @@ fn origin_of(event: &Value) -> Option<&str> {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn event_carries_the_client_id_from_the_request(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
     let mut rx = c.events.subscribe();
+    let groups = url(&format!("/projects/{}/link-groups", f.project));
 
     let cases: [(Option<&str>, Option<&str>); 4] = [
         (Some("client-1_A"), Some("client-1_A")),
@@ -327,8 +345,8 @@ async fn event_carries_the_client_id_from_the_request(pool: PgPool) {
     ];
     for (header, expected) in cases {
         let r = match header {
-            Some(h) => c.send_as(h, Method::POST, &url("/link-groups"), Some(json!({ "title": "Группа" }))).await,
-            None => c.post(&url("/link-groups"), json!({ "title": "Группа" })).await,
+            Some(h) => c.send_as(h, Method::POST, &groups, Some(json!({ "title": "Группа" }))).await,
+            None => c.post(&groups, json!({ "title": "Группа" })).await,
         };
         c.ok(r, StatusCode::CREATED).await;
         let event = rx.try_recv().expect("событие пришло");

@@ -1,4 +1,4 @@
-//! Ссылки команды на настоящем Postgres: группы, ссылки, адрес с автоматическим `https://`, каскад, порядок.
+//! Ссылки проекта на настоящем Postgres: группы, ссылки, адрес с автоматическим `https://`, каскад, порядок.
 
 mod common;
 
@@ -7,8 +7,22 @@ use common::*;
 use db::PgPool;
 use serde_json::{Value, json};
 
+/// Контекст теста: проект «Web-приложение», в котором лежат все группы теста
+async fn ctx(pool: PgPool) -> Ctx {
+    let c = Ctx::new(pool.clone()).await;
+    make_project(&pool, "WEB", "Web-приложение", "accent").await;
+    c
+}
+
+/// Адрес списка и создания групп в проекте теста
+async fn groups_path(c: &Ctx) -> String {
+    let project: uuid::Uuid =
+        db::sqlx::query_scalar("select id from projects order by seq limit 1").fetch_one(&c.pool).await.unwrap();
+    format!("/api/v1/projects/{project}/link-groups")
+}
+
 async fn groups(c: &Ctx) -> Value {
-    let r = c.get("/api/v1/link-groups").await;
+    let r = c.get(&groups_path(c).await).await;
     c.ok(r, StatusCode::OK).await
 }
 
@@ -21,7 +35,7 @@ fn link_titles(group: &Value) -> Vec<&str> {
 }
 
 async fn group(c: &Ctx, title: &str) -> Value {
-    let r = c.post("/api/v1/link-groups", json!({ "title": title })).await;
+    let r = c.post(&groups_path(c).await, json!({ "title": title })).await;
     c.ok(r, StatusCode::CREATED).await
 }
 
@@ -36,13 +50,13 @@ async fn activity_count(c: &Ctx) -> i64 {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn there_are_no_groups_at_first(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     assert_eq!(groups(&c).await, json!([]));
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn new_group_is_empty_trimmed_and_goes_last(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let first = group(&c, "  Код и сборка  ").await;
     assert_eq!(first["title"], "Код и сборка");
     assert_eq!(first["links"], json!([]));
@@ -57,27 +71,27 @@ async fn new_group_is_empty_trimmed_and_goes_last(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn group_title_is_checked(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     for title in ["", "   "] {
         assert_eq!(
-            c.post("/api/v1/link-groups", json!({ "title": title })).await.status,
+            c.post(&groups_path(&c).await, json!({ "title": title })).await.status,
             StatusCode::BAD_REQUEST,
             "{title:?}"
         );
     }
     assert_eq!(
-        c.post("/api/v1/link-groups", json!({ "title": "я".repeat(201) })).await.status,
+        c.post(&groups_path(&c).await, json!({ "title": "я".repeat(201) })).await.status,
         StatusCode::BAD_REQUEST
     );
-    assert_eq!(c.post("/api/v1/link-groups", json!({ "title": "я".repeat(200) })).await.status, StatusCode::CREATED);
-    assert_eq!(c.post("/api/v1/link-groups", json!({})).await.status, StatusCode::BAD_REQUEST, "нет названия");
-    assert_eq!(c.post("/api/v1/link-groups", json!({ "title": "A", "x": 1 })).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.post(&groups_path(&c).await, json!({ "title": "я".repeat(200) })).await.status, StatusCode::CREATED);
+    assert_eq!(c.post(&groups_path(&c).await, json!({})).await.status, StatusCode::BAD_REQUEST, "нет названия");
+    assert_eq!(c.post(&groups_path(&c).await, json!({ "title": "A", "x": 1 })).await.status, StatusCode::BAD_REQUEST);
     assert_eq!(group_titles(&groups(&c).await).len(), 1, "ошибочные запросы ничего не создали");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn group_is_renamed(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Старое").await;
     link(&c, &g, "Ссылка", "example.com").await;
 
@@ -98,7 +112,7 @@ async fn group_is_renamed(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_gets_https_when_the_address_has_no_scheme(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
 
     let l = link(&c, &g, "  Репозиторий  ", "  example.com/git/api  ").await;
@@ -118,7 +132,7 @@ async fn link_gets_https_when_the_address_has_no_scheme(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_may_carry_a_description(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
     let uri = format!("/api/v1/link-groups/{}/links", id_of(&g));
 
@@ -133,7 +147,7 @@ async fn link_may_carry_a_description(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_input_is_checked(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
     let uri = format!("/api/v1/link-groups/{}/links", id_of(&g));
 
@@ -159,7 +173,7 @@ async fn link_input_is_checked(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn links_stay_in_the_order_they_were_added_inside_their_group(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let code = group(&c, "Код").await;
     let ops = group(&c, "Мониторинг").await;
     link(&c, &code, "Яблоко", "example.com/1").await;
@@ -174,7 +188,7 @@ async fn links_stay_in_the_order_they_were_added_inside_their_group(pool: PgPool
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_needs_an_existing_group(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let r = c
         .post(
             &format!("/api/v1/link-groups/{}/links", uuid::Uuid::new_v4()),
@@ -190,7 +204,7 @@ async fn link_needs_an_existing_group(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn link_is_deleted(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
     let keep = link(&c, &g, "Остаётся", "example.com/a").await;
     let gone = link(&c, &g, "Уходит", "example.com/b").await;
@@ -205,7 +219,7 @@ async fn link_is_deleted(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn deleting_a_group_deletes_its_links_and_only_them(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doomed = group(&c, "Уходит").await;
     let kept = group(&c, "Остаётся").await;
     link(&c, &doomed, "A", "example.com/a").await;
@@ -224,7 +238,7 @@ async fn deleting_a_group_deletes_its_links_and_only_them(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn links_do_not_write_to_the_feed(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
     let l = link(&c, &g, "A", "example.com").await;
     c.patch(&format!("/api/v1/link-groups/{}", id_of(&g)), json!({ "title": "Новое" })).await;
@@ -235,12 +249,12 @@ async fn links_do_not_write_to_the_feed(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn links_need_a_token(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let g = group(&c, "Код").await;
     let id = id_of(&g);
     for (method, uri, body) in [
-        (Method::GET, "/api/v1/link-groups".to_owned(), None),
-        (Method::POST, "/api/v1/link-groups".to_owned(), Some(json!({ "title": "A" }))),
+        (Method::GET, format!("/api/v1/projects/{id}/link-groups"), None),
+        (Method::POST, format!("/api/v1/projects/{id}/link-groups"), Some(json!({ "title": "A" }))),
         (Method::PATCH, format!("/api/v1/link-groups/{id}"), Some(json!({ "title": "A" }))),
         (Method::DELETE, format!("/api/v1/link-groups/{id}"), None),
         (Method::POST, format!("/api/v1/link-groups/{id}/links"), Some(json!({ "title": "A", "url": "a.b" }))),

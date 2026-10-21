@@ -34,9 +34,25 @@ fn canvas(objects: &[Value], links: &[(Uuid, Uuid)]) -> Value {
     })
 }
 
+/// Контекст теста: проект «Web-приложение», в котором лежат все документы теста
+async fn ctx(pool: PgPool) -> Ctx {
+    let c = Ctx::new(pool.clone()).await;
+    make_project(&pool, "WEB", "Web-приложение", "accent").await;
+    c
+}
+
 impl Ctx {
+    async fn project(&self) -> Uuid {
+        db::sqlx::query_scalar("select id from projects order by seq limit 1").fetch_one(&self.pool).await.unwrap()
+    }
+
+    /// Адрес списка и создания документов проекта теста
+    async fn docs_path(&self) -> String {
+        format!("/api/v1/projects/{}/docs", self.project().await)
+    }
+
     async fn doc(&self, title: &str, mode: &str) -> Value {
-        let r = self.post("/api/v1/docs", json!({ "title": title, "mode": mode })).await;
+        let r = self.post(&self.docs_path().await, json!({ "title": title, "mode": mode })).await;
         self.ok(r, StatusCode::CREATED).await
     }
 
@@ -52,7 +68,7 @@ impl Ctx {
     }
 
     async fn list(&self, query: &str) -> Value {
-        let r = self.get(&format!("/api/v1/docs{query}")).await;
+        let r = self.get(&format!("{}{query}", self.docs_path().await)).await;
         self.ok(r, StatusCode::OK).await
     }
 
@@ -74,7 +90,8 @@ impl Ctx {
 
     /// Второй участник: его токен
     async fn other_token(&self) -> String {
-        make_user(&self.pool, "second@example.com", "Второй В.", "second-password").await;
+        let user = make_user(&self.pool, "second@example.com", "Второй В.", "second-password").await;
+        join(&self.pool, self.project().await, user.id, "member").await;
         let tokens = login_ok(&self.app, "second@example.com", "second-password").await;
         str_field(&tokens, "access_token").to_owned()
     }
@@ -89,8 +106,8 @@ async fn docs_need_a_token(pool: PgPool) {
     let app = app(pool);
     let id = Uuid::new_v4();
     for (method, uri) in [
-        (Method::GET, "/api/v1/docs".to_owned()),
-        (Method::POST, "/api/v1/docs".to_owned()),
+        (Method::GET, format!("/api/v1/projects/{id}/docs")),
+        (Method::POST, format!("/api/v1/projects/{id}/docs")),
         (Method::GET, format!("/api/v1/docs/{id}")),
         (Method::PATCH, format!("/api/v1/docs/{id}")),
         (Method::DELETE, format!("/api/v1/docs/{id}")),
@@ -104,8 +121,8 @@ async fn docs_need_a_token(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn new_document_is_empty_at_revision_one_and_goes_to_the_feed(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let r = c.post("/api/v1/docs", json!({})).await;
+    let c = ctx(pool).await;
+    let r = c.post(&c.docs_path().await, json!({})).await;
     let doc = c.ok(r, StatusCode::CREATED).await;
 
     assert_eq!(doc["title"], "");
@@ -131,21 +148,21 @@ async fn new_document_is_empty_at_revision_one_and_goes_to_the_feed(pool: PgPool
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn new_document_needs_sane_fields(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let r = c.post("/api/v1/docs", json!({ "title": "я".repeat(201) })).await;
+    let c = ctx(pool).await;
+    let r = c.post(&c.docs_path().await, json!({ "title": "я".repeat(201) })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
-    let r = c.post("/api/v1/docs", json!({ "md": "я".repeat(500_001) })).await;
+    let r = c.post(&c.docs_path().await, json!({ "md": "я".repeat(500_001) })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = c.post("/api/v1/docs", json!({ "mode": "board" })).await;
+    let r = c.post(&c.docs_path().await, json!({ "mode": "board" })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "режимов только два");
-    let r = c.post("/api/v1/docs", json!({ "color": "red" })).await;
+    let r = c.post(&c.docs_path().await, json!({ "color": "red" })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "лишнее поле запроса");
     assert!(c.titles("").await.is_empty());
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn new_documents_go_first(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let a = c.page("А").await;
     let b = c.page("Б").await;
     let d = c.page("В").await;
@@ -156,7 +173,7 @@ async fn new_documents_go_first(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn list_has_summaries_without_the_text(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let page = c.page("Планирование").await;
     let md = "## Цели квартала\n\n1. Выпустить релиз\n2. Закрыть техдолг\n3. Подготовить бету\n4. Лишнее";
     let r = c.save(&page, json!({ "md": md })).await;
@@ -201,7 +218,7 @@ async fn list_has_summaries_without_the_text(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn thumbnails_are_only_for_documents_in_canvas_mode(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Идеи").await;
     let id = Uuid::new_v4();
     let r = c.put_json(&canvas_uri(&doc), canvas(&[obj(id, "sticky", 10.0, 10.0, "Идея")], &[])).await;
@@ -218,7 +235,7 @@ async fn thumbnails_are_only_for_documents_in_canvas_mode(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn document_comes_with_text_and_canvas(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Заметки").await;
     let r = c.save(&doc, json!({ "md": "# Привет\n\nТекст" })).await;
     c.ok(r, StatusCode::OK).await;
@@ -231,7 +248,7 @@ async fn document_comes_with_text_and_canvas(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn saving_changes_text_and_title_and_raises_the_revision(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("").await;
 
     let r = c.save(&doc, json!({ "md": "Первая строка\r\nВторая" })).await;
@@ -252,7 +269,7 @@ async fn saving_changes_text_and_title_and_raises_the_revision(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn saving_the_same_content_keeps_the_revision(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Тут").await;
     let r = c.save(&doc, json!({ "md": "Текст" })).await;
     let doc = c.ok(r, StatusCode::OK).await;
@@ -268,7 +285,7 @@ async fn saving_the_same_content_keeps_the_revision(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn stale_revision_gets_409_with_the_current_version(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Общий").await;
 
     // два клиента открыли одну и ту же версию
@@ -293,7 +310,7 @@ async fn stale_revision_gets_409_with_the_current_version(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn two_saves_with_the_same_revision_cannot_both_win(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Гонка").await;
     let uri = doc_uri(&doc);
 
@@ -307,7 +324,7 @@ async fn two_saves_with_the_same_revision_cannot_both_win(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn revision_is_required_and_unknown_fields_are_refused(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Тест").await;
     let uri = doc_uri(&doc);
 
@@ -322,7 +339,7 @@ async fn revision_is_required_and_unknown_fields_are_refused(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn switching_the_mode_is_a_view_change_not_an_edit(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Вид").await;
     let r = c.save(&doc, json!({ "md": "Текст" })).await;
     let doc = c.ok(r, StatusCode::OK).await;
@@ -343,7 +360,7 @@ async fn switching_the_mode_is_a_view_change_not_an_edit(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn before_id_reorders_documents(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let a = c.page("А").await;
     let b = c.page("Б").await;
     let d = c.page("В").await;
@@ -377,7 +394,7 @@ async fn before_id_reorders_documents(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn before_id_must_be_another_existing_document(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let a = c.page("А").await;
     c.page("Б").await;
     let r = c.patch(&doc_uri(&a), json!({ "before_id": Uuid::new_v4() })).await;
@@ -389,7 +406,7 @@ async fn before_id_must_be_another_existing_document(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn order_survives_hundreds_of_moves_into_the_same_gap(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     c.page("Низ").await;
     let y = c.page("У").await;
     let x = c.page("Х").await;
@@ -411,7 +428,7 @@ async fn order_survives_hundreds_of_moves_into_the_same_gap(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn stars_belong_to_each_person(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let other = c.other_token().await;
     let a = c.page("А").await;
     let b = c.page("Б").await;
@@ -429,14 +446,14 @@ async fn stars_belong_to_each_person(pool: PgPool) {
     // у второго участника звёздочки нет
     let r = c.as_other(&other, Method::GET, &doc_uri(&a), None).await;
     assert_eq!(c.ok(r, StatusCode::OK).await["starred"], false);
-    let r = c.as_other(&other, Method::GET, "/api/v1/docs?starred=true", None).await;
+    let r = c.as_other(&other, Method::GET, &format!("{}?starred=true", c.docs_path().await), None).await;
     assert_eq!(c.ok(r, StatusCode::OK).await, json!([]));
 
     // он ставит свою на другой документ; у первого она не появляется
     let r = c.as_other(&other, Method::PUT, &format!("{}/star", doc_uri(&b)), Some(json!({ "starred": true }))).await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     assert_eq!(c.titles("?starred=true").await, ["А"]);
-    let r = c.as_other(&other, Method::GET, "/api/v1/docs?starred=true", None).await;
+    let r = c.as_other(&other, Method::GET, &format!("{}?starred=true", c.docs_path().await), None).await;
     let theirs = c.ok(r, StatusCode::OK).await;
     assert_eq!(theirs.as_array().unwrap().len(), 1);
     assert_eq!(theirs[0]["title"], "Б");
@@ -448,13 +465,13 @@ async fn stars_belong_to_each_person(pool: PgPool) {
     }
     assert_eq!(c.open(&a).await["starred"], false);
     assert_eq!(c.titles("?starred=true").await, Vec::<String>::new());
-    let r = c.as_other(&other, Method::GET, "/api/v1/docs?starred=true", None).await;
+    let r = c.as_other(&other, Method::GET, &format!("{}?starred=true", c.docs_path().await), None).await;
     assert_eq!(c.ok(r, StatusCode::OK).await.as_array().unwrap().len(), 1, "чужая звёздочка осталась");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn star_does_not_touch_the_document_and_needs_an_existing_one(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Звезда").await;
     let r = c.put_json(&format!("{}/star", doc_uri(&doc)), json!({ "starred": true })).await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
@@ -471,7 +488,7 @@ async fn star_does_not_touch_the_document_and_needs_an_existing_one(pool: PgPool
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn search_looks_in_title_and_text_ignoring_case(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let plan = c.page("Планирование Q4").await;
     let r = c.save(&plan, json!({ "md": "Выпустить Релиз 2.9.0" })).await;
     c.ok(r, StatusCode::OK).await;
@@ -494,13 +511,13 @@ async fn search_looks_in_title_and_text_ignoring_case(pool: PgPool) {
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     assert_eq!(c.titles("?starred=true&q=%25").await, ["Заметки"]);
     assert_eq!(c.titles("?starred=true&q=релиз").await, Vec::<String>::new());
-    assert_eq!(c.get(&format!("/api/v1/docs?q={}", "я".repeat(201))).await.status, StatusCode::BAD_REQUEST);
-    assert_eq!(c.get("/api/v1/docs?starred=может").await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.get(&format!("{}?q={}", c.docs_path().await, "я".repeat(201))).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.get(&format!("{}?starred=может", c.docs_path().await)).await.status, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn canvas_is_saved_as_a_whole(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.doc("Схема", "edge").await;
     let (a, b, d) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
 
@@ -534,7 +551,7 @@ async fn canvas_is_saved_as_a_whole(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn saving_the_canvas_again_updates_in_place_and_removes_what_is_missing(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.doc("Схема", "edge").await;
     let (a, b, d, new) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
     let r = c
@@ -589,7 +606,7 @@ async fn saving_the_canvas_again_updates_in_place_and_removes_what_is_missing(po
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn saving_the_canvas_touches_the_edit_time_but_not_the_revision_or_the_feed(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.page("Время").await;
     let r = c.put_json(&canvas_uri(&doc), canvas(&[obj(Uuid::new_v4(), "text", 1.0, 1.0, "Т")], &[])).await;
     c.ok(r, StatusCode::OK).await;
@@ -605,7 +622,7 @@ async fn saving_the_canvas_touches_the_edit_time_but_not_the_revision_or_the_fee
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn the_canvas_is_checked_and_a_refused_one_changes_nothing(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let doc = c.doc("Строгий", "edge").await;
     let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
     let good = canvas(&[obj(a, "rect", 10.0, 10.0, "А"), obj(b, "rect", 200.0, 10.0, "Б")], &[(a, b)]);
@@ -648,7 +665,7 @@ async fn the_canvas_is_checked_and_a_refused_one_changes_nothing(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn an_object_id_of_another_document_is_refused_and_nothing_changes(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let mine = c.doc("Мой", "edge").await;
     let other = c.doc("Чужой", "edge").await;
     let (a, taken) = (Uuid::new_v4(), Uuid::new_v4());
@@ -671,7 +688,7 @@ async fn an_object_id_of_another_document_is_refused_and_nothing_changes(pool: P
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn deleting_a_document_removes_its_canvas_and_stars_and_goes_to_the_feed(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let c = ctx(pool).await;
     let keep = c.page("Остаётся").await;
     let doc = c.doc("Схема", "edge").await;
     let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
