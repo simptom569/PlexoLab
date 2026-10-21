@@ -200,3 +200,101 @@ test.describe('фильтр «Исполнитель»: участники пр�
     expect(await assignees(page)).toEqual(['Лена М.', 'Артём К.', 'Даниил С.', 'Соня В.', 'Игорь П.'])
   })
 })
+
+// ===== Ответственный модуля и фильтр «Участник» в ленте =====
+
+test.describe('люди из проекта: ответственный модуля и фильтр «Участник» в ленте', () => {
+  async function newProject(page: Page) {
+    return apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { name: 'Сайт', key: 'PLX' } })
+  }
+
+  async function join(page: Page, project: string, email: string) {
+    await apiAs(page, LENA, `/projects/${project}/invites`, { method: 'POST', data: { email } })
+    const invites = await apiAs<Array<{ id: string; project_id: string }>>(page, email, '/invites')
+    await apiAs(page, email, `/invites/${invites.find((i) => i.project_id === project)!.id}/accept`, { method: 'POST', data: {} })
+  }
+
+  const userId = async (page: Page, email: string) => (await apiAs<Array<{ id: string; email: string }>>(page, LENA, '/users')).find((u) => u.email === email)!.id
+  const leadButton = (page: Page) => page.locator('button[title="Сменить ответственного"]').first()
+  const leadMenu = (page: Page) => page.getByRole('menu', { name: 'Ответственный' })
+  const chips = (page: Page) => page.getByRole('group', { name: 'Участник' }).getByRole('button')
+  // в тексте пункта списка первая буква — аватар, поэтому имена берём без неё
+  const leadNames = async (page: Page) => (await leadMenu(page).getByRole('menuitemradio').allTextContents()).map((t) => t.slice(1))
+
+  test('в списке ответственного только участники проекта, вышедший остаётся, пока он ответственный', async ({ page }) => {
+    const project = await newProject(page)
+    const module = await apiAs<{ id: string }>(page, LENA, `/projects/${project.id}/modules`, { method: 'POST', data: { title: 'Платежи' } })
+    await openApp(page, { settings: { page: 'modules', project: project.id } })
+
+    await expect(leadButton(page)).toContainText('Лена М.')
+    await leadButton(page).click()
+    expect(await leadNames(page)).toEqual(['Не назначен', 'Лена М.'])
+    await page.keyboard.press('Escape')
+
+    await join(page, project.id, 'artem@example.com')
+    await expect
+      .poll(async () => {
+        await leadButton(page).click()
+        const names = await leadNames(page)
+        await page.keyboard.press('Escape')
+        return names
+      })
+      .toEqual(['Не назначен', 'Лена М.', 'Артём К.'])
+
+    // Артёма сделали ответственным и убрали из проекта: он остаётся в карточке и в списке, пока не выберут другого
+    await apiAs(page, LENA, `/modules/${module.id}`, { method: 'PATCH', data: { lead_id: await userId(page, 'artem@example.com') } })
+    await apiAs(page, LENA, `/projects/${project.id}/members/${await userId(page, 'artem@example.com')}`, { method: 'DELETE' })
+    await page.reload()
+    await expect(leadButton(page)).toContainText('Артём К.')
+    await leadButton(page).click()
+    expect(await leadNames(page)).toEqual(['Не назначен', 'Лена М.', 'Артём К.'])
+    await leadMenu(page).getByRole('menuitemradio', { name: 'Лена М.' }).click()
+    await expect(leadButton(page)).toContainText('Лена М.')
+    await leadButton(page).click()
+    expect(await leadNames(page)).toEqual(['Не назначен', 'Лена М.'])
+  })
+
+  test('сервер не даёт назначить ответственным того, кого нет в проекте', async ({ page }) => {
+    await openApp(page)
+    const project = await newProject(page)
+    const module = await apiAs<{ id: string }>(page, LENA, `/projects/${project.id}/modules`, { method: 'POST', data: { title: 'Платежи' } })
+    const status = await statusAs(page, LENA, `/modules/${module.id}`, { method: 'PATCH', data: { lead_id: await userId(page, 'igor@example.com') } })
+    expect(status).toBe(400)
+  })
+
+  test('фильтр «Участник» в ленте: участники проекта и те, у кого в ленте есть события', async ({ page }) => {
+    const project = await newProject(page)
+    await openApp(page, { settings: { page: 'activity', project: project.id } })
+    // в новом проекте только Лена, плюс автор страницы вики (Артём): её событие видно в ленте любого проекта
+    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Артём К.'])
+
+    // Даниил вошёл в проект: он участник, хоть событий у него нет
+    await join(page, project.id, 'daniil@example.com')
+    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Артём К.', 'Даниил С.'])
+
+    // а в демо-проекте, где все пятеро участники, видны все
+    await pickProject(page, 'Web-приложение')
+    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Артём К.', 'Даниил С.', 'Соня В.', 'Игорь П.'])
+  })
+
+  test('сохранённый участник, которого нет в этой ленте, не прячет её: показываются все события', async ({ page }) => {
+    const project = await newProject(page)
+    await openApp(page, { settings: { page: 'activity', project: project.id, actWho: await userId(page, 'igor@example.com') } })
+    await expect(rows(page)).toHaveCount(1) // событие вики
+    await expect(chips(page).first()).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+// ===== Снимки списка ответственного (свои, в обеих темах: в макете такого списка нет) =====
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`список ответственного модуля (${theme})`, async ({ page }) => {
+    await openApp(page, { theme, settings: { page: 'modules' } })
+    const card = page.locator('.cards-grid .panel').filter({ has: page.locator('input[aria-label="Название модуля"][value="SSO"]') })
+    await card.locator('button[title="Сменить ответственного"]').click()
+    const menu = page.getByRole('menu', { name: 'Ответственный' })
+    await expect(menu).toBeVisible()
+    await page.mouse.move(8, 8)
+    await expect(menu).toHaveScreenshot(`lead-menu-${theme}.png`)
+  })
+}

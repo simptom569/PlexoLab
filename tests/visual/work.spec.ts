@@ -260,19 +260,59 @@ test.describe('модули', () => {
     await expect(card(page, 'Надёжность').locator('.pill-btn')).toHaveText('Запланирован')
   })
 
-  test('ответственный переключается по кругу среди участников', async ({ page }) => {
+  test('ответственный выбирается из раскрывающегося списка участников проекта', async ({ page }) => {
     await openApp(page, { settings: { page: 'modules' } })
     // у кнопки есть текст («Артём К.»), поэтому «Сменить ответственного» — это подсказка (title), а не имя для getByRole
     const lead = card(page, 'SSO').locator('button[title="Сменить ответственного"]')
     await expect(lead).toContainText('Артём К.')
+    await expect(lead).toHaveAttribute('aria-expanded', 'false')
     await lead.click()
-    await expect(lead).toContainText('Даниил С.')
-    await lead.click()
+    const menu = page.getByRole('menu', { name: 'Ответственный' })
+    await expect(lead).toHaveAttribute('aria-expanded', 'true')
+    // в тексте пункта первая буква — аватар, поэтому имена берём без неё
+    const names = async () => (await menu.getByRole('menuitemradio').allTextContents()).map((t) => t.slice(1))
+    expect(await names()).toEqual(['Не назначен', 'Лена М.', 'Артём К.', 'Даниил С.', 'Соня В.', 'Игорь П.'])
+    await expect(menu.getByRole('menuitemradio', { name: 'Артём К.' })).toHaveAttribute('aria-checked', 'true')
+    await menu.getByRole('menuitemradio', { name: 'Соня В.' }).click()
+    await expect(menu).toHaveCount(0)
     await expect(lead).toContainText('Соня В.')
+    await expect(lead).toBeFocused()
     const sonya = (await api<Array<{ id: string; name: string }>>(page, '/users')).find((u) => u.name === 'Соня В.')!
     await expect.poll(async () => (await webBoard(page)).modules.find((m) => m.title === 'SSO')?.lead_id).toBe(sonya.id)
     await page.reload()
     await expect(card(page, 'SSO').locator('button[title="Сменить ответственного"]')).toContainText('Соня В.')
+  })
+
+  test('список ответственного: стрелки и Enter, Esc закрывает без выбора, клик мимо тоже, «Не назначен» снимает', async ({ page }) => {
+    await openApp(page, { settings: { page: 'modules' } })
+    const lead = card(page, 'SSO').locator('button[title="Сменить ответственного"]')
+    const menu = page.getByRole('menu', { name: 'Ответственный' })
+
+    await lead.click()
+    await expect(menu.getByRole('menuitemradio', { name: 'Артём К.' })).toBeFocused() // фокус сразу на выбранном
+    await page.keyboard.press('Escape')
+    await expect(menu).toHaveCount(0)
+    await expect(lead).toBeFocused()
+    await expect(lead).toContainText('Артём К.')
+
+    await lead.click()
+    await page.mouse.click(700, 880) // мимо списка
+    await expect(menu).toHaveCount(0)
+    await expect(lead).toContainText('Артём К.')
+
+    await lead.click()
+    await page.keyboard.press('ArrowDown')
+    await expect(menu.getByRole('menuitemradio', { name: 'Даниил С.' })).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(lead).toContainText('Даниил С.')
+    await expect.poll(async () => (await webBoard(page)).modules.find((m) => m.title === 'SSO')?.lead_id).toBe(
+      (await api<Array<{ id: string; name: string }>>(page, '/users')).find((u) => u.name === 'Даниил С.')!.id,
+    )
+
+    await lead.click()
+    await menu.getByRole('menuitemradio', { name: 'Не назначен' }).click()
+    await expect(lead).toContainText('Не назначен')
+    await expect.poll(async () => (await webBoard(page)).modules.find((m) => m.title === 'SSO')?.lead_id).toBeNull()
   })
 
   test('название и описание сохраняются, когда поле отпускают', async ({ page }) => {

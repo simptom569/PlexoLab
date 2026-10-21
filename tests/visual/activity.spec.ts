@@ -10,8 +10,8 @@ import { api, token } from './wiki-helpers'
 // Всё правее бокового меню: меню сверяется отдельно (sidebar.spec.ts)
 const MAIN: Rect = { x: 233, y: 0, width: 1207, height: 900 }
 
-// запросы ленты к серверу; адрес вида /src/features/activity/… (модули приложения) сюда не относится
-const ACTIVITY_API = /\/api\/v1\/projects\/[0-9a-f-]+\/activity/
+// страницы ленты на сервере; адрес вида /src/features/activity/… (модули приложения) и список людей ленты (`/activity/actors`) сюда не относятся
+const ACTIVITY_API = /\/api\/v1\/projects\/[0-9a-f-]+\/activity(\?|$)/
 
 test.beforeEach(() => resetData())
 
