@@ -36,7 +36,7 @@ type MarkdownEditorProps = {
   onOpenUrl: (url: string) => void
   /** Сразу открыть первый блок для ввода: новая пустая страница */
   autoEdit?: boolean
-  /** Редактирование закончено (Esc, Ctrl+Enter, клик в сторону): владелец сохраняет без ожидания паузы */
+  /** Человек ушёл из блока (Esc, Ctrl+Enter, клик в сторону, переход в другой блок): владелец сохраняет без ожидания паузы */
   onFinish?: () => void
   /**
    * Открыть сразу этот блок (строки `[start, end)`) и поставить курсор в `caret` (позиция в тексте блока): так редактор
@@ -110,7 +110,8 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
     const edit: Active | null = step.edit && { ...step.edit, t: prev && prev.start === step.edit.start ? prev.t : (prev?.t ?? 0) + 1 }
     editRef.current = edit
     setState({ edit, caret: step.caret === undefined ? null : { pos: step.caret } })
-    if (!step.edit) onFinish?.()
+    // человек ушёл из блока: закончил правку или перешёл в соседний; написанное уходит на сервер, не дожидаясь паузы
+    if (!edit || (prev && edit.t !== prev.t)) onFinish?.()
   }
 
   /** Блок стал активным по щелчку или клавише */

@@ -329,3 +329,35 @@ test.describe('таблица', () => {
     })
   }
 })
+
+// Написанное уходит на сервер не только через 600 мс после последней буквы, но и сразу, как только человек ушёл из блока:
+// тогда у соседа меньше шансов попасть на чужую правку и получить слияние.
+test.describe('сохранение при уходе из блока', () => {
+  const THREE = 'Первый абзац\n\nВторой абзац\n\nТретий абзац'
+  /** Ждёт запрос на сохранение страницы; короче паузы 600 мс, поэтому дождаться его по таймеру нельзя */
+  const saveRequest = (page: Page, id: string) =>
+    page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes(`/wiki/${id}`), { timeout: 300 })
+
+  test('переход в соседний блок отправляет текст сразу', async ({ page }) => {
+    const id = await makePage(page, 'Уход из блока', THREE)
+    await openPageById(page, id)
+    await blocks(page).first().click()
+    await page.keyboard.type(' (правка)')
+    const sent = saveRequest(page, id)
+    await blocks(page).first().click() // после открытия первого блока отрисованы второй и третий: первый из них — «Второй абзац»
+    await sent
+    await expectSaved(page, id, 'Первый абзац (правка)\n\nВторой абзац\n\nТретий абзац')
+  })
+
+  test('Enter открывает новый блок и отправляет написанное', async ({ page }) => {
+    const id = await makePage(page, 'Enter', THREE)
+    await openPageById(page, id)
+    await blocks(page).nth(2).click()
+    await page.keyboard.type(' (правка)')
+    const sent = saveRequest(page, id)
+    await page.keyboard.press('Enter')
+    await sent
+    // новый блок пока пуст: лишние пустые строки уберутся, когда человек закончит
+    await expectSaved(page, id, 'Первый абзац\n\nВторой абзац\n\nТретий абзац (правка)\n\n')
+  })
+})
