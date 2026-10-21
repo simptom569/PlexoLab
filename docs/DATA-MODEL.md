@@ -159,6 +159,7 @@ create table wiki_pages (
 
 create table docs (
   id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects on delete cascade,   -- документ принадлежит проекту (П5); порядок `position` свой у каждого проекта
   title text not null default '',
   md text not null default '',
   mode doc_mode not null default 'page',
@@ -199,7 +200,11 @@ create table files (
   created_at timestamptz not null default now()
 );
 
-create table link_groups (id uuid primary key default gen_random_uuid(), title text not null, position double precision not null);
+create table link_groups (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects on delete cascade,   -- группа принадлежит проекту (П5)
+  title text not null, position double precision not null
+);
 create table links (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references link_groups on delete cascade,
@@ -256,10 +261,10 @@ create index on tasks (project_id, column_id, position);
 | `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
 | `GET /files?folder=&kind=&q=&wiki_page_id=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов. `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
-| `GET /docs?q=&starred=`, `POST /docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы. Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке, `null` — в конец) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
+| `GET /projects/{id}/docs?q=&starred=`, `POST /projects/{id}/docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы проекта (этап П5): список и создание по проекту, остальное по документу, проект и права находятся по нему (чужой проект и бывший участник получают 404). Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке своего проекта, `null` — в конец; документ другого проекта в `before_id` даёт 400) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
 | `PUT /docs/{id}/canvas` | сохранить сразу карточку с текстом, объекты и стрелки холста (тело — полный список, идентификаторы объектов выдаёт клиент); в одной транзакции, ответ с новой `canvas_rev` |
-| `GET /activity?actor=&kind=&before=` | лента, постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc`, `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
-| `GET/POST /link-groups`, `PATCH/DELETE /link-groups/{id}` | группы ссылок команды (список сразу со ссылками), переименование, удаление вместе со ссылками |
+| `GET /projects/{id}/activity?actor=&kind=&before=` | лента проекта (этап П5): его события и события без проекта (вики, файлы библиотеки), постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc`, `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
+| `GET/POST /projects/{id}/link-groups`, `PATCH/DELETE /link-groups/{id}` | группы ссылок проекта (список сразу со ссылками), переименование, удаление вместе со ссылками; адреса с `{id}` группы ищут проект по ней |
 | `POST /link-groups/{id}/links`, `DELETE /links/{id}` | добавить ссылку в конец группы (`https://` добавляется, если нет схемы), удалить. Правки ссылки нет: в макете её нельзя править |
 | `GET /healthz` | проверка живости (без токена) |
 
@@ -288,9 +293,9 @@ create index on tasks (project_id, column_id, position);
 | `comment.created` | комментарий | открытая задача |
 | `release.changed` | релизы и шаги чек-листа | релизы проекта |
 | `wiki.updated` | создание, правка, перенос, удаление страницы | дерево и открытая страница |
-| `doc.updated`, `doc.canvas` | документ, звёздочка, холст | список и открытый документ |
+| `doc.updated`, `doc.canvas` | документ, звёздочка, холст (участникам проекта документа) | списки документов и открытый документ |
 | `file.changed` | файлы и папки | библиотека, папки, открытые задачи |
-| `link.changed` | ссылки команды | группы ссылок |
+| `link.changed` | ссылки проекта (участникам проекта) | группы ссылок |
 | `project.changed` | проект создан, переименован, заархивирован, поменялся состав участников или чьё-то приглашение | список проектов (боковое меню) и доска |
 | `invite.changed` | приглашение человеку появилось, принято, отклонено или отозвано (приходит приглашённому лично) | мои приглашения |
 | `user.changed` | человек поменял своё имя, подпись или цвет аватара (`PATCH /me`) | список участников; у того же человека на другом устройстве обновляется и боковое меню |
