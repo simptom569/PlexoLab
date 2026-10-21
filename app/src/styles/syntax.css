@@ -1,0 +1,12 @@
+/* Подсветка кода в блоке ```язык (в макете её нет, добавлена по просьбе владельца).
+   Классы ставит highlight.js, цвета берутся только из переменных макета: обе темы переключаются сами.
+   --warn не используется: на светлом фоне блока его контраст ниже 4,5:1. Курсива нет: JetBrains Mono подключён без него. */
+.md-code .hljs-keyword,.md-code .hljs-selector-tag,.md-code .hljs-doctag,.md-code .hljs-template-tag{color:var(--debt-fg)}
+.md-code .hljs-string,.md-code .hljs-addition,.md-code .hljs-code{color:var(--ok)}
+.md-code .hljs-number,.md-code .hljs-literal,.md-code .hljs-symbol,.md-code .hljs-bullet,.md-code .hljs-meta,.md-code .hljs-deletion{color:var(--bug-fg)}
+.md-code .hljs-title,.md-code .hljs-section,.md-code .hljs-name,.md-code .hljs-tag,.md-code .hljs-selector-id,.md-code .hljs-selector-class{color:var(--accent)}
+.md-code .hljs-built_in,.md-code .hljs-type,.md-code .hljs-attr,.md-code .hljs-attribute{color:var(--d-fg)}
+.md-code .hljs-variable,.md-code .hljs-template-variable,.md-code .hljs-regexp,.md-code .hljs-link{color:var(--b-fg)}
+.md-code .hljs-comment,.md-code .hljs-quote{color:var(--muted)}
+.md-code .hljs-subst{color:var(--ink)}
+.md-code .hljs-strong{font-weight:500}

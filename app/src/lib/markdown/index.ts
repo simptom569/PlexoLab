@@ -1,5 +1,7 @@
 export { LIST_RE, mdBlocks, mdInline, mdKindOf, mdTidy, rowsFor } from './engine'
 export type { Block, BlockKind, Inline } from './engine'
+export { highlightCode } from './highlight'
+export type { CodeNode } from './highlight'
 export { describeBlock } from './view'
 export type { BlockView, ListItemView, Run } from './view'
 export { append, finish, insertBlock, keyAction, put, segments, split, toggleCheck, wrap } from './ops'

@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import {
   TOOLS,
   append,
   describeBlock,
   finish,
+  highlightCode,
   insertBlock,
   isMonoTool,
   keyAction,
@@ -14,6 +15,7 @@ import {
   wrap,
   type Block,
   type BlockView,
+  type CodeNode,
   type Edit,
   type Run,
   type Step,
@@ -294,6 +296,28 @@ function Runs({ runs, onOpenWiki, onOpenUrl }: { runs: Run[] } & Pick<ViewProps,
   )
 }
 
+function CodeNodes({ nodes }: { nodes: CodeNode[] }) {
+  return (
+    <>
+      {nodes.map((n, i) =>
+        typeof n === 'string' ? (
+          n
+        ) : (
+          <span key={i} className={n.cls}>
+            <CodeNodes nodes={n.nodes} />
+          </span>
+        ),
+      )}
+    </>
+  )
+}
+
+/** Текст блока кода: цветной, если язык известен, иначе как есть */
+function CodeText({ code, lang }: { code: string; lang: string }) {
+  const nodes = useMemo(() => highlightCode(code, lang), [code, lang])
+  return nodes ? <CodeNodes nodes={nodes} /> : code
+}
+
 /** Отрисованный вид блока */
 function View({ view, onToggle, onOpenWiki, onOpenUrl }: ViewProps) {
   const links = { onOpenWiki, onOpenUrl }
@@ -337,7 +361,9 @@ function View({ view, onToggle, onOpenWiki, onOpenUrl }: ViewProps) {
       return (
         <pre className="md-code">
           {view.lang ? <span className="md-lang">{view.lang}</span> : null}
-          <code>{view.code}</code>
+          <code>
+            <CodeText code={view.code} lang={view.lang} />
+          </code>
         </pre>
       )
     case 'hr':
