@@ -477,7 +477,7 @@ pub struct UpdateModule {
     pub key: Option<Option<String>>,
     /// plan | progress | done
     pub status: Option<String>,
-    /// Ответственный; `null` — не назначен
+    /// Ответственный: участник проекта (прежнего, вышедшего из проекта, оставить можно); `null` — не назначен
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<Uuid>)]
     pub lead_id: Option<Option<Uuid>>,

@@ -38,6 +38,15 @@ pub async fn insert(
     Ok(())
 }
 
+/// Все, у кого есть события в ленте проекта (его собственные и общие), независимо от фильтров: из них собирается
+/// список «Участник». Порядок не задан.
+pub async fn actors<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("select distinct actor_id from activity where project_id = $1 or project_id is null")
+        .bind(project_id)
+        .fetch_all(ex)
+        .await
+}
+
 /// События проекта от новых к старым: его собственные и события без проекта (вики и файлы библиотеки). Доступ к
 /// проекту проверяет вызывающий. `actor` и `kinds` сужают выбор; `after` — место, после которого (то есть старше) продолжать: время события и его
 /// идентификатор. Идентификатор разводит события с одинаковым временем.

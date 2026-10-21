@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(list_activity))
+    OpenApiRouter::new().routes(routes!(list_activity)).routes(routes!(activity_actors))
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -124,4 +124,29 @@ async fn list_activity(
     events.truncate(PAGE_SIZE as usize);
     let next = more.then(|| events.last().map(|e| cursor_of(e).encode())).flatten();
     Ok(Json(ActivityPageDto { items: events.into_iter().map(ActivityDto::from).collect(), next }))
+}
+
+/// Кто есть в ленте проекта
+///
+/// Все, у кого есть события в ленте (проекта и общие), независимо от фильтров. Клиент собирает из них и из участников
+/// проекта список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события.
+#[utoipa::path(
+    get,
+    path = "/projects/{id}/activity/actors",
+    tag = "activity",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Проект")),
+    responses(
+        (status = 200, description = "Идентификаторы людей, у которых есть события в ленте", body = [Uuid]),
+        (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
+    )
+)]
+async fn activity_actors(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
+) -> ApiResult<Json<Vec<Uuid>>> {
+    access::project(&state.pool, auth, project_id).await?;
+    Ok(Json(db::activity::actors(&state.pool, project_id).await?))
 }

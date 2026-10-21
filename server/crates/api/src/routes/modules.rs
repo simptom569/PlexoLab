@@ -192,10 +192,12 @@ async fn update_module(
 
     let mut tx = state.pool.begin().await?;
     let (before, project) = load_module_locked(&mut tx, auth, id).await?;
+    // ответственным назначают участника проекта; тот, кто уже назначен и вышел из проекта, остаётся
     if let Some(Some(lead)) = patch.lead
-        && !db::users::exists(&mut *tx, lead).await?
+        && before.lead_id != Some(lead)
+        && db::members::role_of(&mut *tx, project.id, lead).await?.is_none()
     {
-        return Err(bad("Ответственный не найден среди участников"));
+        return Err(bad("Ответственный должен быть участником проекта"));
     }
 
     if let Some(key) = &patch.key
