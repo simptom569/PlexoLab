@@ -111,6 +111,7 @@ export function patchModule(board: Board, id: string, patch: UpdateModule): Boar
         : {
             ...m,
             title: patch.title ?? m.title,
+            key: patch.key !== undefined ? patch.key : m.key,
             status: patch.status ?? m.status,
             note: patch.note ?? m.note,
             lead_id: patch.lead_id !== undefined ? patch.lead_id : m.lead_id,

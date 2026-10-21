@@ -2,11 +2,16 @@ import { useState } from 'react'
 import { Avatar, Button, DateField, EmptyState, Input, PageHead, Panel, ProgressBar, TitleInput } from '../../components'
 import type { Module, TaskCard, UpdateModule } from '../../lib/api/types'
 import { MODULE_STATUS_LABELS, NEXT_STATUS, type WorkStatus } from '../../lib/domain'
+import { isValidKey, KEY_RULE, normalizeKey } from '../../lib/project-dialogs'
 import { percent, tasksText } from '../../lib/progress'
+import { moduleKeyChangeCount, moduleKeyChangeDetail, projectPrefix } from '../../lib/task-ids'
 import { useUi } from '../../lib/ui-store'
-import { useDraftField } from '../../lib/useDraft'
+import { useDraft, useDraftField } from '../../lib/useDraft'
 import { BoardLoader } from '../board/BoardLoader'
 import { colorVar, useModel, useMutations } from '../board/model'
+import { errorText, setModuleKey } from '../projects/api'
+import { IdChangeDialog } from '../projects/IdChangeDialog'
+import { Problem } from '../projects/parts'
 
 /** Сколько задач показывает карточка модуля, остальные — «и ещё N» */
 const SHOWN_TASKS = 5
@@ -51,6 +56,35 @@ function ModuleCard({ module }: { module: Module }) {
   const status = module.status as WorkStatus
   const pct = percent(module.tasks_done, module.tasks_total)
   const tasks = m.board.tasks.filter((t) => t.module_id === module.id).sort((a, b) => a.number - b.number)
+
+  // ключ задач: сохраняется по Enter или уходу из поля; если у задач модуля от этого меняются id, сначала спрашиваем
+  const [keyDraft, setKeyDraft] = useDraft(module.key ?? '')
+  const [keyProblem, setKeyProblem] = useState<string | null>(null)
+  const [keyAsk, setKeyAsk] = useState<{ next: string | null; count: number } | null>(null)
+  const projectId = m.board.project.id
+  const saveKey = async (next: string | null) => {
+    setKeyAsk(null)
+    setKeyProblem(null)
+    try {
+      await setModuleKey(projectId, module.id, next)
+    } catch (e) {
+      setKeyProblem(errorText(e))
+      setKeyDraft(module.key ?? '')
+    }
+  }
+  const commitKey = () => {
+    const next = normalizeKey(keyDraft)
+    setKeyDraft(next)
+    if (next === (module.key ?? '')) return
+    if (!isValidKey(next)) {
+      setKeyProblem(KEY_RULE)
+      setKeyDraft(module.key ?? '')
+      return
+    }
+    const count = moduleKeyChangeCount(m.board, module.id)
+    if (count > 0) setKeyAsk({ next: next || null, count })
+    else void saveKey(next || null)
+  }
 
   const key = `mod:${module.id}`
   const remove = () => {
@@ -99,7 +133,25 @@ function ModuleCard({ module }: { module: Module }) {
             onChange={(v) => update({ date_to: v || null })}
           />
         </label>
+        <label style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          ключ
+          <Input
+            aria-label="Ключ задач"
+            className="mono"
+            maxLength={6}
+            placeholder={projectPrefix(m.board.project.key)}
+            style={{ width: 84, padding: '4px 8px', fontSize: 12, textTransform: 'uppercase' }}
+            value={keyDraft}
+            onChange={(e) => {
+              setKeyDraft(e.target.value)
+              setKeyProblem(null)
+            }}
+            onBlur={commitKey}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+          />
+        </label>
       </div>
+      {keyProblem && <Problem>{keyProblem}</Problem>}
       <div>
         {tasks.slice(0, SHOWN_TASKS).map((t) => (
           <MiniTask key={t.id} task={t} />
@@ -115,6 +167,17 @@ function ModuleCard({ module }: { module: Module }) {
           {confirm === key ? 'Точно удалить?' : 'Удалить'}
         </Button>
       </div>
+      {keyAsk && (
+        <IdChangeDialog
+          count={keyAsk.count}
+          detail={moduleKeyChangeDetail(module.key, keyAsk.next, m.board.project.key)}
+          onConfirm={() => void saveKey(keyAsk.next)}
+          onCancel={() => {
+            setKeyAsk(null)
+            setKeyDraft(module.key ?? '')
+          }}
+        />
+      )}
     </Panel>
   )
 }

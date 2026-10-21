@@ -37,6 +37,9 @@ export const PROJECT_COLORS = [
 /** Ключ id задач в том виде, в каком его примет сервер: без пробелов по краям, латиница в верхнем регистре */
 export const normalizeKey = (raw: string): string => raw.trim().toUpperCase()
 
+/** Что отвечаем, когда ключ не подошёл */
+export const KEY_RULE = 'Ключ: от 2 до 6 символов, латиница и цифры, начинается с буквы'
+
 /** Подходит ли ключ (пустой значит «без ключа»): 2–6 символов, латиница и цифры, с буквы */
 export const isValidKey = (key: string): boolean => key === '' || /^[A-Z][A-Z0-9]{1,5}$/.test(key)
 

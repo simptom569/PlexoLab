@@ -1,18 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Button, Input } from '../../components'
-import { useProjects } from '../../lib/api/queries'
+import { useBoard, useProjects } from '../../lib/api/queries'
 import type { Project, UpdateProject } from '../../lib/api/types'
 import {
   PROJECT_COLORS,
   PROJECT_NAME_MAX,
   PROJECT_TAB_LABELS,
   isValidKey,
+  KEY_RULE,
   normalizeKey,
   type ProjectDialog,
   type ProjectTab,
 } from '../../lib/project-dialogs'
+import { projectKeyChangeCount, projectKeyChangeDetail } from '../../lib/task-ids'
 import { useUi } from '../../lib/ui-store'
 import { errorText, setArchived, updateProject } from './api'
+import { IdChangeDialog } from './IdChangeDialog'
 import { MembersTab } from './MembersTab'
 import { DialogFrame, Field, Problem, TwoStep, type FrameTab } from './parts'
 import { TagsTab } from './TagsTab'
@@ -24,12 +27,16 @@ const TABS: ReadonlyArray<FrameTab<ProjectTab>> = [
   { id: 'archive', label: PROJECT_TAB_LABELS.archive, icon: 'folder' },
 ]
 
+/** Вопрос «У N задач изменятся id. Продолжить?» перед сохранением: что показать и что сделать после «Продолжить» */
+type IdAsk = { count: number; detail: string; proceed: () => void }
+
 /** «Настройки проекта» (для администратора): основное, участники, метки, архив */
 export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialog, { kind: 'settings' }> }) {
   const close = useUi((s) => s.closeProjectDialog)
   const setTab = useUi((s) => s.setProjectTab)
   const projects = useProjects()
   const project = projects.data?.find((p) => p.id === dialog.id)
+  const [ask, setAsk] = useState<IdAsk | null>(null)
 
   // проект ушёл из списка (архив, выход, меня убрали) или перестал быть моим для управления: окно закрывается
   const gone = projects.isSuccess && (!project || project.role !== 'admin')
@@ -39,20 +46,34 @@ export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialo
   if (!project) return null
 
   return (
-    <DialogFrame
-      title={`Настройки проекта «${project.name}»`}
-      onClose={close}
-      tabs={{ items: TABS, current: dialog.tab, onSelect: setTab, navTitle: project.name }}
-    >
-      {dialog.tab === 'main' && <MainTab project={project} />}
-      {dialog.tab === 'members' && <MembersTab projectId={project.id} />}
-      {dialog.tab === 'tags' && <TagsTab projectId={project.id} />}
-      {dialog.tab === 'archive' && <ArchiveTab project={project} />}
-    </DialogFrame>
+    <>
+      <DialogFrame
+        title={`Настройки проекта «${project.name}»`}
+        onClose={close}
+        tabs={{ items: TABS, current: dialog.tab, onSelect: setTab, navTitle: project.name }}
+      >
+        {dialog.tab === 'main' && <MainTab project={project} onAsk={setAsk} />}
+        {dialog.tab === 'members' && <MembersTab projectId={project.id} />}
+        {dialog.tab === 'tags' && <TagsTab projectId={project.id} />}
+        {dialog.tab === 'archive' && <ArchiveTab project={project} />}
+      </DialogFrame>
+      {ask && (
+        <IdChangeDialog
+          count={ask.count}
+          detail={ask.detail}
+          onCancel={() => setAsk(null)}
+          onConfirm={() => {
+            setAsk(null)
+            ask.proceed()
+          }}
+        />
+      )}
+    </>
   )
 }
 
-function MainTab({ project }: { project: Project }) {
+function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => void }) {
+  const board = useBoard(project.id)
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState<string>(project.color)
   const [key, setKey] = useState(project.key ?? '')
@@ -65,7 +86,9 @@ function MainTab({ project }: { project: Project }) {
   if (color !== project.color) patch.color = color
   if (cleanKey !== (project.key ?? '')) patch.key = cleanKey === '' ? null : cleanKey
   const dirty = Object.keys(patch).length > 0
-  const canSave = dirty && name.trim() !== '' && keyOk && state.kind !== 'saving'
+  // от ключа зависят id задач, поэтому, пока доска не пришла, число задач неизвестно и ключ сохранять рано
+  const waitingForBoard = patch.key !== undefined && board.isPending
+  const canSave = dirty && name.trim() !== '' && keyOk && state.kind !== 'saving' && !waitingForBoard
 
   const edited = (change: () => void) => {
     change()
@@ -85,11 +108,18 @@ function MainTab({ project }: { project: Project }) {
     }
   }
 
+  // сменился ключ, а в проекте есть задачи с его подписью: сначала спрашиваем
+  const requestSave = () => {
+    const count = patch.key !== undefined && board.data ? projectKeyChangeCount(board.data) : 0
+    if (count > 0) onAsk({ count, detail: projectKeyChangeDetail(project.key, cleanKey || null), proceed: () => void save() })
+    else void save()
+  }
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        void save()
+        requestSave()
       }}
     >
       <div className="fields">
@@ -142,7 +172,7 @@ function MainTab({ project }: { project: Project }) {
             Сохранено
           </span>
         )}
-        {!keyOk && <Problem>Ключ: от 2 до 6 символов, латиница и цифры, начинается с буквы</Problem>}
+        {!keyOk && <Problem>{KEY_RULE}</Problem>}
         {state.kind === 'error' && <Problem>{state.text}</Problem>}
         <Button variant="primary" type="submit" disabled={!canSave}>
           Сохранить

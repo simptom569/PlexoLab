@@ -104,12 +104,17 @@ describe('сортировка таблицы', () => {
     ['u2', { id: 'u2', email: 'b', name: 'Артём К.', role: '', tone: 1, is_admin: false }],
   ])
   const ctx = { columns, usersById: users }
-  const a = task({ number: 10, title: 'б', priority: 'low', due_date: '2026-10-20', column_id: 'doing', assignee_id: 'u1' })
-  const b = task({ number: 2, title: 'А', priority: 'high', due_date: null, column_id: 'done', assignee_id: null })
-  const c = task({ number: 33, title: 'в', priority: 'med', due_date: '2026-10-19', column_id: 'todo', assignee_id: 'u2' })
+  const a = task({ number: 10, key: 'WEB-10', title: 'б', priority: 'low', due_date: '2026-10-20', column_id: 'doing', assignee_id: 'u1' })
+  const b = task({ number: 2, key: 'WEB-2', title: 'А', priority: 'high', due_date: null, column_id: 'done', assignee_id: null })
+  const c = task({ number: 33, key: 'WEB-33', title: 'в', priority: 'med', due_date: '2026-10-19', column_id: 'todo', assignee_id: 'u2' })
   const order = (key: Parameters<typeof sortTasks>[1]['key'], dir: 1 | -1 = 1) => sortTasks([a, b, c], { key, dir }, ctx).map((t) => t.number)
 
   it('по номеру — числом, а не строкой', () => expect(order('id')).toEqual([2, 10, 33]))
+  it('по ключу, потом по номеру', () => {
+    const list = [task({ key: 'WEB-9' }), task({ key: 'SEO-11' }), task({ key: 'WEB-10' }), task({ key: 'SEO-2' }), task({ key: 'TASK-1' })]
+    expect(sortTasks(list, { key: 'id', dir: 1 }, ctx).map((t) => t.key)).toEqual(['SEO-2', 'SEO-11', 'TASK-1', 'WEB-9', 'WEB-10'])
+    expect(sortTasks(list, { key: 'id', dir: -1 }, ctx).map((t) => t.key)).toEqual(['WEB-10', 'WEB-9', 'TASK-1', 'SEO-11', 'SEO-2'])
+  })
   it('по названию без учёта регистра', () => expect(order('title')).toEqual([2, 10, 33]))
   it('по статусу — как идут колонки', () => expect(order('status')).toEqual([33, 10, 2]))
   it('по исполнителю — по имени, без исполнителя последним', () => expect(order('who')).toEqual([33, 10, 2]))

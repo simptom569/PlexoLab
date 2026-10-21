@@ -2,6 +2,9 @@ import { useEffect, type RefObject } from 'react'
 
 const FOCUSABLE = 'a[href],button,input,textarea,select,[tabindex]'
 
+// Открытые окна, верхнее последнее: поверх окна может встать другое (подтверждение), Esc и Tab нужны только ему
+const openDialogs: HTMLElement[] = []
+
 /**
  * Фокус окна: при открытии уходит внутрь, Tab не выходит наружу, Esc закрывает, при закрытии фокус возвращается.
  * `returnFocus` — куда вернуть фокус: окно открывает пункт меню, а меню к этому моменту уже закрыто и удалено,
@@ -13,8 +16,10 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, onEscape: () 
     if (!dialog) return
     const opener = returnFocus?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
     ;(dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? dialog).focus()
+    openDialogs.push(dialog)
 
     const onKey = (e: KeyboardEvent) => {
+      if (openDialogs[openDialogs.length - 1] !== dialog) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         onEscape()
@@ -37,6 +42,8 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, onEscape: () 
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
+      const at = openDialogs.lastIndexOf(dialog)
+      if (at >= 0) openDialogs.splice(at, 1)
       if (opener?.isConnected) opener.focus()
     }
   }, [ref, onEscape, returnFocus])

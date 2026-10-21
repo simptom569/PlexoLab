@@ -20,6 +20,15 @@
   min-height: 0;
 }
 
+/* окно подтверждения поверх другого окна: свои подложка и окно выше подложки и окна «Настройки проекта» (70 и 75) */
+.scrim.set-scrim.nested {
+  z-index: 80;
+}
+
+.set-dialog.nested {
+  z-index: 85;
+}
+
 .proj-head {
   position: relative;
 }

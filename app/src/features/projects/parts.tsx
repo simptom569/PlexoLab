@@ -15,6 +15,8 @@ type FrameProps<T extends string> = {
   onClose: () => void
   /** Узкое окно без вкладок */
   narrow?: boolean
+  /** Окно поверх другого окна (подтверждение): выше его подложки и самого окна */
+  nested?: boolean
   /** Вкладки слева; `navTitle` — маленький заголовок над ними */
   tabs?: { items: ReadonlyArray<FrameTab<T>>; current: T; onSelect: (tab: T) => void; navTitle: string }
   children: ReactNode
@@ -22,7 +24,7 @@ type FrameProps<T extends string> = {
 
 const STEP: Partial<Record<string, 1 | -1>> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
 
-export function DialogFrame<T extends string>({ title, onClose, narrow, tabs, children }: FrameProps<T>) {
+export function DialogFrame<T extends string>({ title, onClose, narrow, nested, tabs, children }: FrameProps<T>) {
   const dialogRef = useRef<HTMLDivElement>(null)
   useDialogFocus(dialogRef, onClose)
 
@@ -40,8 +42,8 @@ export function DialogFrame<T extends string>({ title, onClose, narrow, tabs, ch
 
   return (
     <>
-      <button className="scrim set-scrim" type="button" aria-label={`Закрыть: ${title}`} onClick={onClose} />
-      <div ref={dialogRef} className={cx('set-dialog', narrow && 'narrow')} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+      <button className={cx('scrim set-scrim', nested && 'nested')} type="button" aria-label={`Закрыть: ${title}`} onClick={onClose} />
+      <div ref={dialogRef} className={cx('set-dialog', narrow && 'narrow', nested && 'nested')} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
         {tabs && (
           <div className="set-nav">
             <div className="set-nav-title">{tabs.navTitle}</div>

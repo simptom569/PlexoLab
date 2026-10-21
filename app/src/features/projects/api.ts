@@ -57,6 +57,12 @@ export async function answerInvite(inviteId: string, accept: boolean): Promise<v
   await refresh(keys.invites, keys.projects)
 }
 
+/** Ключ задач модуля (`null` убирает). Сервер переносит задачи между рядами, поэтому перечитываются доска и открытые задачи. */
+export async function setModuleKey(projectId: string, moduleId: string, key: string | null): Promise<void> {
+  await api.patch(`/modules/${moduleId}`, { key })
+  await refresh(keys.board(projectId), ['task'])
+}
+
 export async function createTag(projectId: string, label: string): Promise<Tag> {
   const tag = await api.post<Tag>(`/projects/${projectId}/tags`, { label })
   await refresh(keys.board(projectId))

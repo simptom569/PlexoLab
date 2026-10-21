@@ -4,6 +4,7 @@
 import { addDays, DAY, dayInWeek, fd, iso, toMs } from '../../lib/date'
 import type { Column, TaskCard, User } from '../../lib/api/types'
 import type { Filters, WeekStart } from '../../lib/settings'
+import { compareTaskKeys } from '../../lib/task-ids'
 
 /** Значение фильтра «без исполнителя» и «без модуля» */
 export const NONE = '-'
@@ -53,7 +54,7 @@ type SortContext = { columns: Column[]; usersById: Map<string, User> }
 function sortValue(t: TaskCard, key: SortKey, ctx: SortContext): number | string {
   switch (key) {
     case 'id':
-      return t.number
+      return t.key
     case 'title':
       return t.title.toLowerCase()
     case 'status':
@@ -70,6 +71,8 @@ function sortValue(t: TaskCard, key: SortKey, ctx: SortContext): number | string
 
 export function sortTasks(tasks: TaskCard[], sort: Sort, ctx: SortContext): TaskCard[] {
   return tasks.slice().sort((a, b) => {
+    // id: по ключу, потом по номеру (SEO-2, SEO-11, WEB-9), а не по одному номеру
+    if (sort.key === 'id') return compareTaskKeys(a.key, b.key) * sort.dir
     const x = sortValue(a, sort.key, ctx)
     const y = sortValue(b, sort.key, ctx)
     return (x < y ? -1 : x > y ? 1 : 0) * sort.dir
