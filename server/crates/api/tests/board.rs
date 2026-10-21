@@ -307,22 +307,30 @@ async fn delete_column_rejects_bad_targets_and_the_last_column(pool: PgPool) {
 
 // ===== Метки =====
 
+fn tags_uri(f: &Fx) -> String {
+    format!("/api/v1/projects/{}/tags", f.project)
+}
+
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn tags_are_created_listed_and_deleted(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let bug = c.ok(c.post("/api/v1/tags", json!({ "label": "  Баг " })).await, StatusCode::CREATED).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
+    let uri = tags_uri(&f);
+    let bug = c.ok(c.post(&uri, json!({ "label": "  Баг " })).await, StatusCode::CREATED).await;
     assert_eq!((bug["label"].as_str(), bug["tone"].as_i64()), (Some("Баг"), Some(0)));
-    let feat = c.ok(c.post("/api/v1/tags", json!({ "label": "Фича" })).await, StatusCode::CREATED).await;
+    assert_eq!(bug["project_id"], f.project.to_string());
+    let feat = c.ok(c.post(&uri, json!({ "label": "Фича" })).await, StatusCode::CREATED).await;
     assert_eq!(feat["tone"], 1, "тон по кругу");
-    let urgent = c.ok(c.post("/api/v1/tags", json!({ "label": "Срочно", "tone": 4 })).await, StatusCode::CREATED).await;
+    let urgent = c.ok(c.post(&uri, json!({ "label": "Срочно", "tone": 4 })).await, StatusCode::CREATED).await;
     assert_eq!(urgent["tone"], 4);
 
-    let list = c.ok(c.get("/api/v1/tags").await, StatusCode::OK).await;
+    let list = c.ok(c.get(&uri).await, StatusCode::OK).await;
     assert_eq!(titles_of_labels(&list), ["Баг", "Фича", "Срочно"], "в порядке создания");
+    assert_eq!(titles_of_labels(&f.board().await["tags"]), ["Баг", "Фича", "Срочно"], "и в ответе доски");
 
     assert_eq!(c.delete(&format!("/api/v1/tags/{}", id_of(&feat))).await.status, StatusCode::NO_CONTENT);
     assert_eq!(c.delete(&format!("/api/v1/tags/{}", id_of(&feat))).await.status, StatusCode::NOT_FOUND);
-    let list = c.ok(c.get("/api/v1/tags").await, StatusCode::OK).await;
+    let list = c.ok(c.get(&uri).await, StatusCode::OK).await;
     assert_eq!(titles_of_labels(&list), ["Баг", "Срочно"]);
 }
 
@@ -331,33 +339,54 @@ fn titles_of_labels(list: &Value) -> Vec<String> {
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
+async fn tags_belong_to_their_project(pool: PgPool) {
+    let f = Fx::new(pool.clone()).await;
+    let other = make_project(&pool, "API", "Api", "warn").await;
+    let c = &f.c;
+    let mine = c.ok(c.post(&tags_uri(&f), json!({ "label": "Баг" })).await, StatusCode::CREATED).await;
+    // то же название в другом проекте: отдельная метка
+    let theirs = c
+        .ok(c.post(&format!("/api/v1/projects/{other}/tags"), json!({ "label": "Баг" })).await, StatusCode::CREATED)
+        .await;
+    assert_ne!(id_of(&mine), id_of(&theirs));
+    assert_eq!(theirs["project_id"], other.to_string());
+    let board = c.ok(c.get(&format!("/api/v1/projects/{other}/board")).await, StatusCode::OK).await;
+    assert_eq!(titles_of_labels(&board["tags"]), ["Баг"], "в доске другого проекта только его метки");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
 async fn creating_an_existing_tag_returns_it_instead_of_a_duplicate(pool: PgPool) {
-    let c = Ctx::new(pool).await;
-    let first = c.ok(c.post("/api/v1/tags", json!({ "label": "Bug" })).await, StatusCode::CREATED).await;
-    let again = c.ok(c.post("/api/v1/tags", json!({ "label": "bUG" })).await, StatusCode::OK).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
+    let uri = tags_uri(&f);
+    let first = c.ok(c.post(&uri, json!({ "label": "Bug" })).await, StatusCode::CREATED).await;
+    let again = c.ok(c.post(&uri, json!({ "label": "bUG" })).await, StatusCode::OK).await;
     assert_eq!(id_of(&first), id_of(&again));
     assert_eq!(again["label"], "Bug", "остаётся первое написание");
-    assert_eq!(c.ok(c.get("/api/v1/tags").await, StatusCode::OK).await.as_array().unwrap().len(), 1);
+    assert_eq!(c.ok(c.get(&uri).await, StatusCode::OK).await.as_array().unwrap().len(), 1);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn simultaneous_creation_of_the_same_tag_gives_one_tag(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
+    let uri = tags_uri(&f);
     let (a, b, d) = tokio::join!(
-        c.post("/api/v1/tags", json!({ "label": "Race" })),
-        c.post("/api/v1/tags", json!({ "label": "race" })),
-        c.post("/api/v1/tags", json!({ "label": "RACE" }))
+        c.post(&uri, json!({ "label": "Race" })),
+        c.post(&uri, json!({ "label": "race" })),
+        c.post(&uri, json!({ "label": "RACE" }))
     );
     let ids: Vec<Uuid> = [&a, &b, &d].iter().map(|r| id_of(&r.body)).collect();
     assert!(ids.iter().all(|i| *i == ids[0]), "{ids:?}");
     let statuses: Vec<u16> = [&a, &b, &d].iter().map(|r| r.status.as_u16()).collect();
     assert_eq!(statuses.iter().filter(|s| **s == 201).count(), 1, "создана ровно одна: {statuses:?}");
-    assert_eq!(c.ok(c.get("/api/v1/tags").await, StatusCode::OK).await.as_array().unwrap().len(), 1);
+    assert_eq!(c.ok(c.get(&uri).await, StatusCode::OK).await.as_array().unwrap().len(), 1);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn tag_input_is_validated(pool: PgPool) {
-    let c = Ctx::new(pool).await;
+    let f = Fx::new(pool).await;
+    let c = &f.c;
     for body in [
         json!({ "label": "" }),
         json!({ "label": "   " }),
@@ -366,10 +395,40 @@ async fn tag_input_is_validated(pool: PgPool) {
         json!({ "label": "ok", "tone": -1 }),
         json!({}),
     ] {
-        let r = c.post("/api/v1/tags", body.clone()).await;
+        let r = c.post(&tags_uri(&f), body.clone()).await;
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "{body}");
     }
     assert_eq!(c.delete("/api/v1/tags/not-a-uuid").await.status, StatusCode::BAD_REQUEST);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn an_admin_renames_and_recolors_a_tag_and_names_stay_unique(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let c = &f.c;
+    let uri = tags_uri(&f);
+    let bug = c.ok(c.post(&uri, json!({ "label": "Баг" })).await, StatusCode::CREATED).await;
+    let feat = c.ok(c.post(&uri, json!({ "label": "Фича" })).await, StatusCode::CREATED).await;
+
+    let renamed = c
+        .ok(
+            c.patch(&format!("/api/v1/tags/{}", id_of(&bug)), json!({ "label": "  Дефект ", "tone": 5 })).await,
+            StatusCode::OK,
+        )
+        .await;
+    assert_eq!((renamed["label"].as_str(), renamed["tone"].as_i64()), (Some("Дефект"), Some(5)));
+    // регистр своей же метки менять можно, чужое название занимать нельзя
+    let own = c.patch(&format!("/api/v1/tags/{}", id_of(&bug)), json!({ "label": "ДЕФЕКТ" })).await;
+    assert_eq!(own.status, StatusCode::OK);
+    let clash = c.patch(&format!("/api/v1/tags/{}", id_of(&bug)), json!({ "label": "фича" })).await;
+    assert_eq!(clash.status, StatusCode::CONFLICT);
+    assert_eq!(
+        c.patch(&format!("/api/v1/tags/{}", id_of(&feat)), json!({ "tone": 9 })).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        c.patch(&format!("/api/v1/tags/{}", Uuid::new_v4()), json!({ "tone": 1 })).await.status,
+        StatusCode::NOT_FOUND
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -391,8 +450,9 @@ async fn every_board_route_requires_a_token(pool: PgPool) {
         ("PATCH", format!("/api/v1/subtasks/{id}")),
         ("DELETE", format!("/api/v1/subtasks/{id}")),
         ("POST", format!("/api/v1/tasks/{id}/comments")),
-        ("GET", "/api/v1/tags".to_owned()),
-        ("POST", "/api/v1/tags".to_owned()),
+        ("GET", format!("/api/v1/projects/{project}/tags")),
+        ("POST", format!("/api/v1/projects/{project}/tags")),
+        ("PATCH", format!("/api/v1/tags/{id}")),
         ("DELETE", format!("/api/v1/tags/{id}")),
     ];
     for (method, uri) in routes {

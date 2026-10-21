@@ -17,6 +17,8 @@ const TABLES: &[&str] = &[
     "links",
     "milestones",
     "modules",
+    "project_invites",
+    "project_members",
     "projects",
     "refresh_tokens",
     "release_items",
@@ -94,10 +96,29 @@ async fn user_email_must_be_lowercase_and_unique(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn tag_labels_are_unique_ignoring_case(pool: PgPool) {
-    exec(&pool, "insert into tags (label, tone) values ('Bug', 0)").await.unwrap();
-    assert!(exec(&pool, "insert into tags (label, tone) values ('bug', 1)").await.is_err());
-    assert!(exec(&pool, "insert into tags (label, tone) values ('Feat', 8)").await.is_err(), "tone только 0..7");
+async fn tag_labels_are_unique_within_a_project_ignoring_case(pool: PgPool) {
+    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent'), ('API', 'Api', 'warn')")
+        .await
+        .unwrap();
+    let add = |project: &'static str, label: &'static str, tone: i32| {
+        let pool = pool.clone();
+        async move {
+            exec(
+                &pool,
+                &format!(
+                    "insert into tags (project_id, label, tone) \
+                     values ((select id from projects where key = '{project}'), '{label}', {tone})"
+                ),
+            )
+            .await
+        }
+    };
+    add("WEB", "Bug", 0).await.unwrap();
+    assert!(add("WEB", "bug", 1).await.is_err(), "тот же регистр-независимый дубль в проекте");
+    add("API", "bug", 1).await.expect("то же название в другом проекте можно");
+    assert!(add("WEB", "Feat", 8).await.is_err(), "tone только 0..7");
+    // метка без проекта невозможна
+    assert!(exec(&pool, "insert into tags (label, tone) values ('Orphan', 0)").await.is_err());
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

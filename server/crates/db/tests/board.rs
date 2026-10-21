@@ -316,32 +316,49 @@ async fn patch_updates_only_given_fields_and_can_clear_optional_ones(pool: PgPoo
     assert_eq!((t3.assignee_id, t3.due_date, t3.priority.as_str()), (None, t1.due_date, "high"));
 }
 
+/// Проект без доски: достаточно для проверок меток
+async fn bare_project(pool: &PgPool, key: &str) -> Uuid {
+    db::sqlx::query_scalar("insert into projects (key, name, color) values ($1, $1, 'accent') returning id")
+        .bind(key)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn tags_come_in_creation_order_and_get_cycling_tones(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
+    let project = bare_project(&pool, "WEB").await;
     for label in ["Баг", "Фича", "Техдолг"] {
-        tags::insert(&mut conn, label, None).await.unwrap();
+        tags::insert(&mut conn, project, label, None).await.unwrap();
     }
-    let all = tags::list(&pool).await.unwrap();
+    let all = tags::list(&pool, project).await.unwrap();
     assert_eq!(all.iter().map(|t| t.label.as_str()).collect::<Vec<_>>(), ["Баг", "Фича", "Техдолг"]);
     assert_eq!(all.iter().map(|t| t.tone).collect::<Vec<_>>(), [0, 1, 2], "тон = число меток до этой, по кругу на 8");
 
-    let explicit = tags::insert(&mut conn, "Срочно", Some(6)).await.unwrap();
+    let explicit = tags::insert(&mut conn, project, "Срочно", Some(6)).await.unwrap();
     assert_eq!(explicit.tone, 6);
     for i in 0..5 {
-        tags::insert(&mut conn, &format!("m{i}"), None).await.unwrap();
+        tags::insert(&mut conn, project, &format!("m{i}"), None).await.unwrap();
     }
-    let ninth = tags::insert(&mut conn, "ninth", None).await.unwrap();
+    let ninth = tags::insert(&mut conn, project, "ninth", None).await.unwrap();
     assert_eq!(ninth.tone, 1, "10-я метка: 9 % 8");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn tag_lookup_ignores_case_and_duplicates_are_rejected(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
-    let bug = tags::insert(&mut conn, "Bug", None).await.unwrap();
-    assert_eq!(tags::find_by_label(&pool, "bUG").await.unwrap().map(|t| t.id), Some(bug.id));
-    assert!(tags::find_by_label(&pool, "other").await.unwrap().is_none());
-    let err = tags::insert(&mut conn, "bug", None).await.unwrap_err();
+    let project = bare_project(&pool, "WEB").await;
+    let other_project = bare_project(&pool, "API").await;
+    let bug = tags::insert(&mut conn, project, "Bug", None).await.unwrap();
+    assert_eq!(tags::find_by_label(&pool, project, "bUG").await.unwrap().map(|t| t.id), Some(bug.id));
+    assert!(tags::find_by_label(&pool, project, "other").await.unwrap().is_none());
+    assert!(
+        tags::find_by_label(&pool, other_project, "bug").await.unwrap().is_none(),
+        "метки одного проекта не видны в другом"
+    );
+    tags::insert(&mut conn, other_project, "bug", None).await.expect("то же название в другом проекте можно");
+    let err = tags::insert(&mut conn, project, "bug", None).await.unwrap_err();
     assert!(matches!(&err, db::sqlx::Error::Database(d) if d.is_unique_violation()));
 }
 
@@ -349,9 +366,9 @@ async fn tag_lookup_ignores_case_and_duplicates_are_rejected(pool: PgPool) {
 async fn cards_carry_tags_in_creation_order_and_subtask_counts(pool: PgPool) {
     let b = board(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
-    let feat = tags::insert(&mut conn, "Фича", None).await.unwrap();
-    let back = tags::insert(&mut conn, "Бэк", None).await.unwrap();
-    let urgent = tags::insert(&mut conn, "Срочно", None).await.unwrap();
+    let feat = tags::insert(&mut conn, b.project.id, "Фича", None).await.unwrap();
+    let back = tags::insert(&mut conn, b.project.id, "Бэк", None).await.unwrap();
+    let urgent = tags::insert(&mut conn, b.project.id, "Срочно", None).await.unwrap();
     drop(conn);
     let t = add(&pool, &b, Some(b.columns[0].id), "T").await;
     let plain = add(&pool, &b, Some(b.columns[0].id), "plain").await;
@@ -386,7 +403,7 @@ async fn cards_carry_tags_in_creation_order_and_subtask_counts(pool: PgPool) {
 async fn deleting_a_tag_removes_it_from_tasks(pool: PgPool) {
     let b = board(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
-    let tag = tags::insert(&mut conn, "Баг", None).await.unwrap();
+    let tag = tags::insert(&mut conn, b.project.id, "Баг", None).await.unwrap();
     let t = add(&pool, &b, None, "T").await;
     tasks::set_tags(&mut conn, t.id, &[tag.id]).await.unwrap();
     assert!(tags::delete(&mut conn, tag.id).await.unwrap());

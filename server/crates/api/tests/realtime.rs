@@ -123,7 +123,7 @@ async fn quiet(ws: &mut Client, wait: Duration) {
 }
 
 fn event(kind: &'static str) -> Event {
-    Event { kind, id: None, project_id: None, origin: None }
+    Event { kind, id: None, project_id: None, origin: None, audience: api::events::Audience::Everyone }
 }
 
 /// Запрос к API напрямую (минуя сокет), с меткой клиента
@@ -231,7 +231,7 @@ async fn change_made_over_rest_reaches_the_socket_with_the_origin(pool: PgPool) 
     rest(&rt, "client-B", "PATCH", &format!("/api/v1/tasks/{}", id_of(&task)), json!({ "title": "Другая" })).await;
     assert_eq!(
         next_json(&mut ws).await,
-        json!({ "type": "task.updated", "id": id_of(&task).to_string(), "project_id": null, "origin": "client-B" })
+        json!({ "type": "task.updated", "id": id_of(&task).to_string(), "project_id": project.to_string(), "origin": "client-B" })
     );
     assert_eq!(next_json(&mut ws).await["type"], "activity.created");
     quiet(&mut ws, Duration::from_millis(100)).await;

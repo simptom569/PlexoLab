@@ -30,7 +30,7 @@ async fn seed_fills_an_empty_database_with_the_mockup_data(pool: PgPool) {
             users: 5,
             projects: 3,
             columns: 12,
-            tags: 7,
+            tags: 21,
             modules: 6,
             milestones: 5,
             tasks: 24,

@@ -57,8 +57,12 @@ async fn openapi_json_describes_the_api() {
         "/api/v1/tasks/{id}/subtasks",
         "/api/v1/subtasks/{id}",
         "/api/v1/tasks/{id}/comments",
-        "/api/v1/tags",
+        "/api/v1/projects/{id}/tags",
         "/api/v1/tags/{id}",
+        "/api/v1/projects/{id}/members",
+        "/api/v1/projects/{id}/invites",
+        "/api/v1/invites",
+        "/api/v1/invites/{id}/accept",
     ] {
         assert!(r.body["paths"].get(path).is_some(), "в схеме нет {path}");
     }

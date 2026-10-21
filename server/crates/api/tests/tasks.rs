@@ -370,7 +370,13 @@ async fn tags_are_set_as_a_whole_in_creation_order(pool: PgPool) {
     let f = Fx::new(pool).await;
     let mut tags = Vec::new();
     for label in ["A", "B", "C"] {
-        tags.push(id_of(&f.c.ok(f.c.post("/api/v1/tags", json!({ "label": label })).await, StatusCode::CREATED).await));
+        tags.push(id_of(
+            &f.c.ok(
+                f.c.post(&format!("/api/v1/projects/{}/tags", f.project), json!({ "label": label })).await,
+                StatusCode::CREATED,
+            )
+            .await,
+        ));
     }
     let t = f.task(Some(f.todo), "T").await;
     let uri = task_uri(&t);
@@ -398,7 +404,13 @@ async fn tags_are_set_as_a_whole_in_creation_order(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn removing_a_tag_removes_it_from_tasks(pool: PgPool) {
     let f = Fx::new(pool).await;
-    let tag = id_of(&f.c.ok(f.c.post("/api/v1/tags", json!({ "label": "Баг" })).await, StatusCode::CREATED).await);
+    let tag = id_of(
+        &f.c.ok(
+            f.c.post(&format!("/api/v1/projects/{}/tags", f.project), json!({ "label": "Баг" })).await,
+            StatusCode::CREATED,
+        )
+        .await,
+    );
     let t = f.task(Some(f.todo), "T").await;
     f.c.ok(f.c.patch(&task_uri(&t), json!({ "tag_ids": [tag] })).await, StatusCode::OK).await;
     assert_eq!(f.c.delete(&format!("/api/v1/tags/{tag}")).await.status, StatusCode::NO_CONTENT);
@@ -680,7 +692,13 @@ async fn ordinary_edits_are_not_logged(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn deleting_a_task_logs_it_and_removes_everything_attached(pool: PgPool) {
     let f = Fx::new(pool.clone()).await;
-    let tag = id_of(&f.c.ok(f.c.post("/api/v1/tags", json!({ "label": "Баг" })).await, StatusCode::CREATED).await);
+    let tag = id_of(
+        &f.c.ok(
+            f.c.post(&format!("/api/v1/projects/{}/tags", f.project), json!({ "label": "Баг" })).await,
+            StatusCode::CREATED,
+        )
+        .await,
+    );
     let t = f.task(Some(f.todo), "Лишняя").await;
     let id = id_of(&t);
     f.c.ok(f.c.patch(&task_uri(&t), json!({ "tag_ids": [tag] })).await, StatusCode::OK).await;

@@ -22,8 +22,18 @@ fn all(kind: &'static str) -> Ev {
     (kind, None, None)
 }
 
-/// Событие проекта
+/// Событие проекта (создание записи по адресу `/projects/{id}/...`)
 fn in_project(kind: &'static str, project: Uuid) -> Ev {
+    (kind, None, Some(project))
+}
+
+/// Событие записи проекта: тип, id записи и проект, события которого получают только участники
+fn pon(project: Uuid, kind: &'static str, id: Uuid) -> Ev {
+    (kind, Some(id), Some(project))
+}
+
+/// Событие проекта без id записи: «перечитайте всё такого рода»
+fn pall(project: Uuid, kind: &'static str) -> Ev {
     (kind, None, Some(project))
 }
 
@@ -49,44 +59,49 @@ async fn board_changes_send_events(pool: PgPool) {
     assert_eq!(drain(&mut rx), [in_project("column.changed", p)]);
     c.ok(c.patch(&url(&format!("/columns/{}", id_of(&col))), json!({ "title": "На ревью" })).await, StatusCode::OK)
         .await;
-    assert_eq!(drain(&mut rx), [on("column.changed", id_of(&col))]);
+    assert_eq!(drain(&mut rx), [pon(p, "column.changed", id_of(&col))]);
 
     // задача: создание — событие проекта, правка и удаление — события самой задачи
     let task = f.task(Some(f.todo), "Новая").await;
     assert_eq!(drain(&mut rx), [in_project("task.created", p), in_project(ACTIVITY, p)]);
     let t = id_of(&task);
     c.ok(c.patch(&url(&format!("/tasks/{t}")), json!({ "title": "Переименована" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("task.updated", t), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "task.updated", t), pall(p, ACTIVITY)]);
     c.ok(
         c.patch(&url(&format!("/tasks/{t}")), json!({ "column_id": f.doing, "before_id": null })).await,
         StatusCode::OK,
     )
     .await;
-    assert_eq!(drain(&mut rx), [on("task.updated", t), all(ACTIVITY)], "перенос идёт тем же PATCH и тем же событием");
+    assert_eq!(
+        drain(&mut rx),
+        [pon(p, "task.updated", t), pall(p, ACTIVITY)],
+        "перенос идёт тем же PATCH и тем же событием"
+    );
 
     // подзадачи и комментарии
     let sub =
         c.ok(c.post(&url(&format!("/tasks/{t}/subtasks")), json!({ "title": "шаг" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [on("task.updated", t)]);
+    assert_eq!(drain(&mut rx), [pon(p, "task.updated", t)]);
     c.ok(c.patch(&url(&format!("/subtasks/{}", id_of(&sub))), json!({ "done": true })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [all("task.updated")], "id задачи по подзадаче сервер не знает: перечитать все");
+    assert_eq!(drain(&mut rx), [pall(p, "task.updated")], "id задачи по подзадаче сервер не знает: перечитать все");
     assert_eq!(c.delete(&url(&format!("/subtasks/{}", id_of(&sub)))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [all("task.updated")]);
+    assert_eq!(drain(&mut rx), [pall(p, "task.updated")]);
     c.ok(c.post(&url(&format!("/tasks/{t}/comments")), json!({ "body": "привет" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [on("comment.created", t), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "comment.created", t), pall(p, ACTIVITY)]);
 
     // метки
-    let tag = c.ok(c.post(&url("/tags"), json!({ "label": "Баг" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [all("tag.changed")]);
+    let tag =
+        c.ok(c.post(&url(&format!("/projects/{p}/tags")), json!({ "label": "Баг" })).await, StatusCode::CREATED).await;
+    assert_eq!(drain(&mut rx), [pall(p, "tag.changed")]);
     assert_eq!(c.delete(&url(&format!("/tags/{}", id_of(&tag)))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("tag.changed", id_of(&tag)), all("task.updated")], "метка снята с задач");
+    assert_eq!(drain(&mut rx), [pon(p, "tag.changed", id_of(&tag)), pall(p, "task.updated")], "метка снята с задач");
 
     // удаление задачи и колонки (задачи колонки переезжают)
     assert_eq!(c.delete(&url(&format!("/tasks/{t}"))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("task.deleted", t), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "task.deleted", t), pall(p, ACTIVITY)]);
     let uri = url(&format!("/columns/{}?move_to={}", id_of(&col), f.todo));
     assert_eq!(c.delete(&uri).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("column.changed", id_of(&col)), all("task.moved")]);
+    assert_eq!(drain(&mut rx), [pon(p, "column.changed", id_of(&col)), pall(p, "task.moved")]);
 }
 
 // ===== Модули, вехи, релизы =====
@@ -104,11 +119,11 @@ async fn work_changes_send_events(pool: PgPool) {
     assert_eq!(drain(&mut rx), [in_project("module.changed", p), in_project(ACTIVITY, p)]);
     let m = id_of(&module);
     c.ok(c.patch(&url(&format!("/modules/{m}")), json!({ "status": "progress" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("module.changed", m), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "module.changed", m), pall(p, ACTIVITY)]);
     assert_eq!(c.delete(&url(&format!("/modules/{m}"))).await.status, StatusCode::NO_CONTENT);
     assert_eq!(
         drain(&mut rx),
-        [on("module.changed", m), all("task.updated"), all(ACTIVITY)],
+        [pon(p, "module.changed", m), pall(p, "task.updated"), pall(p, ACTIVITY)],
         "задачи остаются без модуля"
     );
 
@@ -122,9 +137,9 @@ async fn work_changes_send_events(pool: PgPool) {
     assert_eq!(drain(&mut rx), [in_project("milestone.changed", p), in_project(ACTIVITY, p)]);
     let w = id_of(&ms);
     c.ok(c.patch(&url(&format!("/milestones/{w}")), json!({ "title": "Бета 2" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("milestone.changed", w)]);
+    assert_eq!(drain(&mut rx), [pon(p, "milestone.changed", w)]);
     assert_eq!(c.delete(&url(&format!("/milestones/{w}"))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("milestone.changed", w), all("task.updated"), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "milestone.changed", w), pall(p, "task.updated"), pall(p, ACTIVITY)]);
 
     let release = c
         .ok(
@@ -139,17 +154,17 @@ async fn work_changes_send_events(pool: PgPool) {
     assert_eq!(drain(&mut rx), [in_project("release.changed", p), in_project(ACTIVITY, p)]);
     let r = id_of(&release);
     c.ok(c.patch(&url(&format!("/releases/{r}")), json!({ "status": "progress" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [on("release.changed", r), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "release.changed", r), pall(p, ACTIVITY)]);
     let item =
         c.ok(c.post(&url(&format!("/releases/{r}/items")), json!({ "title": "Шаг" })).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [on("release.changed", r)]);
+    assert_eq!(drain(&mut rx), [pon(p, "release.changed", r)]);
     c.ok(c.patch(&url(&format!("/release-items/{}", id_of(&item))), json!({ "done": true })).await, StatusCode::OK)
         .await;
-    assert_eq!(drain(&mut rx), [all("release.changed"), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pall(p, "release.changed"), pall(p, ACTIVITY)]);
     assert_eq!(c.delete(&url(&format!("/release-items/{}", id_of(&item)))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [all("release.changed")]);
+    assert_eq!(drain(&mut rx), [pall(p, "release.changed")]);
     assert_eq!(c.delete(&url(&format!("/releases/{r}"))).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(drain(&mut rx), [on("release.changed", r), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "release.changed", r), pall(p, ACTIVITY)]);
 }
 
 // ===== Вики и документы =====
@@ -197,6 +212,7 @@ async fn wiki_and_doc_changes_send_events(pool: PgPool) {
 async fn file_changes_send_events(pool: PgPool) {
     let f = Fx::new(pool).await;
     let c = &f.c;
+    let p = f.project;
     let task = f.task(Some(f.todo), "С файлом").await;
     let mut rx = c.events.subscribe();
 
@@ -209,7 +225,7 @@ async fn file_changes_send_events(pool: PgPool) {
 
     let t = id_of(&task);
     c.ok(c.upload(&url(&format!("/tasks/{t}/files")), &[file_part("a.txt", b"1")]).await, StatusCode::CREATED).await;
-    assert_eq!(drain(&mut rx), [on("task.updated", t), all("file.changed"), all(ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "task.updated", t), pall(p, "file.changed"), pall(p, ACTIVITY)]);
 
     let folder = c.ok(c.post(&url("/folders"), json!({ "name": "Договоры" })).await, StatusCode::CREATED).await;
     assert_eq!(drain(&mut rx), [all("file.changed")]);

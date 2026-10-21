@@ -130,6 +130,23 @@ pub async fn make_user(pool: &PgPool, email: &str, name: &str, password: &str) -
     .unwrap()
 }
 
+/// Глобальный администратор приложения
+pub async fn make_admin(pool: &PgPool, email: &str, name: &str, password: &str) -> User {
+    db::users::create(
+        pool,
+        &NewUser {
+            email: email.to_owned(),
+            name: name.to_owned(),
+            role: "Админ".to_owned(),
+            tone: 1,
+            is_admin: true,
+            password_hash: domain::auth::hash_password(password).unwrap(),
+        },
+    )
+    .await
+    .unwrap()
+}
+
 pub async fn login(app: &Router, email: &str, password: &str) -> Reply {
     post(app, "/api/v1/auth/login", json!({ "email": email, "password": password })).await
 }
@@ -166,6 +183,31 @@ impl Ctx {
         let tokens = login_ok(&app, "tester@example.com", "test-password").await;
         let token = str_field(&tokens, "access_token").to_owned();
         Ctx { app, events, pool, token, user, dir }
+    }
+
+    /// Ещё один человек на том же сервере и в той же базе (пароль `test-password`). Ни в каких проектах он не состоит.
+    pub async fn another(&self, email: &str, name: &str) -> Ctx {
+        let user = make_user(&self.pool, email, name, "test-password").await;
+        self.signed_in(user).await
+    }
+
+    /// Ещё один человек, но глобальный администратор приложения
+    pub async fn another_admin(&self, email: &str, name: &str) -> Ctx {
+        let user = make_admin(&self.pool, email, name, "test-password").await;
+        self.signed_in(user).await
+    }
+
+    async fn signed_in(&self, user: User) -> Ctx {
+        let tokens = login_ok(&self.app, &user.email, "test-password").await;
+        Ctx {
+            app: self.app.clone(),
+            events: self.events.clone(),
+            pool: self.pool.clone(),
+            token: str_field(&tokens, "access_token").to_owned(),
+            user,
+            // папку данных хозяин не отдаёт: эта удаляется отдельно и ничему не мешает
+            dir: TestDir(self.dir.0.join("another")),
+        }
     }
 
     /// Запрос от клиента с меткой `X-Client-Id`
@@ -253,8 +295,20 @@ pub fn uuid_of(v: &Value, key: &str) -> Uuid {
     str_field(v, key).parse().unwrap()
 }
 
-/// Проект напрямую в базе (создания проектов через API нет)
+/// Проект напрямую в базе. Все существующие пользователи становятся его администраторами: так прежние проверки
+/// доски работают как раньше. Проект без участников и участников с ролями собирают `make_project_with` и `join`.
 pub async fn make_project(pool: &PgPool, key: &str, name: &str, color: &str) -> Uuid {
+    let id = make_project_with(pool, key, name, color).await;
+    db::sqlx::query("insert into project_members (project_id, user_id, role) select $1, id, 'admin' from users")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    id
+}
+
+/// Проект напрямую в базе, в нём никого нет
+pub async fn make_project_with(pool: &PgPool, key: &str, name: &str, color: &str) -> Uuid {
     db::sqlx::query_scalar("insert into projects (key, name, color) values ($1, $2, $3) returning id")
         .bind(key)
         .bind(name)
@@ -262,6 +316,17 @@ pub async fn make_project(pool: &PgPool, key: &str, name: &str, color: &str) -> 
         .fetch_one(pool)
         .await
         .unwrap()
+}
+
+/// Человек становится участником проекта с этой ролью (`admin` | `member`)
+pub async fn join(pool: &PgPool, project: Uuid, user: Uuid, role: &str) {
+    db::sqlx::query("insert into project_members (project_id, user_id, role) values ($1, $2, $3::project_role)")
+        .bind(project)
+        .bind(user)
+        .bind(role)
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// Доска из проекта WEB и трёх колонок, созданных через API
