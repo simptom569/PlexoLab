@@ -4,7 +4,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Project {
     pub id: Uuid,
-    pub key: String,
+    /// Префикс id задач вне модулей с ключом; `None`: у таких задач `TASK`
+    pub key: Option<String>,
     pub name: String,
     pub color: String,
 }

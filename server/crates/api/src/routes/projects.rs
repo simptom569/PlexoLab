@@ -56,7 +56,7 @@ async fn board(
     let milestones = db::modules::list_milestones(&mut *conn, project_id).await?;
 
     Ok(Json(BoardDto {
-        tasks: cards.into_iter().map(|c| TaskCardDto::new(c, &project.key)).collect(),
+        tasks: cards.into_iter().map(|c| TaskCardDto::new(c, project.key.as_deref())).collect(),
         project: project.into(),
         columns: columns.into_iter().map(Into::into).collect(),
         tags: tags.into_iter().map(Into::into).collect(),

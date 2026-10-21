@@ -27,9 +27,18 @@ pub fn default_column_color(existing_columns: usize) -> &'static str {
     COLUMN_COLORS[existing_columns % COLUMN_COLORS.len()]
 }
 
+/// Префикс id задач, у которых нет ни ключа модуля, ни ключа проекта
+pub const DEFAULT_KEY: &str = "TASK";
+
+/// Префикс id задачи (docs/PROJECTS.md, раздел 4.1): ключ модуля, если задача в его ряду, иначе ключ проекта,
+/// иначе `TASK`
+pub fn id_prefix<'a>(series_key: Option<&'a str>, project_key: Option<&'a str>) -> &'a str {
+    series_key.or(project_key).unwrap_or(DEFAULT_KEY)
+}
+
 /// Ключ задачи для интерфейса: `WEB-151`
-pub fn task_key(project_key: &str, number: i32) -> String {
-    format!("{project_key}-{number}")
+pub fn task_key(prefix: &str, number: i32) -> String {
+    format!("{prefix}-{number}")
 }
 
 /// Название по краям без пробелов. `None`, если пусто или длиннее `max` символов.
@@ -61,6 +70,14 @@ mod tests {
     #[test]
     fn task_key_has_project_prefix() {
         assert_eq!(task_key("WEB", 159), "WEB-159");
+    }
+
+    #[test]
+    fn id_prefix_goes_module_then_project_then_default() {
+        assert_eq!(id_prefix(Some("SEO"), Some("PLX")), "SEO", "ключ модуля главнее");
+        assert_eq!(id_prefix(None, Some("PLX")), "PLX");
+        assert_eq!(id_prefix(None, None), "TASK");
+        assert_eq!(task_key(id_prefix(None, None), 12), "TASK-12");
     }
 
     #[test]

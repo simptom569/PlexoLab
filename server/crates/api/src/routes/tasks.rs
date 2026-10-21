@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use super::dto::{
     CommentDto, CreateComment, CreateSubtask, CreateTask, SubtaskDto, TaskDetailDto, UpdateSubtask, UpdateTask,
+    task_label,
 };
 use crate::{
     error::{ApiError, ApiResult, ErrorBody},
@@ -42,7 +43,7 @@ fn clean_title(raw: &str) -> ApiResult<String> {
 
 /// «WEB-151 Название» для ленты активности
 pub(super) fn target(project: &Project, task: &Task) -> String {
-    format!("{} {}", board::task_key(&project.key, task.number), task.title)
+    format!("{} {}", task_label(project.key.as_deref(), task), task.title)
 }
 
 async fn column_in_project(conn: &mut PgConnection, column_id: Uuid, project_id: Uuid) -> ApiResult<Column> {
@@ -69,7 +70,7 @@ async fn detail(conn: &mut PgConnection, task: Task) -> ApiResult<TaskDetailDto>
     let comments = db::comments::list(&mut *conn, task.id).await?;
     let files = db::files::list_for_task(&mut *conn, task.id).await?;
     Ok(TaskDetailDto {
-        key: board::task_key(&project.key, task.number),
+        key: task_label(project.key.as_deref(), &task),
         id: task.id,
         project_id: task.project_id,
         number: task.number,
@@ -124,7 +125,8 @@ async fn create_task(
     if let Some(column_id) = req.column_id {
         column_in_project(&mut tx, column_id, project_id).await?;
     }
-    let number = db::projects::next_number(&mut tx, project_id).await?;
+    // новая задача без модуля: ряд проекта
+    let number = tasks::next_number(&mut tx, tasks::Series::Project(project_id)).await?;
     let position = tasks::next_position(&mut tx, project_id, req.column_id).await?;
     let task = tasks::insert(
         &mut tx,

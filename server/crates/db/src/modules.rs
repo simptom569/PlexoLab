@@ -153,6 +153,14 @@ pub async fn update_module(conn: &mut PgConnection, id: Uuid, p: &ModulePatch) -
     sqlx::query_as(select_module!("where m.id = $1")).bind(id).fetch_one(conn).await
 }
 
+/// Следующий номер ряда модуля (SEO-12). Вызывать внутри транзакции после блокировки проекта.
+pub async fn next_number(conn: &mut PgConnection, id: Uuid) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar("update modules set last_number = last_number + 1 where id = $1 returning last_number")
+        .bind(id)
+        .fetch_one(conn)
+        .await
+}
+
 /// Задачи модуля остаются, у них пропадает модуль (`on delete set null`)
 pub async fn delete_module(conn: &mut PgConnection, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("delete from modules where id = $1").bind(id).execute(conn).await?;

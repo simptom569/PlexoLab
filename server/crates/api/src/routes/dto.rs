@@ -10,7 +10,7 @@ use db::{
     subtasks::Subtask,
     tags::Tag,
 };
-use domain::board::task_key;
+use domain::board::{id_prefix, task_key};
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use utoipa::ToSchema;
@@ -23,9 +23,9 @@ use crate::serde_helpers::{iso_date, present};
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProjectDto {
     pub id: Uuid,
-    /// Префикс номеров задач
-    #[schema(example = "WEB")]
-    pub key: String,
+    /// Ключ проекта: префикс id задач вне модулей с ключом. Без ключа у таких задач `TASK`.
+    #[schema(example = "WEB", nullable)]
+    pub key: Option<String>,
     #[schema(example = "Web-приложение")]
     pub name: String,
     /// Токен цвета: accent | warn | ok
@@ -219,11 +219,16 @@ pub struct TaskCardDto {
     pub updated_at: OffsetDateTime,
 }
 
+/// Id задачи для показа: `SEO-3`, `WEB-151`, `TASK-12` (ключ ряда задачи, иначе ключ проекта, иначе `TASK`)
+pub fn task_label(project_key: Option<&str>, task: &db::tasks::Task) -> String {
+    task_key(id_prefix(task.series_key.as_deref(), project_key), task.number)
+}
+
 impl TaskCardDto {
-    pub fn new(card: db::tasks::TaskCard, project_key: &str) -> Self {
+    pub fn new(card: db::tasks::TaskCard, project_key: Option<&str>) -> Self {
         let t = card.task;
         TaskCardDto {
-            key: task_key(project_key, t.number),
+            key: task_label(project_key, &t),
             id: t.id,
             project_id: t.project_id,
             number: t.number,

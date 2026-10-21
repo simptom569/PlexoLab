@@ -1205,10 +1205,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             /**
-             * @description Префикс номеров задач
+             * @description Ключ проекта: префикс id задач вне модулей с ключом. Без ключа у таких задач `TASK`.
              * @example WEB
              */
-            key: string;
+            key?: string | null;
             /** @example Web-приложение */
             name: string;
         };

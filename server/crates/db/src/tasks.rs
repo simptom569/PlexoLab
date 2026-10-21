@@ -20,12 +20,38 @@ pub struct Task {
     pub start_date: Option<Date>,
     pub due_date: Option<Date>,
     pub module_id: Option<Uuid>,
+    /// Модуль, в чьём ряду нумеруется задача; `None`: ряд проекта (docs/PROJECTS.md, раздел 4)
+    pub series_module_id: Option<Uuid>,
+    /// Ключ этого модуля: подпись id, если задача в ряду модуля
+    pub series_key: Option<String>,
     pub milestone_id: Option<Uuid>,
     pub pr: String,
     pub description: String,
     pub created_by: Option<Uuid>,
     pub created_at: OffsetDateTime,
     pub updated_at: OffsetDateTime,
+}
+
+/// Ряд нумерации: у проекта один, у модуля с ключом свой. Номер уникален внутри ряда и никогда не возвращается.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Series {
+    Project(Uuid),
+    Module(Uuid),
+}
+
+impl Task {
+    /// Ряд, в котором нумеруется задача
+    pub fn series(&self) -> Series {
+        self.series_module_id.map_or(Series::Project(self.project_id), Series::Module)
+    }
+}
+
+/// Следующий номер ряда. Вызывать внутри транзакции после `projects::lock`.
+pub async fn next_number(conn: &mut PgConnection, series: Series) -> Result<i32, sqlx::Error> {
+    match series {
+        Series::Project(id) => crate::projects::next_number(conn, id).await,
+        Series::Module(id) => crate::modules::next_number(conn, id).await,
+    }
 }
 
 /// Задача для доски: с метками и счётчиками подзадач (описание не передаётся)
@@ -42,7 +68,9 @@ pub struct TaskCard {
 macro_rules! task_columns {
     () => {
         "id, project_id, number, title, column_id, position, assignee_id, priority::text as priority, start_date, \
-         due_date, module_id, milestone_id, pr, description, created_by, created_at, updated_at"
+         due_date, module_id, series_module_id, \
+         (select m.key from modules m where m.id = tasks.series_module_id) as series_key, \
+         milestone_id, pr, description, created_by, created_at, updated_at"
     };
 }
 
@@ -65,8 +93,9 @@ pub async fn get_for_update(conn: &mut PgConnection, id: Uuid) -> Result<Option<
 pub async fn list_cards<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<TaskCard>, sqlx::Error> {
     sqlx::query_as(
         "select t.id, t.project_id, t.number, t.title, t.column_id, t.position, t.assignee_id, \
-                t.priority::text as priority, t.start_date, t.due_date, t.module_id, t.milestone_id, t.pr, \
-                ''::text as description, t.created_by, t.created_at, t.updated_at, \
+                t.priority::text as priority, t.start_date, t.due_date, t.module_id, t.series_module_id, \
+                (select m.key from modules m where m.id = t.series_module_id) as series_key, \
+                t.milestone_id, t.pr, ''::text as description, t.created_by, t.created_at, t.updated_at, \
                 array(select tt.tag_id from task_tags tt join tags g on g.id = tt.tag_id \
                       where tt.task_id = t.id order by g.seq) as tag_ids, \
                 (select count(*) from subtasks s where s.task_id = t.id) as subtasks_total, \
