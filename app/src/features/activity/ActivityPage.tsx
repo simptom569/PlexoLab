@@ -26,7 +26,7 @@ function Row({ event, actor, lastRef }: { event: ActivityEvent; actor: User | un
   )
 }
 
-export function ActivityPage() {
+export function ActivityPage({ projectId }: { projectId: string }) {
   const usersQuery = useUsers()
   const users = usersQuery.data
   const storedWho = useActivityStore((s) => s.who)
@@ -36,7 +36,7 @@ export function ActivityPage() {
 
   const who = effectiveWho(storedWho, users?.map((u) => u.id))
   // пока список участников не пришёл, ленту не запрашиваем: сохранённого участника, возможно, уже нет
-  const feed = useActivity(who === 'all' ? null : who, kind === 'all' ? null : kind, !usersQuery.isPending)
+  const feed = useActivity(projectId, who === 'all' ? null : who, kind === 'all' ? null : kind, !usersQuery.isPending)
   const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = feed
 
   const events = data?.pages.flatMap((p) => p.items) ?? []

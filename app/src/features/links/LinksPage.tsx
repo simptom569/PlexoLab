@@ -91,9 +91,9 @@ function GroupSection({ group, mutations }: { group: LinkGroup; mutations: LinkM
   )
 }
 
-export function LinksPage() {
-  const groups = useLinkGroups()
-  const mutations = useLinkMutations()
+export function LinksPage({ projectId }: { projectId: string }) {
+  const groups = useLinkGroups(projectId)
+  const mutations = useLinkMutations(projectId)
   const [draft, setDraft] = useState('')
   const addGroup = () => {
     const title = draft.trim()

@@ -278,18 +278,22 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   )
 }
 
-/** Открытый документ: загружает его и показывает. Если такого документа уже нет, возвращает к списку. */
-export function DocView({ id }: { id: string }) {
+/**
+ * Открытый документ проекта: загружает его и показывает. Если такого документа уже нет или он из другого проекта
+ * (сохранённый с прошлого раза, а проект сменили), возвращает к списку.
+ */
+export function DocView({ id, projectId }: { id: string; projectId: string }) {
   const doc = useDoc(id)
   const closeDoc = useDocsStore((s) => s.closeDoc)
   const gone = doc.error instanceof ApiError && doc.error.status === 404
+  const elsewhere = doc.data !== undefined && doc.data.project_id !== projectId
 
-  // сохранённый с прошлого раза документ удалили (или он был удалён, пока окно было закрыто): показываем список
+  // сохранённый с прошлого раза документ удалили (или он был удалён, пока окно было закрыто) или он лежит в другом проекте
   useEffect(() => {
-    if (gone) closeDoc()
-  }, [gone, closeDoc])
+    if (gone || elsewhere) closeDoc()
+  }, [gone, elsewhere, closeDoc])
 
-  if (doc.isPending || gone) return <EmptyState>Загружаю документ…</EmptyState>
+  if (doc.isPending || gone || elsewhere) return <EmptyState>Загружаю документ…</EmptyState>
   if (doc.isError) {
     return (
       <EmptyState>

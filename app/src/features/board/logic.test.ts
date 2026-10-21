@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Column, TaskCard, User } from '../../lib/api/types'
 import { EMPTY_FILTERS, type Filters } from '../../lib/settings'
 import {
-  calendarCells, doneColumnIds, dueInfo, ganttLabel, ganttRows, ganttStart, ganttTicks, ganttToday, isDone, isVisible, nextSort, NONE,
+  assigneeChoices, calendarCells, doneColumnIds, dueInfo, ganttLabel, ganttRows, ganttStart, ganttTicks, ganttToday, isDone, isVisible, nextSort, NONE,
   shiftMonth, sortTasks, splitTasks,
 } from './logic'
 
@@ -95,6 +95,31 @@ describe('splitTasks', () => {
     const b = task({ column_id: null })
     const c = task({ column_id: undefined })
     expect(splitTasks([a, b, c])).toEqual({ onBoard: [a], backlog: [b, c] })
+  })
+})
+
+describe('кого предлагает фильтр «Исполнитель»', () => {
+  const user = (id: string): User => ({ id, email: id, name: id.toUpperCase(), role: '', tone: 0, is_admin: false })
+  const [a, b, c, d] = ['a', 'b', 'c', 'd'].map(user)
+  const users = [a, b, c, d]
+
+  it('участники и те, у кого есть задачи; остальных нет', () => {
+    const tasks = [task({ assignee_id: 'c' }), task({ assignee_id: null })]
+    expect(assigneeChoices(users, new Set(['a', 'b']), tasks).map((u) => u.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('вышедший из проекта остаётся, пока на нём есть задачи, и пропадает вместе с ними', () => {
+    expect(assigneeChoices(users, new Set(['a']), [task({ assignee_id: 'd' })]).map((u) => u.id)).toEqual(['a', 'd'])
+    expect(assigneeChoices(users, new Set(['a']), []).map((u) => u.id)).toEqual(['a'])
+  })
+
+  it('порядок как в списке аккаунтов, повторы не нужны', () => {
+    const tasks = [task({ assignee_id: 'b' }), task({ assignee_id: 'b' }), task({ assignee_id: 'a' })]
+    expect(assigneeChoices(users, new Set(['d']), tasks).map((u) => u.id)).toEqual(['a', 'b', 'd'])
+  })
+
+  it('пока участники не пришли, только исполнители задач', () => {
+    expect(assigneeChoices(users, null, [task({ assignee_id: 'b' })]).map((u) => u.id)).toEqual(['b'])
   })
 })
 

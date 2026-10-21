@@ -4,27 +4,6 @@
  */
 
 export interface paths {
-    "/api/v1/activity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Лента событий команды
-         * @description События всех проектов, новые первыми. Фильтры «Участник» и «Тип события» сочетаются. Страница — 50 событий;
-         *     пока есть более старые, в ответе приходит `next`, его передают как `before`.
-         */
-        get: operations["list_activity"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -114,29 +93,6 @@ export interface paths {
         head?: never;
         /** Переименовать, перекрасить, отметить «Готово» или переставить колонку (`before_id`) */
         patch: operations["update_column"];
-        trace?: never;
-    };
-    "/api/v1/docs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Документы в порядке списка, без текста
-         * @description Порядок общий для команды (его меняют перетаскиванием карточек), новые документы встают первыми. У каждого
-         *     документа есть фрагмент текста и счётчик объектов холста; объекты для миниатюры приходят только у документов в
-         *     режиме «Холст».
-         */
-        get: operations["list_docs"];
-        put?: never;
-        /** Новый документ в начало списка. В ленту пишется «создан» или «создан как холст». */
-        post: operations["create_doc"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/docs/{id}": {
@@ -363,24 +319,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/link-groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Все группы со ссылками в порядке добавления */
-        get: operations["list_groups"];
-        put?: never;
-        /** Новая пустая группа в конце списка */
-        post: operations["create_group"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/link-groups/{id}": {
         parameters: {
             query?: never;
@@ -529,6 +467,28 @@ export interface paths {
         patch: operations["update_project"];
         trace?: never;
     };
+    "/api/v1/projects/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Лента проекта
+         * @description События проекта и общие события без проекта (вики, файлы библиотеки), новые первыми. Фильтры «Участник» и «Тип
+         *     события» сочетаются. Страница — 50 событий;
+         *     пока есть более старые, в ответе приходит `next`, его передают как `before`.
+         */
+        get: operations["list_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/archive": {
         parameters: {
             query?: never;
@@ -583,6 +543,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{id}/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Документы проекта в порядке списка, без текста
+         * @description Порядок общий для участников проекта (его меняют перетаскиванием карточек), новые документы встают первыми. У каждого
+         *     документа есть фрагмент текста и счётчик объектов холста; объекты для миниатюры приходят только у документов в
+         *     режиме «Холст».
+         */
+        get: operations["list_docs"];
+        put?: never;
+        /** Новый документ в начало списка проекта. В ленту проекта пишется «создан» или «создан как холст». */
+        post: operations["create_doc"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/invites": {
         parameters: {
             query?: never;
@@ -594,6 +577,24 @@ export interface paths {
         put?: never;
         /** Пригласить человека по e-mail (администратор). Аккаунт должен уже существовать. */
         post: operations["create_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/link-groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Все группы проекта со ссылками в порядке добавления */
+        get: operations["list_groups"];
+        put?: never;
+        /** Новая пустая группа в конце списка проекта */
+        post: operations["create_group"];
         delete?: never;
         options?: never;
         head?: never;
@@ -988,7 +989,7 @@ export interface components {
             id: string;
             /**
              * Format: uuid
-             * @description Проект события; у вики, документов и файлов библиотеки проекта нет
+             * @description Проект события; у вики и файлов библиотеки проекта нет, они видны в ленте любого проекта
              */
             project_id?: string | null;
             /** @description Объект действия: «WEB-141 Тёмная тема для страницы настроек» */
@@ -1223,6 +1224,11 @@ export interface components {
             /** Format: double */
             position: number;
             /**
+             * Format: uuid
+             * @description Проект, которому принадлежит документ
+             */
+            project_id: string;
+            /**
              * Format: int32
              * @description Номер версии названия и текста: растёт на единицу при каждом их изменении
              */
@@ -1257,9 +1263,14 @@ export interface components {
             object_count: number;
             /**
              * Format: double
-             * @description Порядок в списке: меньше — выше. Общий для всей команды.
+             * @description Порядок в списке: меньше — выше. Общий для участников проекта.
              */
             position: number;
+            /**
+             * Format: uuid
+             * @description Проект, которому принадлежит документ
+             */
+            project_id: string;
             /** @description Первые строки текста без разметки через « · ». Пусто, если текста нет. */
             snippet: string;
             /** @description Отмечен ли документ звёздочкой тем, кто спрашивает */
@@ -1967,51 +1978,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_activity: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Только события этого участника */
-                actor: string | null;
-                /** @description Только события этой категории: tasks | comment | code | doc | release | file | module */
-                kind: string | null;
-                /** @description Курсор из `next` предыдущего ответа: вернуть события старше того места */
-                before: string | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Страница ленты */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActivityPageDto"];
-                };
-            };
-            /** @description Незнакомая категория или испорченный курсор */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     login: {
         parameters: {
             query?: never;
@@ -2274,91 +2240,6 @@ export interface operations {
             };
             /** @description Нет такой колонки */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    list_docs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Часть названия или текста, без учёта регистра */
-                q: string | null;
-                /** @description `true` — только отмеченные звёздочкой тем, кто спрашивает */
-                starred: boolean | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Документы */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocSummaryDto"][];
-                };
-            };
-            /** @description Некорректные условия отбора */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_doc: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateDoc"];
-            };
-        };
-        responses: {
-            /** @description Документ создан */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DocDto"];
-                };
-            };
-            /** @description Некорректный запрос */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3096,77 +2977,6 @@ export interface operations {
             };
         };
     };
-    list_groups: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Группы вместе со ссылками */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LinkGroupDto"][];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_group: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateLinkGroup"];
-            };
-        };
-        responses: {
-            /** @description Группа создана */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LinkGroupDto"];
-                };
-            };
-            /** @description Некорректный запрос */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     delete_group: {
         parameters: {
             query?: never;
@@ -3765,6 +3575,62 @@ export interface operations {
             };
         };
     };
+    list_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+                /** @description Только события этого участника */
+                actor: string | null;
+                /** @description Только события этой категории: tasks | comment | code | doc | release | file | module */
+                kind: string | null;
+                /** @description Курсор из `next` предыдущего ответа: вернуть события старше того места */
+                before: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Страница ленты */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityPageDto"];
+                };
+            };
+            /** @description Незнакомая категория или испорченный курсор */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     archive_project: {
         parameters: {
             query?: never;
@@ -3910,6 +3776,114 @@ export interface operations {
             };
         };
     };
+    list_docs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+                /** @description Часть названия или текста, без учёта регистра */
+                q: string | null;
+                /** @description `true` — только отмеченные звёздочкой тем, кто спрашивает */
+                starred: boolean | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Документы */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSummaryDto"][];
+                };
+            };
+            /** @description Некорректные условия отбора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_doc: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDoc"];
+            };
+        };
+        responses: {
+            /** @description Документ создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     create_invite: {
         parameters: {
             query?: never;
@@ -3973,6 +3947,101 @@ export interface operations {
             };
             /** @description Человек уже в проекте или уже приглашён */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_groups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Группы вместе со ссылками */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkGroupDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateLinkGroup"];
+            };
+        };
+        responses: {
+            /** @description Группа создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkGroupDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

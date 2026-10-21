@@ -100,18 +100,18 @@ function Grid({ docs, authors }: { docs: DocSummary[]; authors: Map<string, User
 }
 
 /** Список документов: заголовок, поиск, «Избранные», карточки, которые можно переставлять */
-export function DocsList() {
+export function DocsList({ projectId }: { projectId: string }) {
   const { q, starOnly, setQuery, toggleStarOnly } = useDocsStore()
-  const createDoc = useCreateDocOnce()
-  const move = useMoveDoc()
+  const createDoc = useCreateDocOnce(projectId)
+  const move = useMoveDoc(projectId)
   const users = useUsers().data
-  const all = useDocs()
+  const all = useDocs(projectId)
 
   // что искать: пустой запрос сразу показывает все документы, непустой идёт на сервер с паузой
   const typed = q.trim()
   const debounced = useDebounced(typed, SEARCH_DELAY_MS)
   const query = typed === '' ? '' : debounced
-  const search = useDocSearch(query)
+  const search = useDocSearch(projectId, query)
 
   const authors = new Map((users ?? []).map((u) => [u.id, u]))
 
@@ -130,7 +130,7 @@ export function DocsList() {
   const source = (query ? search.data : undefined) ?? all.data
   const docs = source.filter((d) => !starOnly || d.starred)
 
-  // Бросок карточки: порядок общий для команды. Возврат на то же место ничего не делает.
+  // Бросок карточки: порядок общий для участников проекта. Возврат на то же место ничего не делает.
   const onDrop = (s: DragState) => {
     if (s.kind !== 'doc' || !s.id) return
     const over = s.overDoc ?? END

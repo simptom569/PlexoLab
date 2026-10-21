@@ -7,7 +7,7 @@ import type { Board, Column, Module, Milestone, Tag, TaskCard, User } from '../.
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
 import { useToday } from '../../lib/useToday'
-import { doneColumnIds, isDone, isVisible, splitTasks } from './logic'
+import { assigneeChoices, doneColumnIds, isDone, isVisible, splitTasks } from './logic'
 import type { BoardMutations } from './mutations'
 
 /** Цвета колонок: токены сервера (board::COLUMN_COLORS) и переменные CSS макета (COLCOL) */
@@ -21,6 +21,8 @@ export interface BoardModel {
   users: User[]
   /** Участники проекта: только их можно назначить исполнителем (пока список не пришёл, все аккаунты) */
   members: User[]
+  /** Кого предлагает фильтр «Исполнитель»: участники и все, у кого в проекте есть задачи */
+  assignees: User[]
   usersById: Map<string, User>
   tagsById: Map<string, Tag>
   modulesById: Map<string, Module>
@@ -98,6 +100,7 @@ export function useBoardModel(projectId: string): Loaded {
     me,
     users: userList,
     members: memberList.data ? userList.filter((u) => memberList.data.members.some((m) => m.user_id === u.id)) : userList,
+    assignees: assigneeChoices(userList, memberList.data ? new Set(memberList.data.members.map((m) => m.user_id)) : null, data.tasks),
     ...base,
     shown,
     today,

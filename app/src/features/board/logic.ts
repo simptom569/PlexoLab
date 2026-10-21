@@ -6,6 +6,17 @@ import type { Column, TaskCard, User } from '../../lib/api/types'
 import type { Filters, WeekStart } from '../../lib/settings'
 import { compareTaskKeys } from '../../lib/task-ids'
 
+/**
+ * Кого предложить в фильтре «Исполнитель»: участников проекта и всех, у кого в проекте есть задачи. Вышедший или
+ * убранный из проекта остаётся в списке, пока на нём есть задачи (чтобы посмотреть, что он делал), а у кого ни
+ * членства, ни задач, того в списке нет. Порядок как в списке аккаунтов. `memberIds` — null, пока участники не пришли.
+ */
+export function assigneeChoices(users: User[], memberIds: ReadonlySet<string> | null, tasks: TaskCard[]): User[] {
+  const assigned = new Set<string>()
+  for (const t of tasks) if (t.assignee_id) assigned.add(t.assignee_id)
+  return users.filter((u) => assigned.has(u.id) || memberIds?.has(u.id))
+}
+
 /** Значение фильтра «без исполнителя» и «без модуля» */
 export const NONE = '-'
 

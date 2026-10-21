@@ -29,14 +29,14 @@ const PROJECT_PAGES: Partial<Record<PageId, (props: { projectId: string }) => Re
   backlog: BacklogPage,
   modules: ModulesPage,
   releases: ReleasesPage,
-}
-
-/** Экраны всей команды: от выбранного проекта не зависят */
-const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
-  wiki: WikiScreen,
   docs: DocsScreen,
   activity: ActivityPage,
   links: LinksPage,
+}
+
+/** Экраны всей команды: от выбранного проекта не зависят (вики общая) */
+const TEAM_PAGES: Partial<Record<PageId, () => ReactNode>> = {
+  wiki: WikiScreen,
 }
 
 export function Workspace() {

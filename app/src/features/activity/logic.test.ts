@@ -91,12 +91,12 @@ describe('effectiveWho', () => {
 
 describe('activityPath', () => {
   it('без фильтров и курсора адрес без параметров', () => {
-    expect(activityPath(null, null, null)).toBe('/activity')
+    expect(activityPath('p1', null, null, null)).toBe('/projects/p1/activity')
   })
 
   it('участник, тип и курсор попадают в адрес', () => {
-    expect(activityPath('u1', 'doc', null)).toBe('/activity?actor=u1&kind=doc')
-    expect(activityPath(null, null, '1792324800000000_6f1d')).toBe('/activity?before=1792324800000000_6f1d')
-    expect(activityPath('u1', 'tasks', 'c')).toBe('/activity?actor=u1&kind=tasks&before=c')
+    expect(activityPath('p1', 'u1', 'doc', null)).toBe('/projects/p1/activity?actor=u1&kind=doc')
+    expect(activityPath('p1', null, null, '1792324800000000_6f1d')).toBe('/projects/p1/activity?before=1792324800000000_6f1d')
+    expect(activityPath('p1', 'u1', 'tasks', 'c')).toBe('/projects/p1/activity?actor=u1&kind=tasks&before=c')
   })
 })

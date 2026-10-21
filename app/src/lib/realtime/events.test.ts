@@ -103,9 +103,11 @@ describe('queryKeysFor', () => {
   })
 
   it('ключи начинаются так же, как ключи запросов экранов: иначе перечитывать было бы нечего', () => {
-    // поиск документов и вся лента лежат под общим началом ключа
-    expect(keys.docSearch('x').slice(0, 1)).toEqual(keys.docs)
-    expect(keys.activityFeed('u', 'doc').slice(0, 1)).toEqual(keys.activity)
+    // списки документов, поиск, лента и группы ссылок проекта лежат под общим началом ключа
+    expect(keys.projectDocs('p1').slice(0, 1)).toEqual(keys.docs)
+    expect(keys.docSearch('p1', 'x').slice(0, 1)).toEqual(keys.docs)
+    expect(keys.activityFeed('p1', 'u', 'doc').slice(0, 1)).toEqual(keys.activity)
+    expect(keys.projectLinkGroups('p1').slice(0, 1)).toEqual(keys.linkGroups)
     expect(keys.board('p1').slice(0, 1)).toEqual(['board'])
     expect(keys.task('t1').slice(0, 1)).toEqual(['task'])
     expect(keys.releases('p1').slice(0, 1)).toEqual(['releases'])

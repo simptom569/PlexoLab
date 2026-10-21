@@ -15,9 +15,9 @@ interface Spec<V, R> {
   merge?: (list: LinkGroup[], data: R, vars: V) => LinkGroup[]
 }
 
-function useLinkMutation<V, R = void>(spec: Spec<V, R>) {
+function useLinkMutation<V, R = void>(projectId: string, spec: Spec<V, R>) {
   const qc = useQueryClient()
-  const key = keys.linkGroups
+  const key = keys.projectLinkGroups(projectId)
   const mutationKey = ['link-edit']
 
   return useMutation<R, Error, V, { before?: LinkGroup[] }>({
@@ -44,28 +44,28 @@ function useLinkMutation<V, R = void>(spec: Spec<V, R>) {
   })
 }
 
-export function useLinkMutations() {
-  const createGroup = useLinkMutation<{ title: string }, LinkGroup>({
-    mutationFn: ({ title }) => api.post<LinkGroup>('/link-groups', { title }),
+export function useLinkMutations(projectId: string) {
+  const createGroup = useLinkMutation<{ title: string }, LinkGroup>(projectId, {
+    mutationFn: ({ title }) => api.post<LinkGroup>(`/projects/${projectId}/link-groups`, { title }),
     merge: (list, group) => addGroup(list, group),
   })
 
-  const renameGroupTitle = useLinkMutation<{ id: string; title: string }, LinkGroup>({
+  const renameGroupTitle = useLinkMutation<{ id: string; title: string }, LinkGroup>(projectId, {
     mutationFn: ({ id, title }) => api.patch<LinkGroup>(`/link-groups/${id}`, { title }),
     apply: (list, v) => renameGroup(list, v.id, v.title),
   })
 
-  const deleteGroup = useLinkMutation<{ id: string }>({
+  const deleteGroup = useLinkMutation<{ id: string }>(projectId, {
     mutationFn: ({ id }) => api.delete(`/link-groups/${id}`),
     apply: (list, v) => removeGroup(list, v.id),
   })
 
-  const createLink = useLinkMutation<{ groupId: string; title: string; url: string }, LinkItem>({
+  const createLink = useLinkMutation<{ groupId: string; title: string; url: string }, LinkItem>(projectId, {
     mutationFn: ({ groupId, title, url }) => api.post<LinkItem>(`/link-groups/${groupId}/links`, { title, url }),
     merge: (list, link) => addLink(list, link),
   })
 
-  const deleteLink = useLinkMutation<{ id: string }>({
+  const deleteLink = useLinkMutation<{ id: string }>(projectId, {
     mutationFn: ({ id }) => api.delete(`/links/${id}`),
     apply: (list, v) => removeLink(list, v.id),
   })

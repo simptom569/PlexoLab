@@ -20,7 +20,7 @@ function FiltersPopover() {
   return (
     <Popover aria-label="Фильтры">
       {group('Исполнитель', [
-        ...m.users.map((u) => (
+        ...m.assignees.map((u) => (
           <Opt key={u.id} on={filters.who.includes(u.id)} onClick={() => toggleFilter('who', u.id)}>
             {u.name}
           </Opt>

@@ -35,14 +35,18 @@ export const keys = {
   wikiPage: (id: string) => ['wiki-page', id] as const,
   files: ['files'] as const,
   folders: ['folders'] as const,
-  /** Все документы в порядке списка. Поиск лежит под этим же началом ключа, поэтому `['docs']` затрагивает и его. */
+  /** Начало ключа всех списков документов (всех проектов, с поиском): `['docs']` затрагивает любой из них */
   docs: ['docs'] as const,
-  docSearch: (q: string) => ['docs', 'search', q] as const,
+  /** Документы проекта в порядке списка. Поиск лежит под этим же началом ключа. */
+  projectDocs: (projectId: string) => ['docs', projectId] as const,
+  docSearch: (projectId: string, q: string) => ['docs', projectId, 'search', q] as const,
   doc: (id: string) => ['doc', id] as const,
-  /** Все ленты активности (при любых фильтрах) */
+  /** Все ленты активности (всех проектов, при любых фильтрах) */
   activity: ['activity'] as const,
-  activityFeed: (actor: string | null, kind: string | null) => ['activity', actor, kind] as const,
+  activityFeed: (projectId: string, actor: string | null, kind: string | null) => ['activity', projectId, actor, kind] as const,
+  /** Начало ключа групп ссылок всех проектов */
   linkGroups: ['link-groups'] as const,
+  projectLinkGroups: (projectId: string) => ['link-groups', projectId] as const,
 }
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
@@ -97,14 +101,15 @@ export const useLibrary = () => useQuery({ queryKey: keys.files, queryFn: () => 
 
 export const useFolders = () => useQuery({ queryKey: keys.folders, queryFn: () => api.get<Folder[]>('/folders') })
 
-/** Все документы, без текста: карточки списка. Порядок общий для команды. */
-export const useDocs = () => useQuery({ queryKey: keys.docs, queryFn: () => api.get<DocSummary[]>('/docs') })
+/** Документы проекта без текста: карточки списка. Порядок общий для участников проекта. */
+export const useDocs = (projectId: string) =>
+  useQuery({ queryKey: keys.projectDocs(projectId), queryFn: () => api.get<DocSummary[]>(`/projects/${projectId}/docs`) })
 
 /** Поиск по названию и тексту: ищет сервер, потому что текст в список не приходит. Пока ответа нет, остаётся прошлый. */
-export const useDocSearch = (q: string) =>
+export const useDocSearch = (projectId: string, q: string) =>
   useQuery({
-    queryKey: keys.docSearch(q),
-    queryFn: () => api.get<DocSummary[]>(`/docs?q=${encodeURIComponent(q)}`),
+    queryKey: keys.docSearch(projectId, q),
+    queryFn: () => api.get<DocSummary[]>(`/projects/${projectId}/docs?q=${encodeURIComponent(q)}`),
     enabled: q !== '',
     placeholderData: keepPreviousData,
   })
@@ -117,24 +122,24 @@ export const useDoc = (id: string | null) =>
     enabled: id !== null,
   })
 
-/** Адрес страницы ленты: фильтры по участнику и типу и курсор следующей страницы */
-export function activityPath(actor: string | null, kind: string | null, before: string | null): string {
+/** Адрес страницы ленты проекта: фильтры по участнику и типу и курсор следующей страницы */
+export function activityPath(projectId: string, actor: string | null, kind: string | null, before: string | null): string {
   const params = new URLSearchParams()
   if (actor) params.set('actor', actor)
   if (kind) params.set('kind', kind)
   if (before) params.set('before', before)
   const query = params.toString()
-  return query ? `/activity?${query}` : '/activity'
+  return query ? `/projects/${projectId}/activity?${query}` : `/projects/${projectId}/activity`
 }
 
 /**
  * Лента активности постранично (по 50). `actor` и `kind` — фильтры, null значит «все». Страницы дозагружаются
  * `fetchNextPage`; при обновлении запрос перечитывает все загруженные страницы по порядку, поэтому стыки остаются целыми.
  */
-export const useActivity = (actor: string | null, kind: string | null, enabled = true) =>
+export const useActivity = (projectId: string, actor: string | null, kind: string | null, enabled = true) =>
   useInfiniteQuery({
-    queryKey: keys.activityFeed(actor, kind),
-    queryFn: ({ pageParam }) => api.get<ActivityPage>(activityPath(actor, kind, pageParam)),
+    queryKey: keys.activityFeed(projectId, actor, kind),
+    queryFn: ({ pageParam }) => api.get<ActivityPage>(activityPath(projectId, actor, kind, pageParam)),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next ?? null,
     enabled,
@@ -142,5 +147,6 @@ export const useActivity = (actor: string | null, kind: string | null, enabled =
     staleTime: 0,
   })
 
-/** Группы ссылок команды вместе со ссылками */
-export const useLinkGroups = () => useQuery({ queryKey: keys.linkGroups, queryFn: () => api.get<LinkGroup[]>('/link-groups') })
+/** Группы ссылок проекта вместе со ссылками */
+export const useLinkGroups = (projectId: string) =>
+  useQuery({ queryKey: keys.projectLinkGroups(projectId), queryFn: () => api.get<LinkGroup[]>(`/projects/${projectId}/link-groups`) })

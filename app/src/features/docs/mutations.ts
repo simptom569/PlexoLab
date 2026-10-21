@@ -31,11 +31,11 @@ const patchSummary = (qc: QueryClient, id: string, patch: Partial<DocSummary>) =
 const patchDoc = (qc: QueryClient, id: string, patch: Partial<Doc>) =>
   qc.setQueryData<Doc>(keys.doc(id), (d) => d && { ...d, ...patch })
 
-/** Новый документ: создаётся, открывается и ждёт ввода (createDoc в макете) */
-export function useCreateDoc() {
+/** Новый документ проекта: создаётся, открывается и ждёт ввода (createDoc в макете) */
+export function useCreateDoc(projectId: string) {
   const qc = useQueryClient()
   return useMutation<Doc, Error, { mode: DocMode }>({
-    mutationFn: ({ mode }) => api.post<Doc>('/docs', { mode }),
+    mutationFn: ({ mode }) => api.post<Doc>(`/projects/${projectId}/docs`, { mode }),
     onSuccess: (doc) => {
       qc.setQueryData(keys.doc(doc.id), doc)
       void qc.invalidateQueries({ queryKey: keys.docs })
@@ -48,8 +48,8 @@ export function useCreateDoc() {
  * То же, но пока документ создаётся, повторные нажатия игнорируются. Состояние мутации обновляется только после
  * отрисовки, а два быстрых нажатия приходят раньше, поэтому защита держится на ссылке.
  */
-export function useCreateDocOnce() {
-  const create = useCreateDoc()
+export function useCreateDocOnce(projectId: string) {
+  const create = useCreateDoc(projectId)
   const busy = useRef(false)
   return (mode: DocMode) => {
     if (busy.current) return
@@ -125,9 +125,9 @@ export function useSetDocMode() {
 
 /**
  * Перенос карточки: документ перед `beforeId` (null — в конец). На экране сразу, при отказе сервера возвращается.
- * Порядок общий для команды, на сервере его меняет `PATCH /docs/{id}` без проверки версии текста.
+ * Порядок общий для участников проекта, на сервере его меняет `PATCH /docs/{id}` без проверки версии текста.
  */
-export function useMoveDoc() {
+export function useMoveDoc(projectId: string) {
   const qc = useQueryClient()
   const mutationKey = ['docs-move']
   return useMutation<Doc, Error, { id: string; beforeId: string | null }, { lists: ListSnapshot }>({
@@ -136,7 +136,7 @@ export function useMoveDoc() {
     onMutate: async ({ id, beforeId }) => {
       const lists = await takeLists(qc)
       // новый общий порядок считается по полному списку; поиск и «Избранные» показывают его часть
-      const full = qc.getQueryData<DocSummary[]>(keys.docs)
+      const full = qc.getQueryData<DocSummary[]>(keys.projectDocs(projectId))
       const order = full ? moveDoc(full, id, beforeId).map((d) => d.id) : null
       mapLists(qc, (list) => (order ? sortLike(list, order) : moveDoc(list, id, beforeId)))
       return { lists }
