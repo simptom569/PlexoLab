@@ -20,12 +20,12 @@ export const SAVE_CANVAS_FAILED = 'Не удалось сохранить хол
 const staleList = () => void queryClient.invalidateQueries({ queryKey: keys.docs })
 
 /**
- * Версия названия и текста с сервера → кэш документа. Холст не трогается: ответ на правку текста мог быть собран
- * раньше, чем сохранился холст, и откатил бы его.
+ * Версия названия и текста с сервера → кэш документа. Холст и режим не трогаются: ответ на правку текста мог быть
+ * собран раньше, чем сохранился холст или сменился режим «Страница / Холст», и откатил бы их.
  */
 export function cacheDocContent(doc: Doc): void {
   queryClient.setQueryData<Doc>(keys.doc(doc.id), (old) =>
-    old ? { ...doc, canvas_rev: old.canvas_rev, note: old.note, objects: old.objects, links: old.links } : doc,
+    old ? { ...doc, mode: old.mode, canvas_rev: old.canvas_rev, note: old.note, objects: old.objects, links: old.links } : doc,
   )
   staleList()
 }

@@ -104,6 +104,31 @@ test.describe('режим «Страница / Холст»', () => {
     await expect(page.locator('.md')).toContainText('Х')
   })
 
+  test('режим переключили, не дожидаясь сохранения текста: ответ на текст не возвращает прежний режим', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Идеи по онбордингу')
+    const isTextSave = (r: { method(): string; url(): string; postData(): string | null }) =>
+      r.method() === 'PATCH' && r.url().endsWith(`/docs/${id}`) && !!r.postData()?.includes('"md"')
+    // сервер обрабатывает текст сразу, но ответ доходит позже смены режима, и в нём режим ещё старый
+    await page.route(`**/docs/${id}`, async (route) => {
+      if (!isTextSave(route.request())) return route.continue()
+      const response = await route.fetch()
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      await route.fulfill({ response })
+    })
+
+    await blocks(page).first().click()
+    await page.keyboard.type('Х')
+    const staleAnswer = page.waitForResponse((r) => isTextSave(r.request()))
+    await modeButton(page, 'Холст').click()
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    await staleAnswer
+    await page.waitForTimeout(300) // дать приложению время применить ответ: тогда экран остался бы на странице
+
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    await expect(modeButton(page, 'Холст')).toHaveAttribute('aria-pressed', 'true')
+    expect((await docFull(page, id)).mode).toBe('edge')
+  })
+
   test('переключение режима сбрасывает выбранный объект и режим стрелок', async ({ page }) => {
     await openDocByTitle(page, 'Схема сервисов')
     await items(page).filter({ hasText: 'Клиент' }).click()
