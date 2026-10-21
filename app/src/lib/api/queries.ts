@@ -21,6 +21,7 @@ import type {
 
 export const keys = {
   projects: ['projects'] as const,
+  invites: ['invites'] as const,
   users: ['users'] as const,
   board: (projectId: string) => ['board', projectId] as const,
   task: (taskId: string) => ['task', taskId] as const,

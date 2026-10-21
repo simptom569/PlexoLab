@@ -295,6 +295,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Мои приглашения, на которые я ещё не ответил */
+        get: operations["my_invites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать приглашение (администратор проекта) */
+        delete: operations["revoke_invite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Принять приглашение: человек становится участником проекта с указанной ролью */
+        post: operations["accept_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отклонить приглашение */
+        post: operations["decline_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/link-groups": {
         parameters: {
             query?: never;
@@ -426,10 +494,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Проекты в порядке создания */
+        /** Мои проекты в порядке создания. Глобальному админу доступны все. */
         get: operations["list_projects"];
         put?: never;
+        /** Новый проект. Создатель становится его администратором, доска начинается с четырёх колонок макета. */
+        post: operations["create_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Название, цвет и ключ проекта (администратор). Смена ключа меняет только подпись id задач. */
+        patch: operations["update_project"];
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Убрать проект из списков, данные остаются (администратор) */
+        post: operations["archive_project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -471,6 +574,58 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Пригласить человека по e-mail (администратор). Аккаунт должен уже существовать. */
+        post: operations["create_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Участники проекта; ожидающие приглашения видит только администратор */
+        get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Убрать участника (администратор) или выйти самому (любой участник). Единственный администратор не может выйти. */
+        delete: operations["remove_member"];
+        options?: never;
+        head?: never;
+        /** Сменить роль участника (администратор). Единственного администратора понизить нельзя. */
+        patch: operations["update_member"];
         trace?: never;
     };
     "/api/v1/projects/{id}/milestones": {
@@ -525,6 +680,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Метки проекта в порядке создания */
+        get: operations["list_tags"];
+        put?: never;
+        /** Создать метку в проекте (любой участник). Регистр не важен: если такая уже есть, вернётся она (200), а не дубль. */
+        post: operations["create_tag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/tasks": {
         parameters: {
             query?: never;
@@ -536,6 +709,23 @@ export interface paths {
         put?: never;
         /** Новая задача в конце колонки или в бэклоге. Номер (WEB-159) выдаётся в той же транзакции. */
         post: operations["create_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Вернуть проект из архива (администратор) */
+        post: operations["unarchive_project"];
         delete?: never;
         options?: never;
         head?: never;
@@ -613,24 +803,6 @@ export interface paths {
         patch: operations["update_subtask"];
         trace?: never;
     };
-    "/api/v1/tags": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Метки в порядке создания (общие для всех проектов) */
-        get: operations["list_tags"];
-        put?: never;
-        /** Создать метку. Регистр не важен: если такая уже есть, вернётся она (200), а не дубль. */
-        post: operations["create_tag"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/tags/{id}": {
         parameters: {
             query?: never;
@@ -641,11 +813,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Удалить метку, с задач она снимается */
+        /** Удалить метку, с задач она снимается (администратор проекта) */
         delete: operations["delete_tag"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Переименовать метку или сменить цвет (администратор проекта) */
+        patch: operations["update_tag"];
         trace?: never;
     };
     "/api/v1/tasks/{id}": {
@@ -828,7 +1001,7 @@ export interface components {
             milestones: components["schemas"]["MilestoneDto"][];
             modules: components["schemas"]["ModuleDto"][];
             project: components["schemas"]["ProjectDto"];
-            /** @description Метки (общие для всех проектов) в порядке создания */
+            /** @description Метки проекта в порядке создания */
             tags: components["schemas"]["TagDto"][];
             /** @description Все задачи проекта, доска и бэклог, по возрастанию позиции */
             tasks: components["schemas"]["TaskCardDto"][];
@@ -919,6 +1092,18 @@ export interface components {
         CreateFolder: {
             name: string;
         };
+        CreateInvite: {
+            /**
+             * @description E-mail существующего аккаунта, регистр не важен
+             * @example artem@example.com
+             */
+            email: string;
+            /**
+             * @description admin | member; без него member
+             * @example member
+             */
+            role?: string | null;
+        };
         CreateLink: {
             description?: string | null;
             title: string;
@@ -938,6 +1123,20 @@ export interface components {
         };
         CreateModule: {
             title: string;
+        };
+        CreateProject: {
+            /**
+             * @description Токен цвета: accent | warn | ok; без него берётся accent
+             * @example accent
+             */
+            color?: string | null;
+            /**
+             * @description Ключ id задач (2–6 символов, латиница и цифры, с буквы); без него у задач будет `TASK`
+             * @example PLX
+             */
+            key?: string | null;
+            /** @example Сайт */
+            name: string;
         };
         CreateRelease: {
             /** Format: date */
@@ -976,6 +1175,16 @@ export interface components {
              */
             parent_id?: string | null;
             title?: string | null;
+        };
+        /** @description Приглашение, только что созданное администратором */
+        CreatedInviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            role: string;
+            /** Format: uuid */
+            user_id: string;
         };
         /** @description Ответ 409: название или текст документа уже изменили. В `current` лежит актуальная версия. */
         DocConflictDto: {
@@ -1113,6 +1322,23 @@ export interface components {
             id: string;
             name: string;
         };
+        /** @description Приглашение глазами приглашённого */
+        InviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** @description Кто пригласил; пусто, если он удалён */
+            invited_by_name?: string | null;
+            /** @description Токен цвета проекта */
+            project_color: string;
+            /** Format: uuid */
+            project_id: string;
+            project_key?: string | null;
+            project_name: string;
+            /** @description Роль, с которой человек войдёт: admin | member */
+            role: string;
+        };
         LinkDto: {
             /** @example Сервер и мобильное API */
             description: string;
@@ -1140,6 +1366,31 @@ export interface components {
             /** @example lena@example.com */
             email: string;
             password: string;
+        };
+        /** @description Участник проекта */
+        MemberDto: {
+            email: string;
+            /** @description Глобальный администратор приложения */
+            is_admin: boolean;
+            /** @description Подпись под именем («Frontend») */
+            job: string;
+            /** Format: date-time */
+            joined_at: string;
+            name: string;
+            /**
+             * @description Роль в проекте: admin | member
+             * @example member
+             */
+            role: string;
+            /** Format: int32 */
+            tone: number;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description Участники проекта; ожидающие приглашения видит только администратор (у остальных список пуст) */
+        MembersDto: {
+            invites: components["schemas"]["PendingInviteDto"][];
+            members: components["schemas"]["MemberDto"][];
         };
         MilestoneDto: {
             /** Format: date */
@@ -1196,7 +1447,25 @@ export interface components {
          * @enum {string}
          */
         ObjectKind: "sticky" | "rect" | "ellipse" | "text";
+        /** @description Приглашение, ожидающее ответа, глазами администратора проекта */
+        PendingInviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+            /** Format: uuid */
+            id: string;
+            job: string;
+            name: string;
+            /** @description Роль, с которой человек войдёт: admin | member */
+            role: string;
+            /** Format: int32 */
+            tone: number;
+            /** Format: uuid */
+            user_id: string;
+        };
         ProjectDto: {
+            /** @description Проект в архиве */
+            archived: boolean;
             /**
              * @description Токен цвета: accent | warn | ok
              * @example accent
@@ -1211,6 +1480,11 @@ export interface components {
             key?: string | null;
             /** @example Web-приложение */
             name: string;
+            /**
+             * @description Роль текущего человека в проекте: admin | member (у глобального админа всегда admin)
+             * @example member
+             */
+            role: string;
         };
         RefreshRequest: {
             refresh_token: string;
@@ -1271,6 +1545,8 @@ export interface components {
             id: string;
             /** @example Баг */
             label: string;
+            /** Format: uuid */
+            project_id: string;
             /**
              * Format: int32
              * @description Индекс цвета в TONES (0..7)
@@ -1444,6 +1720,13 @@ export interface components {
         UpdateLinkGroup: {
             title: string;
         };
+        UpdateMember: {
+            /**
+             * @description admin | member
+             * @example admin
+             */
+            role: string;
+        };
         UpdateMilestone: {
             /** Format: date */
             due_date?: string | null;
@@ -1486,6 +1769,13 @@ export interface components {
              */
             tone?: number | null;
         };
+        UpdateProject: {
+            /** @description accent | warn | ok */
+            color?: string | null;
+            /** @description Ключ id задач; `null` убирает ключ */
+            key?: string | null;
+            name?: string | null;
+        };
         UpdateRelease: {
             notes?: string | null;
             /** Format: date */
@@ -1501,6 +1791,15 @@ export interface components {
         UpdateSubtask: {
             done?: boolean | null;
             title?: string | null;
+        };
+        UpdateTag: {
+            /** @example Нужен дизайн */
+            label?: string | null;
+            /**
+             * Format: int32
+             * @description Индекс цвета 0..7
+             */
+            tone?: number | null;
         };
         /** @description Любые поля задачи. Что не передано, не меняется. У необязательных полей `null` очищает значение. */
         UpdateTask: {
@@ -2597,6 +2896,188 @@ export interface operations {
             };
         };
     };
+    my_invites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ожидающие ответа приглашения от старых к новым */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    revoke_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение отозвано */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    accept_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение принято */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения среди моих */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    decline_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение отклонено */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения среди моих */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_groups: {
         parameters: {
             query?: never;
@@ -3113,14 +3594,17 @@ export interface operations {
     };
     list_projects: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Архивные проекты, которыми человек управляет */
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Все проекты */
+            /** @description Проекты человека */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3131,6 +3615,170 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProject"];
+            };
+        };
+        responses: {
+            /** @description Проект создан */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProject"];
+            };
+        };
+        responses: {
+            /** @description Проект после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Ключ уже занят модулем проекта */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    archive_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проект в архиве */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3226,6 +3874,250 @@ export interface operations {
             };
             /** @description Нет такого проекта */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvite"];
+            };
+        };
+        responses: {
+            /** @description Приглашение создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInviteDto"];
+                };
+            };
+            /** @description Аккаунта с таким адресом нет или некорректная роль */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Человек уже в проекте или уже приглашён */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Участники и ожидающие приглашения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MembersDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    remove_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+                /** @description Участник */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Участник убран, его имя остаётся на старых задачах */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Убрать другого может только администратор проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта или участника */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Это единственный администратор проекта */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+                /** @description Участник */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMember"];
+            };
+        };
+        responses: {
+            /** @description Роль изменена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Некорректная роль */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта или участника */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Это единственный администратор проекта */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3438,6 +4330,110 @@ export interface operations {
             };
         };
     };
+    list_tags: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Метки проекта */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_tag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTag"];
+            };
+        };
+        responses: {
+            /** @description Такая метка уже есть */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDto"];
+                };
+            };
+            /** @description Метка создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     create_task: {
         parameters: {
             query?: never;
@@ -3474,6 +4470,56 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    unarchive_project: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Проект возвращён */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3825,86 +4871,6 @@ export interface operations {
             };
         };
     };
-    list_tags: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Все метки */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TagDto"][];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_tag: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTag"];
-            };
-        };
-        responses: {
-            /** @description Такая метка уже есть */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TagDto"];
-                };
-            };
-            /** @description Метка создана */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TagDto"];
-                };
-            };
-            /** @description Некорректный запрос */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     delete_tag: {
         parameters: {
             query?: never;
@@ -3933,8 +4899,89 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
             /** @description Нет такой метки */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_tag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Метка */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTag"];
+            };
+        };
+        responses: {
+            /** @description Метка после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDto"];
+                };
+            };
+            /** @description Некорректный запрос */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой метки */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description В проекте уже есть метка с таким названием */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -58,6 +58,12 @@ describe('queryKeysFor', () => {
     }
   })
 
+  it('проект изменился: его список и доска; приглашение: приглашения', () => {
+    expect(queryKeysFor(event('project.changed', { project_id: 'p1' }))).toEqual([keys.projects, keys.board('p1')])
+    expect(queryKeysFor(event('project.changed'))).toEqual([keys.projects, ['board']])
+    expect(queryKeysFor(event('invite.changed'))).toEqual([keys.invites])
+  })
+
   it('комментарий: только задача', () => {
     expect(queryKeysFor(event('comment.created', { id: 't1' }))).toEqual([keys.task('t1')])
     expect(queryKeysFor(event('comment.created'))).toEqual([['task']])

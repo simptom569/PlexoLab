@@ -152,12 +152,12 @@ export function useBoardMutations(projectId: string) {
       qc.setQueryData<TaskDetail>(keys.task(v.taskId), (d) => d && { ...d, comments: [...d.comments, comment] }),
   })
 
-  /** Метки общие для всех проектов: после новой перечитываются все открытые доски */
+  /** Метки у каждого проекта свои: новая появляется на доске этого проекта */
   const createTag = useBoardMutation<{ label: string }, Tag>(projectId, {
-    mutationFn: ({ label }) => api.post<Tag>('/tags', { label }),
-    onSuccess: (tag, _v, qc) => {
-      qc.setQueriesData<Board>({ queryKey: ['board'] }, (b) => b && (b.tags.some((t) => t.id === tag.id) ? b : { ...b, tags: [...b.tags, tag] }))
-      void qc.invalidateQueries({ queryKey: ['board'] })
+    mutationFn: ({ label }) => api.post<Tag>(`/projects/${projectId}/tags`, { label }),
+    onSuccess: (tag, _v, qc, pid) => {
+      qc.setQueryData<Board>(keys.board(pid), (b) => b && (b.tags.some((t) => t.id === tag.id) ? b : { ...b, tags: [...b.tags, tag] }))
+      void qc.invalidateQueries({ queryKey: keys.board(pid) })
     },
   })
 

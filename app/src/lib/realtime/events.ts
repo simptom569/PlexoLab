@@ -91,6 +91,12 @@ export function queryKeysFor(e: ServerEvent): QueryKey[] {
       return [keys.files, keys.folders, ALL_TASKS]
     case 'link.changed':
       return [keys.linkGroups]
+    // проект, его настройки или состав участников изменились: список проектов (боковое меню) и его доска
+    case 'project.changed':
+      return [keys.projects, ...board]
+    // чьё-то приглашение в проект появилось, принято или отозвано
+    case 'invite.changed':
+      return [keys.invites]
     // имя и цвет аватара участника видны везде: в списках, карточках, комментариях и ленте
     case 'user.changed':
       return [keys.users]

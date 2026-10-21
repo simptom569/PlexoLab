@@ -35,8 +35,29 @@ create table projects (
   name text not null,
   color text not null,                -- токен цвета: accent | warn | ok
   last_number int not null default 0, -- счётчик ряда проекта (WEB-151); только растёт
+  archived_at timestamptz,            -- проект в архиве: скрыт из списков, данные целы (П2)
+  created_by uuid references users on delete set null,
   check (key is null or key ~ '^[A-Z][A-Z0-9]{1,5}$')   -- 2–6 символов, латиница и цифры, с буквы
 );
+create type project_role as enum ('admin', 'member');
+create type invite_status as enum ('pending', 'accepted', 'declined', 'revoked');
+create table project_members (       -- участники проекта и их роли (П2); глобальные админы (users.is_admin) видят все проекты без записи здесь
+  project_id uuid not null references projects on delete cascade,
+  user_id uuid not null references users on delete cascade,
+  role project_role not null default 'member',
+  created_at timestamptz not null default now(),
+  primary key (project_id, user_id)
+);
+create table project_invites (       -- приглашение существующему аккаунту; решает приглашённый, закрытое остаётся историей
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references projects on delete cascade,
+  user_id uuid not null references users on delete cascade,        -- кого пригласили
+  invited_by uuid references users on delete set null,
+  role project_role not null default 'member',
+  status invite_status not null default 'pending',
+  created_at timestamptz not null default now(),
+  answered_at timestamptz
+);   -- unique index (project_id, user_id) where status = 'pending'
 create table board_columns (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects on delete cascade,
@@ -45,9 +66,10 @@ create table board_columns (
   is_done boolean not null default false,
   position double precision not null
 );
-create table tags (
+create table tags (                -- метки у каждого проекта свои (П2)
   id uuid primary key default gen_random_uuid(),
-  label text not null unique,
+  project_id uuid not null references projects on delete cascade,
+  label text not null,                -- unique index (project_id, lower(label))
   tone smallint not null              -- индекс в TONES (0..7)
 );
 
@@ -210,8 +232,13 @@ create index on tasks (project_id, column_id, position);
 | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /me` | вход и профиль |
 | `PATCH /me` | свой профиль: имя (1–60 символов), подпись под именем (до 40, пустая очищает), цвет аватара (0..4); e-mail, права и пароль так не меняются, лишние поля дают 400 |
 | `POST /auth/password` | смена пароля: проверяет текущий (неверный это 400 `wrong_password`, а не 401), завершает все прежние сессии (refresh-токены удаляются, а выданные раньше токены доступа живут до конца срока, до 12 часов) и сразу выдаёт этому устройству новую пару токенов |
-| `GET /users` | участники команды |
-| `GET /projects` | проекты |
+| `GET /users` | участники команды (все аккаунты; ограничить список сможет «команда», см. PROJECTS.md) |
+| `GET /projects?archived=` | мои проекты (глобальному админу все) с моей ролью `role`; `archived=true`: архивные, которыми я управляю |
+| `POST /projects`, `PATCH /projects/{id}` | создать проект (создатель администратор, доска с четырьмя колонками макета) и изменить название, цвет, ключ (администратор; ключ не должен совпадать с ключом модуля проекта) |
+| `POST /projects/{id}/archive`, `POST /projects/{id}/unarchive` | архив проекта и возврат из него (администратор) |
+| `GET /projects/{id}/members`, `PATCH /projects/{id}/members/{user_id}`, `DELETE /projects/{id}/members/{user_id}` | участники (ожидающие приглашения видит только администратор); смена роли и исключение (администратор); выйти из проекта может любой участник. Единственного администратора нельзя понизить, убрать или дать ему выйти (409) |
+| `POST /projects/{id}/invites`, `DELETE /invites/{id}` | пригласить по e-mail существующего аккаунта с ролью и отозвать приглашение (администратор). Неизвестный адрес: 400 «Аккаунта с таким адресом нет», уже в проекте или уже приглашён: 409 |
+| `GET /invites`, `POST /invites/{id}/accept`, `POST /invites/{id}/decline` | мои приглашения, на которые я не ответил; принять и отклонить может только приглашённый. Приглашения в архивный проект скрыты |
 | `GET /projects/{id}/board` | колонки, задачи (с метками и счётчиками подзадач), метки, модули, вехи одним ответом для первой загрузки доски |
 | `POST /projects/{id}/columns`, `PATCH /columns/{id}`, `DELETE /columns/{id}?move_to=` | колонки; порядок и цвет через `PATCH` |
 | `POST /projects/{id}/tasks`, `GET /tasks/{id}`, `PATCH /tasks/{id}`, `DELETE /tasks/{id}` | задачи; `PATCH` принимает любые поля, в том числе `column_id` и `before_id` (перенос) |
@@ -224,7 +251,8 @@ create index on tasks (project_id, column_id, position);
 | `POST /releases/{id}/items`, `PATCH`/`DELETE /release-items/{id}` | шаги чек-листа |
 
 Бэклог отдельных ручек не имеет: это задачи с `column_id = null`. Порядок меняется тем же `PATCH /tasks/{id}` (`before_id`), «На доску» — `PATCH` с `column_id` первой колонки.
-| `GET/POST/DELETE /tags` | метки |
+| `GET`/`POST /projects/{id}/tags`, `PATCH`/`DELETE /tags/{id}` | метки проекта: создать может любой участник (одноимённая метка возвращается, а не дублируется), переименовать, перекрасить и удалить только администратор. Метку чужого проекта к задаче привязать нельзя (400) |
+| *доступ* | Проект видят его участники и глобальные админы, остальным он «не найден» (404) на любой ручке; администраторские действия участнику дают 403. Вики, библиотека файлов, документы и ссылки пока общие для всех вошедших (документы и ссылки станут данными проекта на этапе П5); лента отдаёт события моих проектов и общие. Все ручки получают проект только через `api::access`, полный список ручек с пометкой доступа лежит в `server/crates/api/tests/access.rs` |
 | `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
 | `GET /files?folder=&kind=&q=&wiki_page_id=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов. `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
@@ -245,7 +273,7 @@ create index on tasks (project_id, column_id, position);
 
 1. Клиент подключается и **первым сообщением** присылает `{"type":"auth","token":"<токен доступа>"}`. Токен не в адресе (`?token=`): адреса попадают в журналы сервера и прокси, а сообщения нет. Не прислал за 10 секунд, прислал не то или чужой токен: сервер закрывает соединение кодом 4408 (не дождались) или 4401 (токен не принят). Мест под соединения 100, больше не принимаются (ответ 503).
 2. Сервер отвечает `{"type":"ready"}`. Подписка на события оформлена раньше этого ответа: всё, что случилось после него, клиент получит, а всё, что до него, увидит, перечитав данные.
-3. Дальше приходят события `{ "type": "task.updated", "id": "...", "project_id": "...", "origin": "..." }`. `id` (запись) и `project_id` (проект) заполнены, только если ручка их знает, иначе `null`: тогда клиент перечитывает всё такого рода. `origin` — метка клиента, чей запрос это вызвал (заголовок `X-Client-Id`, до 64 букв, цифр, `-` и `_`); свои события клиент пропускает.
+3. Дальше приходят события `{ "type": "task.updated", "id": "...", "project_id": "...", "origin": "..." }`. `id` (запись) и `project_id` (проект) заполнены, только если ручка их знает, иначе `null`: тогда клиент перечитывает всё такого рода. `origin` — метка клиента, чей запрос это вызвал (заголовок `X-Client-Id`, до 64 букв, цифр, `-` и `_`); свои события клиент пропускает. События проекта получают только его участники и глобальные админы (сервер проверяет это при отправке и пересчитывает проекты человека при каждом `project.changed`); приглашённый, принявший приглашение и исключённый получают событие лично, хотя в проекте не состоят. События вики, документов и ссылок идут всем.
 4. Клиент, который отстал (в канале 256 событий), получает `{"type":"resync"}`: часть событий пропущена, надо перечитать всё.
 5. Каждые 25 секунд сервер шлёт `{"type":"ping"}`, клиент отвечает `{"type":"pong"}`. Кто молчит дольше 70 секунд, отключается (4408). Клиент так же следит за сервером (60 секунд): связь, оборванная без закрытия (сон ноутбука, смена сети), иначе осталась бы «живой» до таймаута TCP.
 6. Когда токен доступа истекает, сервер закрывает соединение кодом 4401; клиент берёт новый токен и входит заново. При остановке сервера соединения закрываются кодом 1001, иначе остановка ждала бы их вечно.
@@ -263,6 +291,8 @@ create index on tasks (project_id, column_id, position);
 | `doc.updated`, `doc.canvas` | документ, звёздочка, холст | список и открытый документ |
 | `file.changed` | файлы и папки | библиотека, папки, открытые задачи |
 | `link.changed` | ссылки команды | группы ссылок |
+| `project.changed` | проект создан, переименован, заархивирован, поменялся состав участников или чьё-то приглашение | список проектов (боковое меню) и доска |
+| `invite.changed` | приглашение человеку появилось, принято, отклонено или отозвано (приходит приглашённому лично) | мои приглашения |
 | `user.changed` | человек поменял своё имя, подпись или цвет аватара (`PATCH /me`) | список участников; у того же человека на другом устройстве обновляется и боковое меню |
 | `activity.created` | действие могло попасть в ленту (ручка записи, которая обычно пишет событие в активность) | лента активности |
 
@@ -272,4 +302,4 @@ create index on tasks (project_id, column_id, position);
 
 ## Сид-данные для разработки
 
-`cargo run --bin seed` создаёт пятерых пользователей (Лена М., Артём К., Даниил С., Соня В., Игорь П. — пароль `dev` только для разработки), три проекта, колонки, метки, задачи, модули, вехи, релизы, вики, документы, файлы (запись в БД без реального файла), группы ссылок и ленту активности. Данные взять из `seed()` в `design/Main.dc.html`.
+`cargo run --bin seed` создаёт пятерых пользователей (Лена М., Артём К., Даниил С., Соня В., Игорь П. — пароль `dev` только для разработки), три проекта (все пятеро в каждом: Лена, как глобальный админ, администратором; остальные участниками), колонки, метки (одинаковый набор из семи у каждого проекта), задачи, модули, вехи, релизы, вики, документы, файлы (запись в БД без реального файла), группы ссылок и ленту активности. Данные взять из `seed()` в `design/Main.dc.html`.
