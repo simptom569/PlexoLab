@@ -31,10 +31,11 @@ create table refresh_tokens (
 
 create table projects (
   id uuid primary key default gen_random_uuid(),
-  key text unique not null,           -- WEB, API, INF
+  key text,                           -- WEB, API, INF; необязателен и может повторяться у разных проектов (П1)
   name text not null,
   color text not null,                -- токен цвета: accent | warn | ok
-  last_number int not null default 0  -- для номеров WEB-151
+  last_number int not null default 0, -- счётчик ряда проекта (WEB-151); только растёт
+  check (key is null or key ~ '^[A-Z][A-Z0-9]{1,5}$')   -- 2–6 символов, латиница и цифры, с буквы
 );
 create table board_columns (
   id uuid primary key default gen_random_uuid(),
@@ -58,7 +59,10 @@ create table modules (
   status work_status not null default 'plan',
   date_from date, date_to date,
   note text not null default '',
-  seq bigint generated always as identity   -- порядок добавления (в макете модули идут так, а не по датам)
+  seq bigint generated always as identity,  -- порядок добавления (в макете модули идут так, а не по датам)
+  key text,                                  -- ключ задач модуля (SEO); необязателен, уникален внутри проекта (П1)
+  last_number int not null default 0,        -- счётчик ряда модуля (SEO-12); только растёт
+  check (key is null or key ~ '^[A-Z][A-Z0-9]{1,5}$')   -- unique index (project_id, key) where key is not null
 );
 create table milestones (
   id uuid primary key default gen_random_uuid(),
@@ -77,13 +81,23 @@ create table tasks (
   priority priority not null default 'med',
   start_date date, due_date date,
   module_id uuid references modules on delete set null,
+  series_module_id uuid references modules on delete restrict,   -- ряд нумерации: модуль с ключом; null = ряд проекта (П1)
   milestone_id uuid references milestones on delete set null,
   pr text not null default '',
   description text not null default '',
   created_by uuid references users,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (project_id, number)
+  check (series_module_id is null or series_module_id = module_id)
+  -- unique index (coalesce(series_module_id, project_id), number): номер уникален внутри ряда
+);
+create table task_old_ids (          -- история прежних id: при смене ряда прежний id записывается (в интерфейсе пока не используется)
+  id uuid primary key default gen_random_uuid(),
+  task_id uuid not null references tasks on delete cascade,
+  project_id uuid not null references projects on delete cascade,
+  series_module_id uuid,            -- ряд без ссылки: модуль могли удалить
+  key text not null, number int not null,
+  created_at timestamptz not null default now()
 );
 create table task_tags (task_id uuid references tasks on delete cascade, tag_id uuid references tags on delete cascade, primary key (task_id, tag_id));
 create table subtasks (
@@ -185,7 +199,7 @@ create index on tasks (project_id, column_id, position);
 
 **Порядок элементов** (`position`) — дробные числа. При вставке между двумя соседями берётся среднее. Если разница стала меньше `1e-6`, сервер пересчитывает позиции всей колонки целыми числами с шагом 1024.
 
-**Номер задачи.** `last_number` увеличивается в транзакции при создании задачи (`update projects set last_number = last_number + 1 ... returning`). Ключ для интерфейса: `projects.key || '-' || tasks.number`.
+**Номер задачи (с этапа П1).** Задача нумеруется в своём ряду: ряд проекта (`series_module_id` пусто) или ряд модуля с ключом. Номер берётся из счётчика ряда в транзакции (`update projects|modules set last_number = last_number + 1 ... returning`) и никогда не возвращается. Подпись id не хранится, собирается при показе (`domain::board::id_prefix`): ключ модуля, если задача в его ряду, иначе ключ проекта, иначе `TASK`; например `SEO-3`, `WEB-151`, `TASK-12`. Пока ключей у модулей нет (этап П4), все задачи в ряду проекта и id те же, что были. Обратная миграция: `server/migrations_down/0012_task_series.down.sql` (запускается вручную).
 
 **Что НЕ хранится на сервере:** фильтры, вид, «Отображение», тема, последняя открытая страница. Это локальные настройки пользователя.
 

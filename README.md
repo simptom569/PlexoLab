@@ -23,6 +23,7 @@ server/                       бэкенд (cargo workspace)
   crates/domain               бизнес-правила без axum и sqlx: пароли (argon2id), JWT, refresh-токены
   crates/db                   пул sqlx, запросы, сид
   migrations/                 миграции sqlx (6 файлов по областям)
+  migrations_down/            обратные миграции (запускаются вручную: psql -f), пока для 0012; проверяются тестом `crates/db/tests/series.rs`
 .env.example                  пример настроек сервера (скопировать в .env)
 app/                          клиент: Vite + React + TypeScript
   src/styles/styles.css       копия design/styles.css, не править
