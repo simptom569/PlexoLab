@@ -1,6 +1,7 @@
 //! Модули и вехи проекта. Запись в ленту активности делается в той же транзакции, что и действие.
 
 use axum::{Json, extract::State, http::StatusCode};
+use db::tasks::Series;
 use db::{
     modules::{Milestone, Module, ModulePatch},
     projects::Project,
@@ -13,7 +14,10 @@ use domain::{
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
-use super::dto::{CreateMilestone, CreateModule, MilestoneDto, ModuleDto, UpdateMilestone, UpdateModule};
+use super::{
+    dto::{CreateMilestone, CreateModule, MilestoneDto, ModuleDto, UpdateMilestone, UpdateModule},
+    projects::clean_key,
+};
 use crate::{
     access,
     error::{ApiError, ApiResult, ErrorBody},
@@ -69,6 +73,44 @@ async fn load_milestone_locked(conn: &mut PgConnection, auth: AuthUser, id: Uuid
     Ok((milestone, project))
 }
 
+/// Ключ модуля не должен совпасть с ключом другого модуля и с тем, чем подписаны задачи проекта: его ключом, а если
+/// ключа нет, словом `TASK` (docs/PROJECTS.md, раздел 4.2)
+async fn ensure_key_free(conn: &mut PgConnection, project: &Project, module: &Module, key: &str) -> ApiResult<()> {
+    let project_prefix = project.key.as_deref().unwrap_or(board::DEFAULT_KEY);
+    if key == project_prefix {
+        return Err(ApiError::Conflict(match project.key {
+            Some(_) => "Такой ключ уже у проекта".into(),
+            None => format!("Ключ {key} занят: так подписаны задачи проекта, у которого нет ключа"),
+        }));
+    }
+    if db::modules::key_taken(&mut *conn, project.id, key, module.id).await? {
+        return Err(ApiError::Conflict("Такой ключ уже есть в этом проекте".into()));
+    }
+    Ok(())
+}
+
+/// Задачи модуля переходят из ряда в ряд, когда ключ появляется или пропадает (docs/PROJECTS.md, раздел 4.3).
+/// Переименование ключа ничего не пересчитывает: меняется только подпись. Вызывать до смены ключа в базе.
+async fn move_series_for_key(
+    conn: &mut PgConnection,
+    project: &Project,
+    module: &Module,
+    new_key: Option<&str>,
+) -> ApiResult<()> {
+    match (module.key.is_some(), new_key.is_some()) {
+        (false, true) => {
+            let ids = db::tasks::ids_in_project_series_of_module(&mut *conn, module.id).await?;
+            db::tasks::move_all_to_series(conn, &ids, project.key.as_deref(), Series::Module(module.id)).await?;
+        }
+        (true, false) => {
+            let ids = db::tasks::ids_in_module_series(&mut *conn, module.id).await?;
+            db::tasks::move_all_to_series(conn, &ids, project.key.as_deref(), Series::Project(project.id)).await?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 // ===== Модули =====
 
 /// Новый модуль: «Запланирован», ответственный — автор, без дат и заметки
@@ -102,7 +144,10 @@ async fn create_module(
     Ok((StatusCode::CREATED, Json(module.into())))
 }
 
-/// Название, статус, ответственный, даты и заметка модуля. Смена статуса попадает в ленту активности.
+/// Название, ключ задач, статус, ответственный, даты и заметка модуля. Смена статуса попадает в ленту активности.
+///
+/// Ключ задач: первый ключ, как и снятие ключа, переносит задачи модуля в другой ряд, и они получают новые номера в
+/// порядке старых (прежние id пишутся в историю); переименование меняет только подпись, номера те же.
 #[utoipa::path(
     patch,
     path = "/modules/{id}",
@@ -115,6 +160,7 @@ async fn create_module(
         (status = 400, description = "Некорректный запрос", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 404, description = "Нет такого модуля", body = ErrorBody),
+        (status = 409, description = "Ключ уже занят в проекте", body = ErrorBody),
     )
 )]
 async fn update_module(
@@ -127,6 +173,9 @@ async fn update_module(
         ModulePatch { lead: req.lead_id, date_from: req.date_from, date_to: req.date_to, ..ModulePatch::default() };
     if let Some(title) = &req.title {
         patch.title = Some(module_title(title)?);
+    }
+    if let Some(key) = &req.key {
+        patch.key = Some(key.as_deref().map(clean_key).transpose()?.flatten());
     }
     if let Some(status) = req.status {
         if !work::is_status(&status) {
@@ -149,6 +198,15 @@ async fn update_module(
         return Err(bad("Ответственный не найден среди участников"));
     }
 
+    if let Some(key) = &patch.key
+        && *key != before.key
+    {
+        if let Some(key) = key {
+            ensure_key_free(&mut tx, &project, &before, key).await?;
+        }
+        move_series_for_key(&mut tx, &project, &before, key.as_deref()).await?;
+    }
+
     let module = db::modules::update_module(&mut tx, id, &patch).await?;
     if module.status != before.status {
         let text = format!("переведён в «{}»", work::module_status_label(&module.status));
@@ -159,7 +217,8 @@ async fn update_module(
     Ok(Json(module.into()))
 }
 
-/// Удалить модуль. Его задачи остаются на доске и в бэклоге, но без модуля.
+/// Удалить модуль. Его задачи остаются на доске и в бэклоге, но без модуля; если у модуля был ключ, они переходят в ряд
+/// проекта и получают новые номера.
 #[utoipa::path(
     delete,
     path = "/modules/{id}",
@@ -179,6 +238,8 @@ async fn delete_module(
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     let (module, project) = load_module_locked(&mut tx, auth, id).await?;
+    // ряд модуля без модуля существовать не может (база не даст удалить): сначала задачи уходят в ряд проекта
+    move_series_for_key(&mut tx, &project, &module, None).await?;
     db::modules::delete_module(&mut tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "module", &module_target(&module.title), "удалён").await?;
     tx.commit().await?;

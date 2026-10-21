@@ -97,6 +97,9 @@ impl From<Tag> for TagDto {
 pub struct ModuleDto {
     pub id: Uuid,
     pub title: String,
+    /// Ключ задач (префикс id у задач модуля, `SEO-3`); null: задачи нумеруются рядом проекта
+    #[schema(example = "SEO", nullable)]
+    pub key: Option<String>,
     pub lead_id: Option<Uuid>,
     /// plan | progress | done
     pub status: String,
@@ -116,6 +119,7 @@ impl From<modules::Module> for ModuleDto {
         ModuleDto {
             id: m.id,
             title: m.title,
+            key: m.key,
             lead_id: m.lead_id,
             status: m.status,
             date_from: m.date_from,
@@ -466,6 +470,11 @@ pub struct CreateModule {
 #[serde(deny_unknown_fields)]
 pub struct UpdateModule {
     pub title: Option<String>,
+    /// Ключ задач: 2–6 символов, латиница и цифры, с буквы; `null` или пустая строка убирают ключ. Первый ключ, смена ряда и
+    /// снятие ключа дают задачам модуля новые номера, переименование меняет только подпись.
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>)]
+    pub key: Option<Option<String>>,
     /// plan | progress | done
     pub status: Option<String>,
     /// Ответственный; `null` — не назначен

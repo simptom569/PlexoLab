@@ -176,7 +176,8 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("POST",   "/invites/{id}/decline",     &[all("project.changed"), users("invite.changed")]),
     // модули, вехи, релизы
     ("POST",   "/projects/{id}/modules",    &[all("module.changed"), ACTIVITY]),
-    ("PATCH",  "/modules/{id}",             &[one("module.changed"), ACTIVITY]),
+    // ключ модуля меняет id его задач, поэтому перечитываются и задачи
+    ("PATCH",  "/modules/{id}",             &[one("module.changed"), all("task.updated"), ACTIVITY]),
     ("DELETE", "/modules/{id}",             &[one("module.changed"), all("task.updated"), ACTIVITY]),
     ("POST",   "/projects/{id}/milestones", &[all("milestone.changed"), ACTIVITY]),
     ("PATCH",  "/milestones/{id}",          &[one("milestone.changed")]),

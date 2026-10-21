@@ -80,6 +80,109 @@ macro_rules! select_task {
     };
 }
 
+/// Переносит задачу в ряд `to` (docs/PROJECTS.md, раздел 4.3): прежний id записывается в историю, задача получает
+/// следующий номер нового ряда. Модуль задачи становится `module`. Всё в одной команде, потому что база требует,
+/// чтобы ряд модуля был модулем самой задачи. Вызывать внутри транзакции после `projects::lock`.
+pub async fn move_to_series(
+    conn: &mut PgConnection,
+    task: &Task,
+    project_key: Option<&str>,
+    module: Option<Uuid>,
+    to: Series,
+) -> Result<Task, sqlx::Error> {
+    let old_key = domain::board::id_prefix(task.series_key.as_deref(), project_key);
+    sqlx::query(
+        "insert into task_old_ids (task_id, project_id, series_module_id, key, number) values ($1, $2, $3, $4, $5)",
+    )
+    .bind(task.id)
+    .bind(task.project_id)
+    .bind(task.series_module_id)
+    .bind(old_key)
+    .bind(task.number)
+    .execute(&mut *conn)
+    .await?;
+    let number = next_number(&mut *conn, to).await?;
+    let series_module = match to {
+        Series::Module(id) => Some(id),
+        Series::Project(_) => None,
+    };
+    sqlx::query_as(concat!(
+        "update tasks set module_id = $2, series_module_id = $3, number = $4, updated_at = now() \
+         where id = $1 returning ",
+        task_columns!()
+    ))
+    .bind(task.id)
+    .bind(module)
+    .bind(series_module)
+    .bind(number)
+    .fetch_one(conn)
+    .await
+}
+
+/// Ряд, в котором должна нумероваться задача модуля `module`: у модуля с ключом свой, иначе ряд проекта
+async fn series_for(conn: &mut PgConnection, project_id: Uuid, module: Option<Uuid>) -> Result<Series, sqlx::Error> {
+    let Some(id) = module else { return Ok(Series::Project(project_id)) };
+    let key: Option<String> =
+        sqlx::query_scalar("select key from modules where id = $1").bind(id).fetch_one(conn).await?;
+    Ok(if key.is_some() { Series::Module(id) } else { Series::Project(project_id) })
+}
+
+/// Меняет модуль задачи. Если от этого меняется ряд (в модуль с ключом, из него, в другой модуль с ключом), задача
+/// получает новый номер, иначе id остаётся прежним. Вызывать внутри транзакции после `projects::lock`.
+pub async fn set_module(
+    conn: &mut PgConnection,
+    task: &Task,
+    project_key: Option<&str>,
+    module: Option<Uuid>,
+) -> Result<Task, sqlx::Error> {
+    let to = series_for(&mut *conn, task.project_id, module).await?;
+    if to != task.series() {
+        return move_to_series(conn, task, project_key, module, to).await;
+    }
+    sqlx::query_as(concat!(
+        "update tasks set module_id = $2, updated_at = now() where id = $1 returning ",
+        task_columns!()
+    ))
+    .bind(task.id)
+    .bind(module)
+    .fetch_one(conn)
+    .await
+}
+
+/// Задачи модуля, которые пока нумеруются рядом проекта (у модуля нет ключа), по возрастанию номеров
+pub async fn ids_in_project_series_of_module(
+    conn: &mut PgConnection,
+    module_id: Uuid,
+) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("select id from tasks where module_id = $1 and series_module_id is null order by number, id")
+        .bind(module_id)
+        .fetch_all(conn)
+        .await
+}
+
+/// Задачи ряда модуля по возрастанию номеров
+pub async fn ids_in_module_series(conn: &mut PgConnection, module_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("select id from tasks where series_module_id = $1 order by number, id")
+        .bind(module_id)
+        .fetch_all(conn)
+        .await
+}
+
+/// Переносит задачи `ids` (в нужном порядке) в ряд `to`: новые номера идут в порядке старых. Модуль задач не меняется.
+/// Вызывать до того, как у модуля поменяли ключ или удалили его: история берёт прежнюю подпись из текущего ключа.
+pub async fn move_all_to_series(
+    conn: &mut PgConnection,
+    ids: &[Uuid],
+    project_key: Option<&str>,
+    to: Series,
+) -> Result<(), sqlx::Error> {
+    for id in ids {
+        let task = get_for_update(&mut *conn, *id).await?.ok_or(sqlx::Error::RowNotFound)?;
+        move_to_series(&mut *conn, &task, project_key, task.module_id, to).await?;
+    }
+    Ok(())
+}
+
 pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<Task>, sqlx::Error> {
     sqlx::query_as(select_task!("where id = $1")).bind(id).fetch_optional(ex).await
 }
@@ -158,7 +261,7 @@ pub async fn insert(conn: &mut PgConnection, t: &NewTask) -> Result<Task, sqlx::
 }
 
 /// Поля, которые меняются через PATCH. `None`: не трогать. У необязательных полей внешний `Some(None)` означает
-/// «очистить».
+/// «очистить». Модуля здесь нет: его меняет `set_module`, потому что от модуля зависит ряд нумерации.
 #[derive(Debug, Clone, Default)]
 pub struct Patch {
     pub title: Option<String>,
@@ -168,7 +271,6 @@ pub struct Patch {
     pub assignee: Option<Option<Uuid>>,
     pub start_date: Option<Option<Date>>,
     pub due_date: Option<Option<Date>>,
-    pub module: Option<Option<Uuid>>,
     pub milestone: Option<Option<Uuid>>,
 }
 
@@ -182,7 +284,6 @@ impl Patch {
             && self.assignee.is_none()
             && self.start_date.is_none()
             && self.due_date.is_none()
-            && self.module.is_none()
             && self.milestone.is_none()
     }
 }
@@ -197,8 +298,7 @@ pub async fn update(conn: &mut PgConnection, id: Uuid, p: &Patch) -> Result<Task
            assignee_id = case when $6 then $7 else assignee_id end, \
            start_date = case when $8 then $9 else start_date end, \
            due_date = case when $10 then $11 else due_date end, \
-           module_id = case when $12 then $13 else module_id end, \
-           milestone_id = case when $14 then $15 else milestone_id end, \
+           milestone_id = case when $12 then $13 else milestone_id end, \
            updated_at = now() \
          where id = $1 returning ",
         task_columns!()
@@ -214,8 +314,6 @@ pub async fn update(conn: &mut PgConnection, id: Uuid, p: &Patch) -> Result<Task
     .bind(p.start_date.flatten())
     .bind(p.due_date.is_some())
     .bind(p.due_date.flatten())
-    .bind(p.module.is_some())
-    .bind(p.module.flatten())
     .bind(p.milestone.is_some())
     .bind(p.milestone.flatten())
     .fetch_one(conn)

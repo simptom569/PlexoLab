@@ -10,6 +10,8 @@ pub struct Module {
     pub id: Uuid,
     pub project_id: Uuid,
     pub title: String,
+    /// Ключ задач: префикс id (`SEO-3`) у задач в ряду модуля; `None`: задачи нумеруются рядом проекта
+    pub key: Option<String>,
     pub lead_id: Option<Uuid>,
     /// plan | progress | done
     pub status: String,
@@ -33,7 +35,7 @@ pub struct Milestone {
 macro_rules! select_module {
     ($tail:literal) => {
         concat!(
-            "select m.id, m.project_id, m.title, m.lead_id, m.status::text as status, m.date_from, m.date_to, m.note, \
+            "select m.id, m.project_id, m.title, m.key, m.lead_id, m.status::text as status, m.date_from, m.date_to, m.note, \
                (select count(*) from tasks t where t.module_id = m.id) as tasks_total, \
                (select count(*) from tasks t join board_columns c on c.id = t.column_id \
                  where t.module_id = m.id and c.is_done) as tasks_done \
@@ -120,6 +122,7 @@ pub async fn insert_module(
 #[derive(Debug, Default, Clone)]
 pub struct ModulePatch {
     pub title: Option<String>,
+    pub key: Option<Option<String>>,
     pub lead: Option<Option<Uuid>>,
     pub status: Option<String>,
     pub date_from: Option<Option<Date>>,
@@ -135,7 +138,8 @@ pub async fn update_module(conn: &mut PgConnection, id: Uuid, p: &ModulePatch) -
            status = coalesce($5::work_status, status), \
            date_from = case when $6 then $7 else date_from end, \
            date_to = case when $8 then $9 else date_to end, \
-           note = coalesce($10, note) \
+           note = coalesce($10, note), \
+           key = case when $11 then $12 else key end \
          where id = $1",
     )
     .bind(id)
@@ -148,9 +152,26 @@ pub async fn update_module(conn: &mut PgConnection, id: Uuid, p: &ModulePatch) -
     .bind(p.date_to.is_some())
     .bind(p.date_to.flatten())
     .bind(p.note.as_deref())
+    .bind(p.key.is_some())
+    .bind(p.key.as_ref().and_then(|k| k.as_deref()))
     .execute(&mut *conn)
     .await?;
     sqlx::query_as(select_module!("where m.id = $1")).bind(id).fetch_one(conn).await
+}
+
+/// Занят ли ключ другим модулем проекта (кроме `except`)
+pub async fn key_taken<'e>(
+    ex: impl PgExecutor<'e>,
+    project_id: Uuid,
+    key: &str,
+    except: Uuid,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("select exists (select 1 from modules where project_id = $1 and key = $2 and id <> $3)")
+        .bind(project_id)
+        .bind(key)
+        .bind(except)
+        .fetch_one(ex)
+        .await
 }
 
 /// Следующий номер ряда модуля (SEO-12). Вызывать внутри транзакции после блокировки проекта.

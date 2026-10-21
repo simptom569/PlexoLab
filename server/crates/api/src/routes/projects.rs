@@ -47,7 +47,7 @@ fn clean_color(raw: &str) -> ApiResult<()> {
 }
 
 /// Ключ из запроса: пустая строка значит «без ключа»
-fn clean_key(raw: &str) -> ApiResult<Option<String>> {
+pub(super) fn clean_key(raw: &str) -> ApiResult<Option<String>> {
     if raw.trim().is_empty() {
         return Ok(None);
     }

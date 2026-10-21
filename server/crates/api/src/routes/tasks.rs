@@ -169,7 +169,8 @@ async fn get_task(
     Ok(Json(detail(&mut conn, task, &project).await?))
 }
 
-/// Изменить любые поля задачи. Перенос: `column_id` (null — в бэклог) и `before_id` (встать перед этой задачей,
+/// Изменить любые поля задачи. Если от смены модуля меняется ряд нумерации (в модуль с ключом, из него, в другой модуль
+/// с ключом), задача получает новый номер, прежний id остаётся в истории. Перенос: `column_id` (null — в бэклог) и `before_id` (встать перед этой задачей,
 /// null — в конец). Что не передано, не меняется.
 ///
 /// Позиции дробные: при вставке между соседями берётся среднее, а если зазор меньше 1e-6, позиции всей колонки
@@ -199,7 +200,6 @@ async fn update_task(
         assignee: req.assignee_id,
         start_date: req.start_date,
         due_date: req.due_date,
-        module: req.module_id,
         milestone: req.milestone_id,
         ..Patch::default()
     };
@@ -231,6 +231,9 @@ async fn update_task(
         ids
     });
 
+    // модуль меняется отдельно от остальных полей: от него может смениться ряд и номер задачи
+    let module_change = req.module_id;
+
     let mut tx = state.pool.begin().await?;
     let (task, project) = load_locked(&mut tx, auth, id).await?;
 
@@ -241,7 +244,7 @@ async fn update_task(
     {
         return Err(bad("Исполнитель должен быть участником проекта"));
     }
-    if let Some(Some(module_id)) = patch.module
+    if let Some(Some(module_id)) = module_change
         && !db::modules::module_in_project(&mut *tx, module_id, project.id).await?
     {
         return Err(bad("Модуль не найден в проекте этой задачи"));
@@ -252,7 +255,16 @@ async fn update_task(
         return Err(bad("Веха не найдена в проекте этой задачи"));
     }
 
-    let mut current = if patch.is_empty() { task.clone() } else { tasks::update(&mut tx, id, &patch).await? };
+    // другой ряд (модуль с ключом, из него, в другой такой) даёт новый номер, тот же ряд оставляет id как был
+    let mut current = match module_change {
+        Some(module) if module != task.module_id => {
+            tasks::set_module(&mut tx, &task, project.key.as_deref(), module).await?
+        }
+        _ => task.clone(),
+    };
+    if !patch.is_empty() {
+        current = tasks::update(&mut tx, id, &patch).await?;
+    }
 
     if let Some(ids) = &tag_ids {
         if db::tags::count_in_project(&mut *tx, project.id, ids).await? != ids.len() as i64 {
