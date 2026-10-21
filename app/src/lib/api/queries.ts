@@ -10,7 +10,9 @@ import type {
   DocSummary,
   FileList,
   Folder,
+  Invite,
   LinkGroup,
+  Members,
   Project,
   Release,
   TaskDetail,
@@ -22,6 +24,9 @@ import type {
 export const keys = {
   projects: ['projects'] as const,
   invites: ['invites'] as const,
+  /** Архивные проекты, которыми я управляю; лежит под началом ключа проектов, поэтому `['projects']` затрагивает и его */
+  archivedProjects: ['projects', 'archived'] as const,
+  members: (projectId: string) => ['members', projectId] as const,
   users: ['users'] as const,
   board: (projectId: string) => ['board', projectId] as const,
   task: (taskId: string) => ['task', taskId] as const,
@@ -41,6 +46,21 @@ export const keys = {
 }
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
+
+/** Мои архивные проекты: те, которыми я управляю */
+export const useArchivedProjects = () =>
+  useQuery({ queryKey: keys.archivedProjects, queryFn: () => api.get<Project[]>('/projects?archived=true') })
+
+/** Приглашения, на которые я не ответил (их число показывает боковое меню) */
+export const useMyInvites = () => useQuery({ queryKey: keys.invites, queryFn: () => api.get<Invite[]>('/invites') })
+
+/** Участники проекта; ожидающие приглашения приходят только администратору */
+export const useMembers = (projectId: string | null) =>
+  useQuery({
+    queryKey: keys.members(projectId ?? ''),
+    queryFn: () => api.get<Members>(`/projects/${projectId}/members`),
+    enabled: projectId !== null,
+  })
 
 export const useUsers = () => useQuery({ queryKey: keys.users, queryFn: () => api.get<User[]>('/users'), staleTime: 60_000 })
 

@@ -6,6 +6,7 @@ import { PAGE_LABELS, type PageId } from '../lib/pages'
 import { Avatar } from './Avatar'
 import { BrandIcon } from './Brand'
 import { Icon } from './Icon'
+import { IconButton } from './Button'
 import type { IconName } from './iconPaths'
 import { Anchor, MenuItem, Popover } from './Popover'
 import { Count } from './Tag'
@@ -59,6 +60,14 @@ type SidebarProps = {
   connection?: ConnectionStatus
   /** Адрес сервера для шапки меню пользователя */
   serverUrl?: string | null
+  /** «+» у заголовка «Проекты» (виден при наведении) */
+  onNewProject: () => void
+  /** Правая кнопка на проекте: меню проекта у курсора */
+  onProjectMenu: (id: string, x: number, y: number) => void
+  /** Сколько приглашений ждёт ответа: число в меню пользователя и точка у имени */
+  invitesCount: number
+  onOpenInvites: () => void
+  onOpenArchive: () => void
 }
 
 export function Sidebar({
@@ -77,6 +86,11 @@ export function Sidebar({
   onLogout,
   connection,
   serverUrl,
+  onNewProject,
+  onProjectMenu,
+  invitesCount,
+  onOpenInvites,
+  onOpenArchive,
 }: SidebarProps) {
   const userButton = useRef<HTMLButtonElement>(null)
   return (
@@ -107,6 +121,7 @@ export function Sidebar({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div
+          className="proj-head"
           style={{
             fontSize: 11,
             fontWeight: 700,
@@ -117,10 +132,20 @@ export function Sidebar({
           }}
         >
           Проекты
+          <IconButton className="proj-add" icon="plus" small label="Новый проект" onClick={onNewProject} />
         </div>
         <nav aria-label="Проекты" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {projects.map((p) => (
-            <button key={p.id} className={cx('nav', projectId === p.id && 'cur')} type="button" onClick={() => onProject(p.id)}>
+            <button
+              key={p.id}
+              className={cx('nav', projectId === p.id && 'cur')}
+              type="button"
+              onClick={() => onProject(p.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                onProjectMenu(p.id, e.clientX, e.clientY)
+              }}
+            >
               <Sq color={p.color} />
               <span>{p.name}</span>
             </button>
@@ -152,7 +177,10 @@ export function Sidebar({
               {connection && <ConnectionDot status={connection} />}
             </span>
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-              <strong style={{ fontSize: 14 }}>{user.name}</strong>
+              <strong style={{ fontSize: 14 }}>
+                {user.name}
+                {invitesCount > 0 && <span className="invite-dot" role="img" aria-label="Есть приглашения в проекты" />}
+              </strong>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{user.role}</span>
             </span>
           </button>
@@ -178,6 +206,19 @@ export function Sidebar({
               <MenuItem onClick={() => onOpenSettings(userButton.current)}>
                 <Icon name="gear" sm />
                 Настройки
+              </MenuItem>
+              <MenuItem onClick={onOpenInvites}>
+                <Icon name="user" sm />
+                Приглашения
+                {invitesCount > 0 && (
+                  <span style={{ marginLeft: 'auto' }}>
+                    <Count>{invitesCount}</Count>
+                  </span>
+                )}
+              </MenuItem>
+              <MenuItem onClick={onOpenArchive}>
+                <Icon name="folder" sm />
+                Архив проектов
               </MenuItem>
               <MenuItem onClick={onToggleTheme}>
                 <Icon name={dark ? 'sun' : 'moon'} sm />

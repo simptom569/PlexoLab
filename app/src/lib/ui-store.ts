@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { PageId } from './pages'
+import type { ProjectDialog, ProjectMenu, ProjectTab } from './project-dialogs'
 import type { SettingsTab } from './settings-tabs'
 import {
   DEFAULT_DISPLAY,
@@ -38,6 +39,10 @@ type UiState = Persisted & {
   confirm: string | null
   /** Открытое окно настроек: выбранная категория, null — окно закрыто */
   settingsTab: SettingsTab | null
+  /** Открытое окно проектов (новый проект, настройки проекта, приглашения, архив), null — закрыто */
+  projectDialog: ProjectDialog | null
+  /** Меню проекта по правой кнопке */
+  projectMenu: ProjectMenu | null
 
   setPage: (page: PageId) => void
   setProject: (project: string) => void
@@ -53,6 +58,11 @@ type UiState = Persisted & {
   openSettings: (tab?: SettingsTab) => void
   closeSettings: () => void
   setSettingsTab: (tab: SettingsTab) => void
+  openProjectDialog: (dialog: ProjectDialog) => void
+  closeProjectDialog: () => void
+  setProjectTab: (tab: ProjectTab) => void
+  openProjectMenu: (menu: ProjectMenu) => void
+  closeProjectMenu: () => void
   setQuery: (q: string) => void
   openTask: (id: string, options?: { focusTitle?: boolean }) => void
   closeTask: () => void
@@ -87,6 +97,8 @@ export const useUi = create<UiState>()((set) => ({
   focusTitle: false,
   confirm: null,
   settingsTab: null,
+  projectDialog: null,
+  projectMenu: null,
 
   setPage: (page) => set({ page, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setProject: (project) => set({ project, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
@@ -98,9 +110,15 @@ export const useUi = create<UiState>()((set) => ({
   setLive: (live) => set({ live }),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
-  openSettings: (tab = 'account') => set({ settingsTab: tab, menu: null }),
+  openSettings: (tab = 'account') => set({ settingsTab: tab, projectDialog: null, menu: null }),
   closeSettings: () => set({ settingsTab: null }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),
+  openProjectDialog: (projectDialog) => set({ projectDialog, settingsTab: null, projectMenu: null, menu: null, confirm: null }),
+  closeProjectDialog: () => set({ projectDialog: null, confirm: null }),
+  setProjectTab: (tab) =>
+    set((s) => (s.projectDialog?.kind === 'settings' ? { projectDialog: { ...s.projectDialog, tab }, confirm: null } : {})),
+  openProjectMenu: (projectMenu) => set({ projectMenu, menu: null }),
+  closeProjectMenu: () => set({ projectMenu: null, confirm: null }),
   setQuery: (q) => set({ q }),
   openTask: (id, options) => set({ openTaskId: id, confirmDelete: false, focusTitle: !!options?.focusTitle }),
   closeTask: () => set({ openTaskId: null, confirmDelete: false, focusTitle: false }),

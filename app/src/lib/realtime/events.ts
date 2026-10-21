@@ -52,6 +52,7 @@ const ALL_TASKS: QueryKey = ['task']
 const ALL_RELEASES: QueryKey = ['releases']
 const ALL_WIKI_PAGES: QueryKey = ['wiki-page']
 const ALL_DOCS: QueryKey = ['doc']
+const ALL_MEMBERS: QueryKey = ['members']
 
 /**
  * Какие запросы перечитать. Запрос, который сейчас никто не смотрит, только помечается устаревшим и перечитается,
@@ -93,7 +94,7 @@ export function queryKeysFor(e: ServerEvent): QueryKey[] {
       return [keys.linkGroups]
     // проект, его настройки или состав участников изменились: список проектов (боковое меню) и его доска
     case 'project.changed':
-      return [keys.projects, ...board]
+      return [keys.projects, ...board, e.project_id ? keys.members(e.project_id) : ALL_MEMBERS]
     // чьё-то приглашение в проект появилось, принято или отозвано
     case 'invite.changed':
       return [keys.invites]

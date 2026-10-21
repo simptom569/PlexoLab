@@ -1,0 +1,106 @@
+/*
+  Дополнение к макету, по просьбе владельца (docs/PROJECTS.md, раздел 3): окна проектов, «+» у заголовка «Проекты» и
+  точка у имени в боковом меню. В макете их нет, поэтому всё собрано из его деталей и из окна «Настройки» (settings.css);
+  styles.css (копия макета) не менялся.
+
+  - Узкое окно (новый проект, приглашения, архив): те же фон, рамка, скругление и тень, что у .set-dialog, но без вкладок и
+    уже: 560px вместо 880px. Высота по содержимому, но не больше экрана (fit-content: у .set-dialog заданы inset и
+    position: fixed, и с height: auto окно растянулось бы на весь экран).
+  - «+» у заголовка «Проекты»: прозрачен, пока на заголовок не навели курсор или не поставили фокус, и лежит поверх, не
+    меняя размеров. Поэтому боковое меню в покое выглядит как в макете.
+  - Точка у имени: --accent, 8×8, как точка цвета у колонок (.dot). Есть только пока приглашения ждут ответа.
+*/
+.set-dialog.narrow {
+  width: min(560px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: min(600px, calc(100vh - 32px));
+}
+
+.set-dialog.narrow .set-main {
+  min-height: 0;
+}
+
+.proj-head {
+  position: relative;
+}
+
+.proj-add {
+  position: absolute;
+  top: -5px;
+  right: 2px;
+  opacity: 0;
+}
+
+.proj-head:hover .proj-add,
+.proj-add:focus-visible {
+  opacity: 1;
+}
+
+.invite-dot {
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.proj-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.proj-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.proj-row + .proj-row {
+  border-top: 1px solid var(--line);
+}
+
+.proj-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.proj-person > span:last-child {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.proj-person strong,
+.proj-person small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-person small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.proj-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tag-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

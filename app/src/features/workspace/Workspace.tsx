@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
 import { Toast } from '../../components/Toast'
-import { useBoard, useProjects, useUsers } from '../../lib/api/queries'
+import { Button } from '../../components/Button'
+import { EmptyState } from '../../components/Surfaces'
+import { useBoard, useMyInvites, useProjects, useUsers } from '../../lib/api/queries'
 import { queryClient } from '../../lib/query'
 import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
@@ -16,6 +18,7 @@ import { BoardPage } from '../board/BoardPage'
 import { TaskDrawer } from '../board/TaskDrawer'
 import { DocsScreen } from '../docs/DocsScreen'
 import { LinksPage } from '../links/LinksPage'
+import { ProjectDialogs } from '../projects/ProjectDialogs'
 import { ModulesPage } from '../modules/ModulesPage'
 import { ReleasesPage } from '../releases/ReleasesPage'
 import { WikiScreen } from '../wiki/WikiScreen'
@@ -40,9 +43,24 @@ export function Workspace() {
   const user = useSession((s) => s.user)
   const logout = useSession((s) => s.logout)
   const serverUrl = useSession((s) => s.serverUrl)
-  const { page, project, menu, settingsTab, live, setPage, setProject, toggleTheme, toggleMenu, closeMenus, openSettings } = useUi()
+  const {
+    page,
+    project,
+    menu,
+    settingsTab,
+    live,
+    setPage,
+    setProject,
+    toggleTheme,
+    toggleMenu,
+    closeMenus,
+    openSettings,
+    openProjectDialog,
+    openProjectMenu,
+  } = useUi()
   const dark = useDark()
   const projects = useProjects()
+  const invites = useMyInvites()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient, live)
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
@@ -74,7 +92,14 @@ export function Workspace() {
   )
 
   // Окно настроек не должно пережить рабочее пространство: после выхода или потери входа оно не откроется само при следующем входе
-  useEffect(() => () => useUi.getState().closeSettings(), [])
+  useEffect(
+    () => () => {
+      useUi.getState().closeSettings()
+      useUi.getState().closeProjectDialog()
+      useUi.getState().closeProjectMenu()
+    },
+    [],
+  )
 
   // Esc закрывает открытое меню
   useEffect(() => {
@@ -100,6 +125,7 @@ export function Workspace() {
         <>
           {projectId ? <TaskDrawer projectId={projectId} /> : null}
           {settingsTab ? <SettingsModal tab={settingsTab} connection={connection} returnFocus={settingsOpener} /> : null}
+          <ProjectDialogs />
           <Toast />
         </>
       }
@@ -121,6 +147,11 @@ export function Workspace() {
             openSettings()
           }}
           serverUrl={serverUrl}
+          onNewProject={() => openProjectDialog({ kind: 'new' })}
+          onProjectMenu={(id, x, y) => openProjectMenu({ id, x, y })}
+          invitesCount={invites.data?.length ?? 0}
+          onOpenInvites={() => openProjectDialog({ kind: 'invites' })}
+          onOpenArchive={() => openProjectDialog({ kind: 'archive' })}
           connection={live ? connection : undefined}
           onLogout={() => {
             closeMenus() // иначе после следующего входа меню осталось бы открытым
@@ -133,6 +164,16 @@ export function Workspace() {
         <TeamPage />
       ) : ProjectPage && projectId ? (
         <ProjectPage key={`${page}:${projectId}`} projectId={projectId} />
+      ) : ProjectPage && list?.length === 0 ? (
+        <div style={{ padding: 32, maxWidth: 560 }}>
+          <EmptyState>
+            <p style={{ margin: '0 0 6px', fontWeight: 600, color: 'var(--ink)' }}>У вас пока нет проектов</p>
+            <p style={{ margin: '0 0 14px' }}>Создайте свой или попросите коллегу пригласить вас: приглашение появится в меню пользователя.</p>
+            <Button variant="primary" onClick={() => openProjectDialog({ kind: 'new' })}>
+              Создать проект
+            </Button>
+          </EmptyState>
+        </div>
       ) : null}
     </AppShell>
   )

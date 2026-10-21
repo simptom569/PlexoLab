@@ -2,7 +2,7 @@
 // Компоненты берут модель из контекста и не пересчитывают её сами.
 
 import { createContext, useContext, useMemo } from 'react'
-import { useBoard, useUsers } from '../../lib/api/queries'
+import { useBoard, useMembers, useUsers } from '../../lib/api/queries'
 import type { Board, Column, Module, Milestone, Tag, TaskCard, User } from '../../lib/api/types'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
@@ -19,6 +19,8 @@ export interface BoardModel {
   projectId: string
   me: User
   users: User[]
+  /** Участники проекта: только их можно назначить исполнителем (пока список не пришёл, все аккаунты) */
+  members: User[]
   usersById: Map<string, User>
   tagsById: Map<string, Tag>
   modulesById: Map<string, Module>
@@ -57,6 +59,7 @@ type Loaded = { status: 'loading' } | { status: 'error'; retry: () => void } | {
 export function useBoardModel(projectId: string): Loaded {
   const board = useBoard(projectId)
   const users = useUsers()
+  const memberList = useMembers(projectId)
   const me = useSession((s) => s.user)
   const filters = useUi((s) => s.filters)
   const query = useUi((s) => s.q)
@@ -94,6 +97,7 @@ export function useBoardModel(projectId: string): Loaded {
     projectId,
     me,
     users: userList,
+    members: memberList.data ? userList.filter((u) => memberList.data.members.some((m) => m.user_id === u.id)) : userList,
     ...base,
     shown,
     today,
