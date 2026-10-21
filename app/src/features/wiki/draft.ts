@@ -11,7 +11,7 @@
 
 import { ApiError } from '../../lib/api/client'
 import type { WikiPage } from '../../lib/api/types'
-import { mapRange, mergeText } from '../../lib/merge'
+import { mapRange, mergeText, trackBlock } from '../../lib/merge'
 import type { ActiveBlock } from '../../components/MarkdownEditor'
 
 /** Всё, что черновику нужно знать о странице или документе */
@@ -130,12 +130,17 @@ export class PageDraft<P extends Versioned = WikiPage> {
   }
 
   /**
-   * Новая версия с сервера (перечитали страницу): принимается, только если своих несохранённых правок нет.
+   * Новая версия с сервера (перечитали страницу): принимается, только если своих несохранённых правок нет. Блок,
+   * в котором стоял курсор, остаётся открытым там, куда его сдвинула чужая правка.
    * Иначе сохранение само разберётся: либо запишет правки поверх, либо получит 409.
    */
   adopt(page: P) {
     if (page.rev <= this.rev || this.dirty || this.inFlight || this.conflict) return
-    this.take(page)
+    // человек мог стоять курсором в блоке, ничего не набирая: редактор начнётся заново и должен открыть тот же блок,
+    // иначе фокус пропадёт, а следующие нажатия уйдут в пустоту
+    const active = this.probe?.() ?? null
+    const moved = active && trackBlock(this.saved.md, page.md, active.start, active.end)
+    this.take(page, moved && active ? { start: moved.start, end: moved.end, caret: active.caret } : null)
   }
 
   /** Страницу удалили: ждущие сохранения отменяются, чтобы не слать правки в никуда */
@@ -182,15 +187,15 @@ export class PageDraft<P extends Versioned = WikiPage> {
     this.timer = setTimeout(() => void this.save(), SAVE_DELAY_MS)
   }
 
-  /** Заменяет черновик версией с сервера */
-  private take(page: P) {
+  /** Заменяет черновик версией с сервера; `restore` — какой блок открыть в новом редакторе */
+  private take(page: P, restore: ActiveBlock | null = null) {
     const textChanged = page.md !== this.md
     this.rev = page.rev
     this.saved = { title: page.title, md: page.md }
     this.title = page.title
     this.md = page.md
     this.merges = 0
-    this.restore = null
+    this.restore = textChanged ? restore : null
     if (textChanged) this.resetKey++
     this.changed()
   }

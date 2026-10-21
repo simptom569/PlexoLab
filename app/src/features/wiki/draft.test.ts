@@ -347,10 +347,12 @@ describe('слияние при конфликте', () => {
     await t.draft.flush()
     expect(t.draft.getState().restore).not.toBeNull()
 
-    t.server.page = page({ rev: 4, md: 'Другое' })
-    t.draft.adopt(t.server.page)
-    t.draft.setMd('Чужое\n\nВторой\n\nТретий')
+    // сосед и я правим одну и ту же строку: слить нельзя, человек берёт чужую версию
+    t.server.page = page({ rev: 4, md: 'Новый\n\nПервый\n\nВторой\n\nТретий (сосед)' })
+    t.draft.setMd('Новый\n\nПервый\n\nВторой\n\nТретий (я, ещё)')
     await t.draft.flush()
+    expect(t.draft.getState().conflict).not.toBeNull()
+    t.draft.acceptTheirs()
     expect(t.draft.getState().restore).toBeNull()
   })
 })
@@ -411,6 +413,64 @@ describe('adopt: новая версия с сервера', () => {
     t.draft.setMd('Свежий и мой')
     await t.draft.flush()
     expect(t.calls).toEqual([{ rev: 3, md: 'Свежий и мой' }])
+  })
+
+  describe('открытый блок, пока чужая версия заменяет текст', () => {
+    const three = 'Первый\n\nВторой\n\nТретий'
+    // я стою курсором в третьем абзаце (строка 4) и ничего не набирал: своих правок нет
+    const standing = (md = three) => {
+      const t = setup(page({ md }))
+      t.draft.setActiveProbe(() => ({ start: 4, end: 5, caret: 2 }))
+      return t
+    }
+
+    it('чужой абзац выше: блок открывается на новом месте, курсор там же', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: `Новый\n\n${three}` }))
+      expect(t.draft.getState().md).toBe(`Новый\n\n${three}`)
+      expect(t.draft.getState().restore).toEqual({ start: 6, end: 7, caret: 2 })
+      expect(t.draft.getState().resetKey).toBe(1)
+    })
+
+    it('чужой абзац ниже: блок на месте', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: `${three}\n\nНовый` }))
+      expect(t.draft.getState().restore).toEqual({ start: 4, end: 5, caret: 2 })
+    })
+
+    it('сосед поправил именно мой блок: он остаётся открытым', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: 'Первый\n\nВторой\n\nТретий (сосед)' }))
+      expect(t.draft.getState().restore).toEqual({ start: 4, end: 5, caret: 2 })
+    })
+
+    it('сосед удалил мой блок: открывать нечего', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: 'Первый\n\nВторой' }))
+      expect(t.draft.getState().md).toBe('Первый\n\nВторой')
+      expect(t.draft.getState().restore).toBeNull()
+    })
+
+    it('редактор закрыт: восстанавливать нечего', () => {
+      const t = setup(page({ md: three }))
+      t.draft.setActiveProbe(() => null)
+      t.draft.adopt(page({ rev: 2, md: `Новый\n\n${three}` }))
+      expect(t.draft.getState().restore).toBeNull()
+      expect(t.draft.getState().resetKey).toBe(1)
+    })
+
+    it('текст не менялся (поменялось только название): редактор не пересоздаётся и блок не трогается', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: three, title: 'Другое название' }))
+      expect(t.draft.getState()).toMatchObject({ title: 'Другое название', resetKey: 0, restore: null })
+    })
+
+    it('когда редактор открыл блок, подсказка больше не нужна', () => {
+      const t = standing()
+      t.draft.adopt(page({ rev: 2, md: `Новый\n\n${three}` }))
+      t.draft.clearRestore()
+      expect(t.draft.getState().restore).toBeNull()
+    })
   })
 })
 

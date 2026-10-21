@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffLines, mapRange, merge3, mergeText, type Hunk } from './merge'
+import { diffLines, mapRange, merge3, mergeText, trackBlock, type Hunk } from './merge'
 
 const L = (text: string) => text.split('\n')
 const doc = (...paragraphs: string[]) => paragraphs.join('\n\n')
@@ -201,6 +201,76 @@ describe('карта строк', () => {
     const base = doc('A', 'B')
     const m = merge3(L(base), L(base), L(doc('A', 'B', 'C')))!
     expect(m.map).toEqual([0, 1, 2])
+  })
+})
+
+describe('trackBlock: куда перешёл открытый блок, когда текст заменили чужой версией', () => {
+  const base = doc('A', 'B', 'C') // строки: A, пустая, B, пустая, C; блок «C» — строки [4, 5)
+
+  it('чужой абзац добавлен выше: блок сдвинулся вниз', () => {
+    expect(trackBlock(base, doc('Новый', 'A', 'B', 'C'), 4, 5)).toEqual({ start: 6, end: 7 })
+    expect(trackBlock(base, doc('A', 'Новый', 'B', 'C'), 4, 5)).toEqual({ start: 6, end: 7 })
+    expect(trackBlock(base, doc('A', 'B', 'Новый', 'C'), 4, 5)).toEqual({ start: 6, end: 7 })
+  })
+
+  it('чужой абзац добавлен ниже или в конец: блок на месте', () => {
+    expect(trackBlock(base, doc('A', 'B', 'C', 'Новый'), 4, 5)).toEqual({ start: 4, end: 5 })
+    expect(trackBlock(doc('A', 'B'), doc('A', 'B', 'Новый'), 2, 3)).toEqual({ start: 2, end: 3 })
+  })
+
+  it('чужой абзац выше удалён: блок сдвинулся вверх', () => {
+    expect(trackBlock(base, doc('B', 'C'), 4, 5)).toEqual({ start: 2, end: 3 })
+  })
+
+  it('текст не менялся: блок на месте', () => {
+    expect(trackBlock(base, base, 2, 3)).toEqual({ start: 2, end: 3 })
+  })
+
+  it('чужая правка внутри блока: блок остаётся на месте, растёт или сжимается', () => {
+    expect(trackBlock(base, doc('A', 'B', 'C (сосед)'), 4, 5)).toEqual({ start: 4, end: 5 })
+    expect(trackBlock(base, doc('A', 'B', 'C\nC2'), 4, 5)).toEqual({ start: 4, end: 6 })
+    const list = '- a\n- b\n- c'
+    expect(trackBlock(list, '- a\n- NEW\n- b\n- c', 0, 3)).toEqual({ start: 0, end: 4 })
+    expect(trackBlock(list, '- a\n- c', 0, 3)).toEqual({ start: 0, end: 2 })
+  })
+
+  it('чужая правка заменила блок целиком: блок остаётся на месте замены', () => {
+    expect(trackBlock(base, doc('A', 'B', 'Другое'), 4, 5)).toEqual({ start: 4, end: 5 })
+    expect(trackBlock(base, doc('A', 'B', 'Другое\nещё строка'), 4, 5)).toEqual({ start: 4, end: 6 })
+  })
+
+  it('строки дописали вплотную к блоку, без пустой строки: они становятся частью блока', () => {
+    expect(trackBlock(base, doc('A', 'B', 'C\nC2'), 4, 5)).toEqual({ start: 4, end: 6 })
+    expect(trackBlock(doc('A', 'B'), doc('A', 'X\nB'), 2, 3)).toEqual({ start: 2, end: 4 })
+  })
+
+  it('блок удалён: восстанавливать нечего', () => {
+    expect(trackBlock(base, doc('A', 'B'), 4, 5)).toBeNull()
+    expect(trackBlock(base, '', 4, 5)).toBeNull()
+  })
+
+  it('тексты слишком велики для сравнения: восстанавливать нечего', () => {
+    const lines = (prefix: string) => Array.from({ length: 2100 }, (_, i) => `${prefix}${i}`).join('\n')
+    expect(trackBlock(lines('a'), lines('b'), 5, 6)).toBeNull()
+  })
+
+  it('любые чужие правки вокруг: текст блока остаётся тем же, где бы он ни оказался', () => {
+    const rand = rng(23)
+    for (let round = 0; round < 600; round++) {
+      const n = 3 + Math.floor(rand() * 7)
+      const open = Math.floor(rand() * n)
+      const paragraphs: Doc = Array.from({ length: n }, (_, i) => `p${i}`)
+      const theirs: Doc = []
+      paragraphs.forEach((p, i) => {
+        const kind = i === open ? 0 : Math.floor(rand() * 4)
+        if (kind === 1) theirs.push(`заменён${i}`)
+        else if (kind !== 2) theirs.push(p)
+        if (kind === 3) theirs.push(`добавлен${i}`)
+      })
+      const found = trackBlock(text(paragraphs), text(theirs), 2 * open, 2 * open + 1)
+      expect(found, JSON.stringify({ paragraphs, theirs, open })).not.toBeNull()
+      expect(L(text(theirs)).slice(found!.start, found!.end), JSON.stringify({ paragraphs, theirs, open })).toEqual([`p${open}`])
+    }
   })
 })
 

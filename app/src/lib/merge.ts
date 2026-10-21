@@ -14,6 +14,8 @@ export type Hunk = { start: number; end: number; lines: string[] }
 
 /** Сравнение строк стоит памяти n×m: для очень больших тексов слияние не пробуем, остаётся выбор человека */
 const MAX_CELLS = 4_000_000
+/** Вес совпавшей строки с текстом при сравнении, пустая строка весит 1. Должен быть больше числа пустых строк, которые могут совпасть (при лимите `MAX_CELLS` их не больше 2000). */
+const TEXT_WEIGHT = 4096
 
 const sameLines = (a: string[], b: string[]) => a.length === b.length && a.every((line, i) => line === b[i])
 const same = (a: Hunk, b: Hunk) => a.start === b.start && a.end === b.end && sameLines(a.lines, b.lines)
@@ -35,12 +37,17 @@ export function diffLines(base: string[], other: string[]): Hunk[] | null {
   if (m === 0) return [{ start: head, end: baseEnd, lines: [] }]
   if ((n + 1) * (m + 1) > MAX_CELLS) return null
 
-  // lcs[i][j]: длина наибольшей общей части хвостов base[head+i..] и other[head+j..]
+  // lcs[i][j]: вес наибольшей общей части хвостов base[head+i..] и other[head+j..]. Пустые строки есть между всеми абзацами
+  // и совпадают с любой другой пустой, поэтому весят меньше: при равной длине побеждает сравнение, в котором совпали
+  // абзацы, а не пустые строки (иначе добавленный рядом абзац «перетягивал» совпадение у соседнего)
   const w = m + 1
   const lcs = new Int32Array((n + 1) * w)
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      lcs[i * w + j] = base[head + i] === other[head + j] ? lcs[(i + 1) * w + j + 1] + 1 : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1])
+      lcs[i * w + j] =
+        base[head + i] === other[head + j]
+          ? lcs[(i + 1) * w + j + 1] + (base[head + i].trim() ? TEXT_WEIGHT : 1)
+          : Math.max(lcs[(i + 1) * w + j], lcs[i * w + j + 1])
     }
   }
 
@@ -221,6 +228,37 @@ export function mergeText(base: string, mine: string, theirs: string): MergedTex
   const theirLines = theirs.split('\n')
   const merged = merge3(baseLines, mineLines, theirLines)
   return merged && { md: merged.lines.join('\n'), map: merged.map }
+}
+
+/**
+ * Куда перешёл блок строк `[start, end)` текста `base`, когда его целиком заменили версией `theirs` (своих правок нет,
+ * сливать нечего). Вставка выше блока сдвигает его, правка внутри растягивает или сжимает, а если чужая правка заменила
+ * блок целиком, он остаётся на месте замены. `null`, если блок удалён или тексты слишком велики для сравнения.
+ */
+export function trackBlock(base: string, theirs: string, start: number, end: number): { start: number; end: number } | null {
+  const hunks = diffLines(base.split('\n'), theirs.split('\n'))
+  if (!hunks) return null
+  // граница между строками основы → граница в чужой версии
+  const cross = (p: number, isEnd: boolean) => {
+    let delta = 0
+    for (const h of hunks) {
+      if (h.start < p && p < h.end) return h.start + delta + (isEnd ? h.lines.length : 0)
+      if (h.start === p && h.end === p) {
+        // вставка ровно на границе: строки вплотную к блоку, без пустой строки между, становятся его частью, остальное
+        // (новый абзац) лежит выше блока и сдвигает его или ниже блока и его не задевает
+        const next = isEnd ? h.lines : [...h.lines].reverse()
+        const gap = next.findIndex((line) => !line.trim())
+        const attached = gap < 0 ? next.length : gap
+        return isEnd ? p + delta + attached : p + delta + h.lines.length - attached
+      }
+      if (h.end > p) break
+      delta += h.lines.length - (h.end - h.start)
+    }
+    return p + delta
+  }
+  const first = cross(start, false)
+  const last = cross(end, true)
+  return last > first ? { start: first, end: last } : null
 }
 
 /** Куда перешёл блок строк `[start, end)` моей версии; `null`, если все его строки убрала чужая правка */
