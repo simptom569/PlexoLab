@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Avatar, Button, Chip, EmptyState, Tag } from '../../components'
-import { useActivity, useUsers } from '../../lib/api/queries'
+import { useActivity, useActivityActors, useMembers, useUsers } from '../../lib/api/queries'
 import type { ActivityEvent, User } from '../../lib/api/types'
 import { whenText } from '../../lib/date'
-import { effectiveWho, groupByDay, KIND_CHIPS, kindMeta } from './logic'
+import { effectiveWho, groupByDay, KIND_CHIPS, kindMeta, participantChoices } from './logic'
 import { useActivityStore } from './store'
 
 /** Начать грузить следующую страницу, когда до конца ленты остаётся столько пикселей */
@@ -34,9 +34,21 @@ export function ActivityPage({ projectId }: { projectId: string }) {
   const setWho = useActivityStore((s) => s.setWho)
   const setKind = useActivityStore((s) => s.setKind)
 
-  const who = effectiveWho(storedWho, users?.map((u) => u.id))
-  // пока список участников не пришёл, ленту не запрашиваем: сохранённого участника, возможно, уже нет
-  const feed = useActivity(projectId, who === 'all' ? null : who, kind === 'all' ? null : kind, !usersQuery.isPending)
+  // в списке «Участник»: участники проекта и все, у кого в ленте есть события (у кого нет ни того, ни другого, тех нет)
+  const members = useMembers(projectId)
+  const actors = useActivityActors(projectId)
+  const ready = !usersQuery.isPending && !members.isPending && !actors.isPending
+  const choices =
+    users && ready
+      ? participantChoices(
+          users,
+          members.data ? new Set(members.data.members.map((m) => m.user_id)) : null,
+          actors.data ? new Set(actors.data) : null,
+        )
+      : undefined
+  const who = effectiveWho(storedWho, choices?.map((u) => u.id))
+  // пока список участников не пришёл, ленту не запрашиваем: сохранённого участника, возможно, нет в этом проекте
+  const feed = useActivity(projectId, who === 'all' ? null : who, kind === 'all' ? null : kind, ready)
   const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = feed
 
   const events = data?.pages.flatMap((p) => p.items) ?? []
@@ -75,7 +87,7 @@ export function ActivityPage({ projectId }: { projectId: string }) {
           <Chip toggle on={who === 'all'} onClick={() => setWho('all')}>
             Все
           </Chip>
-          {(users ?? []).map((u) => (
+          {(choices ?? []).map((u) => (
             <Chip key={u.id} toggle on={who === u.id} onClick={() => setWho(u.id)}>
               {u.name}
             </Chip>
@@ -113,7 +125,7 @@ export function ActivityPage({ projectId }: { projectId: string }) {
             </div>
           </EmptyState>
         )}
-        {!feed.isError && (feed.isPending || usersQuery.isPending) && <EmptyState>Загружаю ленту…</EmptyState>}
+        {!feed.isError && (feed.isPending || !ready) && <EmptyState>Загружаю ленту…</EmptyState>}
         {data && groups.length === 0 && <EmptyState>{filtered ? 'Под такие фильтры событий нет' : 'Событий пока нет'}</EmptyState>}
         {isFetchingNextPage && (
           <span className="sr" role="status">

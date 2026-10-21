@@ -489,6 +489,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{id}/activity/actors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Кто есть в ленте проекта
+         * @description Все, у кого есть события в ленте (проекта и общие), независимо от фильтров. Клиент собирает из них и из участников
+         *     проекта список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события.
+         */
+        get: operations["activity_actors"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{id}/archive": {
         parameters: {
             query?: never;
@@ -1769,7 +1790,7 @@ export interface components {
             key?: string | null;
             /**
              * Format: uuid
-             * @description Ответственный; `null` — не назначен
+             * @description Ответственный: участник проекта (прежнего, вышедшего из проекта, оставить можно); `null` — не назначен
              */
             lead_id?: string | null;
             note?: string | null;
@@ -3609,6 +3630,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    activity_actors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Идентификаторы людей, у которых есть события в ленте */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description Нет действительного токена */

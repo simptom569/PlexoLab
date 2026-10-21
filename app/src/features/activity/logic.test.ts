@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { activityPath } from '../../lib/api/queries'
 import type { ActivityEvent } from '../../lib/api/types'
 import { ACT_KINDS } from '../../lib/settings'
-import { effectiveWho, groupByDay, KIND_CHIPS, KIND_META, kindMeta } from './logic'
+import { effectiveWho, groupByDay, KIND_CHIPS, KIND_META, kindMeta, participantChoices } from './logic'
 
 const event = (id: string, at: Date, category = 'tasks'): ActivityEvent => ({
   id,
@@ -74,6 +74,27 @@ describe('groupByDay', () => {
   it('граница дня проходит по местной полуночи', () => {
     const groups = groupByDay([event('a', new Date(2026, 9, 18, 0, 1)), event('b', new Date(2026, 9, 17, 23, 59))], now)
     expect(groups.map((g) => g.heading)).toEqual(['Сегодня', 'Вчера'])
+  })
+})
+
+describe('participantChoices', () => {
+  const users = ['a', 'b', 'c', 'd'].map((id) => ({ id }))
+  const ids = (list: Array<{ id: string }>) => list.map((u) => u.id)
+
+  it('участники проекта и те, у кого в ленте есть события; остальных нет', () => {
+    expect(ids(participantChoices(users, new Set(['a']), new Set(['c'])))).toEqual(['a', 'c'])
+  })
+
+  it('вышедший остаётся, пока его события на месте, и пропадает без них', () => {
+    expect(ids(participantChoices(users, new Set(['a']), new Set(['d'])))).toEqual(['a', 'd'])
+    expect(ids(participantChoices(users, new Set(['a']), new Set()))).toEqual(['a'])
+  })
+
+  it('порядок как в списке аккаунтов, повторов нет, пока что-то не пришло — берётся то, что есть', () => {
+    expect(ids(participantChoices(users, new Set(['d', 'b']), new Set(['b', 'a'])))).toEqual(['a', 'b', 'd'])
+    expect(ids(participantChoices(users, null, new Set(['c'])))).toEqual(['c'])
+    expect(ids(participantChoices(users, new Set(['b']), null))).toEqual(['b'])
+    expect(participantChoices(users, null, null)).toEqual([])
   })
 })
 

@@ -7,6 +7,14 @@ import type { Filters, WeekStart } from '../../lib/settings'
 import { compareTaskKeys } from '../../lib/task-ids'
 
 /**
+ * Кого можно выбрать исполнителем задачи или ответственным модуля: участников проекта, а если текущий выбранный из
+ * проекта вышел, то и его (чтобы он не исчезал из карточки). Порядок как в списке аккаунтов.
+ */
+export function pickablePeople(users: User[], memberIds: ReadonlySet<string> | null, currentId: string | null | undefined): User[] {
+  return users.filter((u) => u.id === currentId || memberIds === null || memberIds.has(u.id))
+}
+
+/**
  * Кого предложить в фильтре «Исполнитель»: участников проекта и всех, у кого в проекте есть задачи. Вышедший или
  * убранный из проекта остаётся в списке, пока на нём есть задачи (чтобы посмотреть, что он делал), а у кого ни
  * членства, ни задач, того в списке нет. Порядок как в списке аккаунтов. `memberIds` — null, пока участники не пришли.

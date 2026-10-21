@@ -44,6 +44,8 @@ export const keys = {
   /** Все ленты активности (всех проектов, при любых фильтрах) */
   activity: ['activity'] as const,
   activityFeed: (projectId: string, actor: string | null, kind: string | null) => ['activity', projectId, actor, kind] as const,
+  /** Кто есть в ленте проекта; лежит под началом ключа ленты, поэтому новое событие перечитывает и его */
+  activityActors: (projectId: string) => ['activity', projectId, 'actors'] as const,
   /** Начало ключа групп ссылок всех проектов */
   linkGroups: ['link-groups'] as const,
   projectLinkGroups: (projectId: string) => ['link-groups', projectId] as const,
@@ -146,6 +148,10 @@ export const useActivity = (projectId: string, actor: string | null, kind: strin
     // события появляются от действий на других экранах: при каждом открытии ленты читаем её заново
     staleTime: 0,
   })
+
+/** Кто есть в ленте проекта: у кого в ней есть события (вместе с участниками проекта из них собирается список «Участник») */
+export const useActivityActors = (projectId: string) =>
+  useQuery({ queryKey: keys.activityActors(projectId), queryFn: () => api.get<string[]>(`/projects/${projectId}/activity/actors`), staleTime: 0 })
 
 /** Группы ссылок проекта вместе со ссылками */
 export const useLinkGroups = (projectId: string) =>

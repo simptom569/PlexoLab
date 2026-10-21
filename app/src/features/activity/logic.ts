@@ -49,5 +49,18 @@ export function groupByDay(events: readonly ActivityEvent[], now: Date = new Dat
  * Какой участник попадёт в запрос: сохранённый, пока такой есть в команде. Если его удалили (или список ещё не
  * пришёл), лента остаётся «Все», а сохранённое значение не стирается.
  */
+/**
+ * Кого предложить в фильтре «Участник»: участников проекта и всех, у кого в ленте есть события (вышедший остаётся,
+ * пока его события на месте; у кого нет ни членства, ни событий, того нет). Порядок как в списке аккаунтов.
+ * `null` значит «ещё не пришло».
+ */
+export function participantChoices<T extends { id: string }>(
+  users: readonly T[],
+  memberIds: ReadonlySet<string> | null,
+  actorIds: ReadonlySet<string> | null,
+): T[] {
+  return users.filter((u) => memberIds?.has(u.id) || actorIds?.has(u.id))
+}
+
 export const effectiveWho = (who: string, userIds: readonly string[] | undefined): string =>
   who === 'all' || !userIds || userIds.includes(who) ? who : 'all'

@@ -107,6 +107,7 @@ describe('queryKeysFor', () => {
     expect(keys.projectDocs('p1').slice(0, 1)).toEqual(keys.docs)
     expect(keys.docSearch('p1', 'x').slice(0, 1)).toEqual(keys.docs)
     expect(keys.activityFeed('p1', 'u', 'doc').slice(0, 1)).toEqual(keys.activity)
+    expect(keys.activityActors('p1').slice(0, 1)).toEqual(keys.activity)
     expect(keys.projectLinkGroups('p1').slice(0, 1)).toEqual(keys.linkGroups)
     expect(keys.board('p1').slice(0, 1)).toEqual(['board'])
     expect(keys.task('t1').slice(0, 1)).toEqual(['task'])

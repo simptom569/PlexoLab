@@ -99,7 +99,7 @@ function Fields({ task }: { task: TaskCard }) {
           Никто
         </Opt>
         {/* исполнителем назначают участников проекта; тот, кто уже назначен и вышел из проекта, остаётся виден */}
-        {m.users.filter((u) => u.id === task.assignee_id || m.members.some((x) => x.id === u.id)).map((u) => (
+        {m.pickable(task.assignee_id).map((u) => (
           <Opt key={u.id} on={task.assignee_id === u.id} onClick={() => update({ assignee_id: u.id })}>
             <Avatar name={u.name} tone={u.tone} size="sm" decorative />
             {u.name}

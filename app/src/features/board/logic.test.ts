@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Column, TaskCard, User } from '../../lib/api/types'
 import { EMPTY_FILTERS, type Filters } from '../../lib/settings'
 import {
-  assigneeChoices, calendarCells, doneColumnIds, dueInfo, ganttLabel, ganttRows, ganttStart, ganttTicks, ganttToday, isDone, isVisible, nextSort, NONE,
+  assigneeChoices, pickablePeople, calendarCells, doneColumnIds, dueInfo, ganttLabel, ganttRows, ganttStart, ganttTicks, ganttToday, isDone, isVisible, nextSort, NONE,
   shiftMonth, sortTasks, splitTasks,
 } from './logic'
 
@@ -95,6 +95,25 @@ describe('splitTasks', () => {
     const b = task({ column_id: null })
     const c = task({ column_id: undefined })
     expect(splitTasks([a, b, c])).toEqual({ onBoard: [a], backlog: [b, c] })
+  })
+})
+
+describe('кого можно выбрать исполнителем или ответственным', () => {
+  const user = (id: string): User => ({ id, email: id, name: id.toUpperCase(), role: '', tone: 0, is_admin: false })
+  const users = ['a', 'b', 'c'].map(user)
+  const ids = (list: User[]) => list.map((u) => u.id)
+
+  it('участники проекта', () => {
+    expect(ids(pickablePeople(users, new Set(['a', 'c']), null))).toEqual(['a', 'c'])
+  })
+
+  it('выбранный остаётся, даже если вышел из проекта', () => {
+    expect(ids(pickablePeople(users, new Set(['a']), 'b'))).toEqual(['a', 'b'])
+    expect(ids(pickablePeople(users, new Set(['a']), undefined))).toEqual(['a'])
+  })
+
+  it('пока участники не пришли, предлагаются все: список не бывает пустым', () => {
+    expect(ids(pickablePeople(users, null, null))).toEqual(['a', 'b', 'c'])
   })
 })
 

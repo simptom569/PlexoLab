@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Avatar, Button, DateField, EmptyState, Input, PageHead, Panel, ProgressBar, TitleInput } from '../../components'
+import { Avatar, Button, DateField, EmptyState, Input, PageHead, Panel, PersonSelect, ProgressBar, TitleInput } from '../../components'
 import type { Module, TaskCard, UpdateModule } from '../../lib/api/types'
 import { MODULE_STATUS_LABELS, NEXT_STATUS, type WorkStatus } from '../../lib/domain'
 import { isValidKey, KEY_RULE, normalizeKey } from '../../lib/project-dialogs'
@@ -45,13 +45,6 @@ function ModuleCard({ module }: { module: Module }) {
   const update = (patch: UpdateModule) => updateModule.mutate({ id: module.id, patch })
   const title = useDraftField(module.title, (next) => update({ title: next }))
   const note = useDraftField(module.note, (next) => update({ note: next }), { allowEmpty: true })
-
-  const lead = module.lead_id ? m.usersById.get(module.lead_id) : undefined
-  const leadIndex = m.users.findIndex((u) => u.id === module.lead_id)
-  const cycleLead = () => {
-    const next = m.users[(leadIndex + 1) % m.users.length]
-    if (next) update({ lead_id: next.id })
-  }
 
   const status = module.status as WorkStatus
   const pct = percent(module.tasks_done, module.tasks_total)
@@ -111,10 +104,15 @@ function ModuleCard({ module }: { module: Module }) {
         <ProgressBar ok={pct === 100} pct={pct} />
       </div>
       <div className="f-val" style={{ gap: 10 }}>
-        <button className="opt" type="button" title="Сменить ответственного" onClick={cycleLead}>
-          <Avatar name={lead?.name ?? null} tone={lead?.tone} size="sm" decorative />
-          {lead?.name ?? 'Не назначен'}
-        </button>
+        {/* ответственным назначают участников проекта; тот, кто уже назначен и вышел из проекта, остаётся в списке */}
+        <PersonSelect
+          value={module.lead_id ?? null}
+          people={m.pickable(module.lead_id)}
+          noneLabel="Не назначен"
+          label="Ответственный"
+          title="Сменить ответственного"
+          onChange={(id) => update({ lead_id: id })}
+        />
         <label style={{ fontSize: 12, color: 'var(--muted)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
           с
           <DateField
