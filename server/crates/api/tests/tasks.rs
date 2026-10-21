@@ -829,3 +829,75 @@ async fn comment_errors(pool: PgPool) {
     );
     assert_eq!(f.activity().await.len(), 1, "ошибки в ленту не попадают");
 }
+
+// ===== Id задачи: ключ ряда (docs/PROJECTS.md, раздел 4) =====
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_project_without_a_key_numbers_tasks_with_the_default_key(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    db::sqlx::query("update projects set key = null").execute(&f.c.pool).await.unwrap();
+
+    let a = f.task(Some(f.todo), "Первая").await;
+    let b = f.task(None, "Вторая").await;
+    assert_eq!((a["key"].as_str(), b["key"].as_str()), (Some("TASK-1"), Some("TASK-2")));
+
+    let board = f.board().await;
+    assert_eq!(board["project"]["key"], Value::Null, "ключ проекта в ответе пустой, а не подставленный TASK");
+    let keys: Vec<&str> = board["tasks"].as_array().unwrap().iter().map(|t| str_field(t, "key")).collect();
+    assert!(keys.contains(&"TASK-1") && keys.contains(&"TASK-2"), "{keys:?}");
+    assert_eq!(f.activity().await[0], ev("create", "TASK-1 Первая", "создана"));
+
+    let r = f.c.get("/api/v1/projects").await;
+    let projects = f.c.ok(r, StatusCode::OK).await;
+    assert_eq!(projects[0]["key"], Value::Null);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_task_in_a_module_series_is_labelled_with_the_module_key(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let in_project = f.task(Some(f.todo), "Остаётся в проекте").await;
+    let in_module = f.task(Some(f.todo), "Переехала в модуль").await;
+    assert_eq!((in_project["key"].as_str(), in_module["key"].as_str()), (Some("WEB-1"), Some("WEB-2")));
+
+    // смены ряда через API ещё нет (этап П4): ставим ряд напрямую, как это сделает сервер
+    let module: Uuid = db::sqlx::query_scalar(
+        "insert into modules (project_id, title, key, last_number) values ($1, 'SEO', 'SEO', 1) returning id",
+    )
+    .bind(f.project)
+    .fetch_one(&f.c.pool)
+    .await
+    .unwrap();
+    db::sqlx::query("update tasks set module_id = $1, series_module_id = $1, number = 1 where id = $2")
+        .bind(module)
+        .bind(id_of(&in_module))
+        .execute(&f.c.pool)
+        .await
+        .unwrap();
+
+    let board = f.board().await;
+    let key_of = |title: &str| {
+        board["tasks"].as_array().unwrap().iter().find(|t| t["title"] == title).map(|t| str_field(t, "key").to_owned())
+    };
+    assert_eq!(key_of("Переехала в модуль").as_deref(), Some("SEO-1"), "ключ модуля на карточке доски");
+    assert_eq!(key_of("Остаётся в проекте").as_deref(), Some("WEB-1"));
+
+    let detail = f.c.ok(f.c.get(&task_uri(&in_module)).await, StatusCode::OK).await;
+    assert_eq!((detail["key"].as_str(), detail["number"].as_i64()), (Some("SEO-1"), Some(1)));
+
+    // подпись в ленте тоже берётся из ряда
+    let r = f.c.post(&format!("{}/comments", task_uri(&in_module)), json!({ "body": "Привет" })).await;
+    f.c.ok(r, StatusCode::CREATED).await;
+    assert!(f.activity().await.contains(&ev("comment", "SEO-1 Переехала в модуль", "новый комментарий")));
+
+    // новая задача без модуля берёт номер из ряда проекта, ряд модуля его не трогает
+    let next = f.task(None, "Следующая").await;
+    assert_eq!(next["key"], "WEB-3");
+    assert_eq!(
+        db::sqlx::query_scalar::<_, i32>("select last_number from modules where id = $1")
+            .bind(module)
+            .fetch_one(&f.c.pool)
+            .await
+            .unwrap(),
+        1
+    );
+}

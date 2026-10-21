@@ -23,6 +23,7 @@ const TABLES: &[&str] = &[
     "releases",
     "subtasks",
     "tags",
+    "task_old_ids",
     "task_tags",
     "tasks",
     "users",
