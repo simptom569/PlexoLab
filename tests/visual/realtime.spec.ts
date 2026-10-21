@@ -258,8 +258,8 @@ test.describe('без лишних перезапросов', () => {
     const other = await secondClient(browser, { page: 'links' })
     try {
       await expect(sections(other.page)).toHaveCount(4)
-      const mine = countGets(page, '/api/v1/link-groups')
-      const theirs = countGets(other.page, '/api/v1/link-groups')
+      const mine = countGets(page, '/link-groups')
+      const theirs = countGets(other.page, '/link-groups')
 
       await page.getByLabel('Название новой группы', { exact: true }).fill('Одна группа')
       await page.getByLabel('Название новой группы', { exact: true }).press('Enter')
@@ -350,7 +350,7 @@ test.describe('обрыв связи', () => {
     await expect(dot(page)).toHaveAttribute('data-connection', 'offline')
 
     // пока связи нет, другой участник добавляет группу: событие мимо этого клиента
-    await api(page, '/link-groups', { method: 'POST', data: { title: 'Пока вас не было' } })
+    await api(page, `/projects/${(await webProject(page)).id}/link-groups`, { method: 'POST', data: { title: 'Пока вас не было' } })
     await page.waitForTimeout(1200)
     await expect(sections(page)).toHaveCount(4)
     expect(control.attempts, 'клиент уже пытался подключиться, паузы растут').toBeGreaterThan(1)
@@ -370,7 +370,7 @@ test.describe('обрыв связи', () => {
     await expect(dot(page)).toHaveAttribute('data-connection', 'open', { timeout: 6000 }) // подключился заново (первая пауза около секунды)
     expect(control.attempts).toBe(2)
 
-    await api(page, '/link-groups', { method: 'POST', data: { title: 'После обрыва' } })
+    await api(page, `/projects/${(await webProject(page)).id}/link-groups`, { method: 'POST', data: { title: 'После обрыва' } })
     await expect(sections(page)).toHaveCount(5, LIVE)
   })
 

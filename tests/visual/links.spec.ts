@@ -5,7 +5,7 @@ import { compareToReference, type Rect } from './compare'
 import { openApp, resetData } from './fixtures'
 import { textRects } from './helpers'
 import { MAX_DIFF_RATIO } from './tolerance'
-import { api } from './wiki-helpers'
+import { api, webProjectId } from './wiki-helpers'
 
 // Всё правее бокового меню: меню сверяется отдельно (sidebar.spec.ts)
 const MAIN: Rect = { x: 233, y: 0, width: 1207, height: 900 }
@@ -14,7 +14,7 @@ type Group = { id: string; title: string; links: Array<{ id: string; title: stri
 
 test.beforeEach(() => resetData())
 
-const groupsOnServer = (page: Page) => api<Group[]>(page, '/link-groups')
+const groupsOnServer = async (page: Page) => api<Group[]>(page, `/projects/${await webProjectId(page)}/link-groups`)
 
 async function openLinks(page: Page, theme: 'light' | 'dark' = 'light') {
   await openApp(page, { theme, settings: { page: 'links' } })

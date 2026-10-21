@@ -2,7 +2,7 @@
 
 import { expect, type Page } from '@playwright/test'
 import { openApp } from './fixtures'
-import { api } from './wiki-helpers'
+import { api, webProjectId } from './wiki-helpers'
 
 export type DocObject = { id: string; type: string; x: number; y: number; w: number; h: number; text: string; color: number }
 export type DocRow = {
@@ -19,7 +19,7 @@ export type DocRow = {
 }
 export type DocSummary = { id: string; title: string; snippet: string; mode: 'page' | 'edge'; starred: boolean; object_count: number; position: number }
 
-export const docSummaries = (page: Page) => api<DocSummary[]>(page, '/docs')
+export const docSummaries = async (page: Page) => api<DocSummary[]>(page, `/projects/${await webProjectId(page)}/docs`)
 export const docFull = (page: Page, id: string) => api<DocRow>(page, `/docs/${id}`)
 
 export async function docId(page: Page, title: string): Promise<string> {
@@ -30,7 +30,7 @@ export async function docId(page: Page, title: string): Promise<string> {
 
 /** Документ, созданный напрямую на сервере: так сценарий не зависит от остальных частей интерфейса */
 export async function makeDoc(page: Page, title: string, mode: 'page' | 'edge' = 'page', md = ''): Promise<string> {
-  return (await api<DocRow>(page, '/docs', { method: 'POST', data: { title, mode, md } })).id
+  return (await api<DocRow>(page, `/projects/${await webProjectId(page)}/docs`, { method: 'POST', data: { title, mode, md } })).id
 }
 
 /** Названия документов в порядке сервера */

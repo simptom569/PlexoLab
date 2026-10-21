@@ -10,6 +10,9 @@ import { api, token } from './wiki-helpers'
 // Всё правее бокового меню: меню сверяется отдельно (sidebar.spec.ts)
 const MAIN: Rect = { x: 233, y: 0, width: 1207, height: 900 }
 
+// запросы ленты к серверу; адрес вида /src/features/activity/… (модули приложения) сюда не относится
+const ACTIVITY_API = /\/api\/v1\/projects\/[0-9a-f-]+\/activity/
+
 test.beforeEach(() => resetData())
 
 async function openActivity(page: Page, theme: 'light' | 'dark' = 'light', settings: Record<string, unknown> = {}) {
@@ -187,7 +190,7 @@ test('сначала приходит 50 событий, остальные по
 
   const requests: string[] = []
   page.on('request', (r) => {
-    if (r.url().includes('/api/v1/activity')) requests.push(new URL(r.url()).search)
+    if (ACTIVITY_API.test(r.url())) requests.push(new URL(r.url()).search)
   })
   await openActivity(page)
 
@@ -210,7 +213,7 @@ test('сначала приходит 50 событий, остальные по
 test('фильтр сбрасывает постраничную загрузку: запрос идёт с фильтром, а не со старым курсором', async ({ page }) => {
   const requests: string[] = []
   page.on('request', (r) => {
-    if (r.url().includes('/api/v1/activity')) requests.push(new URL(r.url()).search)
+    if (ACTIVITY_API.test(r.url())) requests.push(new URL(r.url()).search)
   })
   await openActivity(page)
   await kind(page, 'Код').click()
@@ -225,7 +228,7 @@ test('фильтр сбрасывает постраничную загрузк�
 
 test('если сервер отказал, лента пишет об этом и «Повторить» загружает её', async ({ page }) => {
   let fail = true
-  await page.route('**/api/v1/activity**', (route) =>
+  await page.route('**/api/v1/projects/*/activity**', (route) =>
     fail ? route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ code: 'bad_request', message: 'нет' }) }) : route.continue(),
   )
   await openApp(page, { settings: { page: 'activity' } })

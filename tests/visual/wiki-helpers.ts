@@ -18,6 +18,10 @@ export async function api<T>(page: Page, path: string, init: { method?: 'GET' | 
   return res.status() === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
+/** «Web-приложение»: первый проект, в нём лежат демо-документы, ссылки и лента (документы и ссылки принадлежат проекту) */
+export const webProjectId = async (page: Page): Promise<string> =>
+  (await api<Array<{ id: string; key: string | null }>>(page, '/projects')).find((p) => p.key === 'WEB')!.id
+
 export type WikiNode = { id: string; title: string; parent_id: string | null; rev: number }
 export type WikiFull = WikiNode & { md: string }
 export type LibraryFile = { id: string; name: string; kind: string; size_bytes: number; folder_id: string | null; wiki_page_id: string | null; task_id: string | null }

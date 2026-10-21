@@ -33,3 +33,15 @@ export async function secondClient(
   await openApp(page, { email, theme, settings })
   return { page, close: () => context.close() }
 }
+
+/** Только код ответа сервера на запрос от имени человека: для проверок «нет доступа» */
+export async function statusAs(page: Page, email: string, path: string, init: Init = {}): Promise<number> {
+  const login = await page.request.post(`${SERVER}/api/v1/auth/login`, { data: { email, password: 'dev' } })
+  const { access_token } = (await login.json()) as { access_token: string }
+  const res = await page.request.fetch(`${SERVER}/api/v1${path}`, {
+    method: init.method ?? 'GET',
+    data: init.data,
+    headers: { Authorization: `Bearer ${access_token}` },
+  })
+  return res.status()
+}
