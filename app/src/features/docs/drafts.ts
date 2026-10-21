@@ -6,7 +6,6 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
 import type { Doc, SavedCanvas } from '../../lib/api/types'
-import { notifyMerged } from '../../lib/merged-notice'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -45,7 +44,6 @@ const docDeps: DraftDeps<Doc> = {
   patch: (id, body) => api.patch<Doc>(`/docs/${id}`, body),
   onSaved: cacheDocContent,
   onError: () => useToast.getState().show(SAVE_DOC_FAILED),
-  onMerged: (theirs) => notifyMerged(theirs.updated_by),
 }
 
 const canvasDeps: CanvasDraftDeps = {

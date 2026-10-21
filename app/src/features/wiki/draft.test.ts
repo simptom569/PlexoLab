@@ -41,7 +41,6 @@ function setup(initial: WikiPage = page()) {
     }),
     onSaved: vi.fn(),
     onError: vi.fn(),
-    onMerged: vi.fn(),
   }
   const draft = new PageDraft(initial, deps)
   return {
@@ -224,8 +223,6 @@ describe('слияние при конфликте', () => {
     expect(s).toMatchObject({ md: 'Первый (я)\n\nВторой\n\nТретий (сосед)', conflict: null })
     expect(s.resetKey, 'текст в редакторе заменился: он начинается заново').toBe(1)
     expect(t.draft.dirty).toBe(false)
-    expect(t.deps.onMerged).toHaveBeenCalledTimes(1)
-    expect(t.deps.onMerged).toHaveBeenCalledWith(expect.objectContaining({ rev: 2 }))
     expect(t.deps.onError).not.toHaveBeenCalled()
   })
 
@@ -238,10 +235,9 @@ describe('слияние при конфликте', () => {
     expect(t.draft.getState().conflict).toMatchObject({ rev: 2, md: 'Первый (сосед)\n\nВторой\n\nТретий' })
     expect(t.draft.getState()).toMatchObject({ md: 'Первый (я)\n\nВторой\n\nТретий', resetKey: 0 })
     expect(t.calls).toHaveLength(1)
-    expect(t.deps.onMerged).not.toHaveBeenCalled()
   })
 
-  it('мои правки уже есть в чужой версии: сохранять нечего, уведомления нет', async () => {
+  it('мои правки уже есть в чужой версии: сохранять нечего', async () => {
     const t = setup(page({ md: three }))
     t.server.page = page({ rev: 2, md: 'Первый (общий)\n\nВторой\n\nТретий' })
     t.draft.setMd('Первый (общий)\n\nВторой\n\nТретий')
@@ -250,7 +246,6 @@ describe('слияние при конфликте', () => {
     expect(t.calls).toHaveLength(1)
     expect(t.draft.getState()).toMatchObject({ conflict: null, md: 'Первый (общий)\n\nВторой\n\nТретий' })
     expect(t.draft.dirty).toBe(false)
-    expect(t.deps.onMerged).not.toHaveBeenCalled()
   })
 
   it('название поменял только сосед, текст только я: оба на месте', async () => {
@@ -303,7 +298,6 @@ describe('слияние при конфликте', () => {
       }),
       onSaved: vi.fn(),
       onError: vi.fn(),
-      onMerged: vi.fn(),
     }
     const draft = new PageDraft(page({ md: three }), deps)
     draft.setMd('Первый (я)\n\nВторой\n\nТретий')
@@ -311,7 +305,6 @@ describe('слияние при конфликте', () => {
 
     expect(calls).toHaveLength(MAX_MERGES + 1)
     expect(draft.getState().conflict).toMatchObject({ rev: MAX_MERGES + 2 })
-    expect(deps.onMerged).toHaveBeenCalledTimes(MAX_MERGES)
   })
 
   it('открытый блок и курсор переезжают вместе с текстом', async () => {

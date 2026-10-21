@@ -4,7 +4,6 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
 import type { WikiNode, WikiPage } from '../../lib/api/types'
-import { notifyMerged } from '../../lib/merged-notice'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
@@ -25,7 +24,6 @@ const deps: DraftDeps = {
   patch: (id, body) => api.patch<WikiPage>(`/wiki/${id}`, body),
   onSaved: cachePage,
   onError: () => useToast.getState().show(SAVE_PAGE_FAILED),
-  onMerged: (theirs) => notifyMerged(theirs.updated_by),
 }
 
 const drafts = new Map<string, PageDraft>()

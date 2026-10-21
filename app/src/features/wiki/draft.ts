@@ -42,8 +42,6 @@ export type DraftDeps<P extends Versioned = WikiPage> = {
   onSaved: (page: P) => void
   /** Сохранить не вышло: сообщить человеку (повтор запланирован) */
   onError: () => void
-  /** Мои правки склеены с чужой версией `theirs`: сообщить человеку */
-  onMerged?: (theirs: P) => void
 }
 
 const isConflict = <P extends Versioned>(e: unknown): e is ApiError & { body: { current: P } } =>
@@ -218,8 +216,6 @@ export class PageDraft<P extends Versioned = WikiPage> {
     const active = this.probe?.() ?? null
     const moved = active && mapRange(merged.map, active.start, active.end)
     const textChanged = merged.md !== this.md
-    // что-то моё осталось поверх чужого: об этом стоит сказать; если моё уже было в чужой версии, объединять нечего
-    const combined = merged.md !== theirs.md || title !== theirs.title
 
     this.merges++
     this.rev = theirs.rev
@@ -232,7 +228,6 @@ export class PageDraft<P extends Versioned = WikiPage> {
     }
     this.changed()
     this.again = true // сохранить объединённое сразу после текущего запроса
-    if (combined) this.deps.onMerged?.(theirs)
     return true
   }
 

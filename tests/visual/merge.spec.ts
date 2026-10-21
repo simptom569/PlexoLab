@@ -11,7 +11,8 @@ import { api, blocks, editor, expectSaved, makePage, openPageById, wikiPage } fr
 test.beforeEach(() => resetData())
 
 const THREE = 'Первый абзац\n\nВторой абзац\n\nТретий абзац'
-const notice = (page: Page) => page.getByRole('status').filter({ hasText: 'Объединено' })
+/** Прежнее всплывающее сообщение о слиянии: его больше нет, слияние тихое */
+const toast = (page: Page) => page.getByText(/Объединено с/)
 
 /** Второй человек (Артём) со страницей или документом; `live: false` — «слепой», со старой версией */
 async function second(browser: Browser, settings: Record<string, unknown>, label: string, live: boolean): Promise<{ page: Page; close: () => Promise<void> }> {
@@ -27,7 +28,7 @@ const blindSecond = (browser: Browser, settings: Record<string, unknown>, label:
 const liveSecond = (browser: Browser, settings: Record<string, unknown>, label: string) => second(browser, settings, label, true)
 
 test.describe('вики', () => {
-  test('правки в разных абзацах склеиваются: баннера нет, обе правки на месте, есть уведомление', async ({ page, browser }) => {
+  test('правки в разных абзацах склеиваются тихо: ни баннера, ни сообщения, обе правки на месте', async ({ page, browser }) => {
     const id = await makePage(page, 'Слияние', THREE)
     await openPageById(page, id)
     const second = await blindSecond(browser, { page: 'wiki', wikiPage: id }, 'Название страницы')
@@ -43,7 +44,7 @@ test.describe('вики', () => {
 
       await expectSaved(page, id, 'Первый абзац (второй)\n\nВторой абзац\n\nТретий абзац (первый)')
       await expect(second.page.getByRole('alert')).toHaveCount(0)
-      await expect(notice(second.page)).toHaveText('Объединено с правками: Лена М.')
+      await expect(toast(second.page)).toHaveCount(0)
       await expect(blocks(second.page)).toHaveText(['Первый абзац (второй)', 'Второй абзац', 'Третий абзац (первый)'])
       expect((await wikiPage(page, id)).rev).toBe(3)
     } finally {
@@ -62,7 +63,8 @@ test.describe('вики', () => {
 
       await blocks(second.page).nth(2).click()
       await second.page.keyboard.type(' (второй)')
-      await expect(notice(second.page)).toBeVisible()
+      // слияние прошло: чужой абзац появился выше (мой блок открыт, поэтому отрисованных блоков три, а не четыре)
+      await expect(blocks(second.page)).toHaveText(['Новый абзац', 'Первый абзац', 'Второй абзац'])
 
       // редактор пересоздан, но тот же блок снова открыт и курсор в конце: набор продолжается без щелчка
       await expect(editor(second.page)).toBeFocused()
@@ -91,7 +93,7 @@ test.describe('вики', () => {
       await second.page.keyboard.type('Второй новый')
       await second.page.keyboard.press('Escape')
       await expect(second.page.getByRole('alert')).toContainText('Страницу изменил другой участник')
-      await expect(notice(second.page)).toHaveCount(0)
+      await expect(toast(second.page)).toHaveCount(0)
       expect((await wikiPage(page, id)).md).toBe(`${THREE}\n\nПервый новый`)
     } finally {
       await second.close()
@@ -231,7 +233,8 @@ test.describe('документы', () => {
 
       await blocks(second.page).nth(2).click()
       await second.page.keyboard.type(' (второй)')
-      await expect(notice(second.page)).toBeVisible()
+      // слияние прошло: чужой абзац появился выше (мой блок открыт, поэтому отрисованных блоков три, а не четыре)
+      await expect(blocks(second.page)).toHaveText(['Новый абзац', 'Первый абзац', 'Второй абзац'])
       await expect(editor(second.page)).toBeFocused()
       await second.page.keyboard.type(' ещё')
       await second.page.keyboard.press('Escape')
