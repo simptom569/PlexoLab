@@ -1,9 +1,14 @@
-//! Ссылки команды: группы со ссылками. В ленту активности ничего не пишется (в макете этих действий там нет).
+//! Ссылки проекта: группы со ссылками. Список и создание группы идут по проекту, остальное по самой группе или ссылке:
+//! проект находится по ней, и человек должен быть его участником (`access`). В ленту активности ничего не пишется
+//! (в макете этих действий там нет).
 
 use std::collections::HashMap;
 
 use axum::{Json, extract::State, http::StatusCode};
-use db::links::{Group, Link};
+use db::{
+    links::{Group, Link},
+    sqlx::PgConnection,
+};
 use domain::{
     board,
     links::{self, MAX_DESCRIPTION_LEN, MAX_GROUP_TITLE_LEN, MAX_LINK_TITLE_LEN, MAX_URL_LEN},
@@ -14,6 +19,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
@@ -87,27 +93,42 @@ fn bad(message: impl Into<String>) -> ApiError {
     ApiError::BadRequest(message.into())
 }
 
+/// Группа и доступ к её проекту: блокирует проект и группу до конца транзакции
+async fn group_for_write(conn: &mut PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<Group> {
+    let group = db::links::get_group(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut *conn, auth, group.project_id).await?;
+    // пока ждали блокировку проекта, группу могли удалить: читаем заново с блокировкой строки
+    db::links::lock_group(conn, id).await?.ok_or(ApiError::NotFound)
+}
+
 fn clean_group_title(raw: &str) -> ApiResult<String> {
     board::clean_text(raw, MAX_GROUP_TITLE_LEN)
         .ok_or_else(|| bad(format!("Название группы: от 1 до {MAX_GROUP_TITLE_LEN} символов")))
 }
 
-/// Все группы со ссылками в порядке добавления
+/// Все группы проекта со ссылками в порядке добавления
 #[utoipa::path(
     get,
-    path = "/link-groups",
+    path = "/projects/{id}/link-groups",
     tag = "links",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Проект")),
     responses(
         (status = 200, description = "Группы вместе со ссылками", body = [LinkGroupDto]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )
 )]
-async fn list_groups(_auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<LinkGroupDto>>> {
+async fn list_groups(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
+) -> ApiResult<Json<Vec<LinkGroupDto>>> {
     let mut conn = state.pool.acquire().await?;
-    let groups = db::links::list_groups(&mut *conn).await?;
+    access::project(&mut *conn, auth, project_id).await?;
+    let groups = db::links::list_groups(&mut *conn, project_id).await?;
     let mut links: HashMap<Uuid, Vec<Link>> = HashMap::new();
-    for link in db::links::list_links(&mut *conn).await? {
+    for link in db::links::list_links(&mut *conn, project_id).await? {
         links.entry(link.group_id).or_default().push(link);
     }
     let list = groups
@@ -120,27 +141,32 @@ async fn list_groups(_auth: AuthUser, State(state): State<AppState>) -> ApiResul
     Ok(Json(list))
 }
 
-/// Новая пустая группа в конце списка
+/// Новая пустая группа в конце списка проекта
 #[utoipa::path(
     post,
-    path = "/link-groups",
+    path = "/projects/{id}/link-groups",
     tag = "links",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Проект")),
     request_body = CreateLinkGroup,
     responses(
         (status = 201, description = "Группа создана", body = LinkGroupDto),
         (status = 400, description = "Некорректный запрос", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )
 )]
 async fn create_group(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateLinkGroup>,
 ) -> ApiResult<(StatusCode, Json<LinkGroupDto>)> {
     let title = clean_group_title(&req.title)?;
-    let mut conn = state.pool.acquire().await?;
-    let group = db::links::insert_group(&mut conn, &title).await?;
+    let mut tx = state.pool.begin().await?;
+    access::project_locked(&mut tx, auth, project_id).await?;
+    let group = db::links::insert_group(&mut tx, project_id, &title).await?;
+    tx.commit().await?;
     Ok((StatusCode::CREATED, Json(LinkGroupDto::new(group, Vec::new()))))
 }
 
@@ -160,14 +186,15 @@ async fn create_group(
     )
 )]
 async fn update_group(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateLinkGroup>,
 ) -> ApiResult<Json<LinkGroupDto>> {
     let title = clean_group_title(&req.title)?;
     let mut tx = state.pool.begin().await?;
-    let group = db::links::rename_group(&mut tx, id, &title).await?.ok_or(ApiError::NotFound)?;
+    let group = group_for_write(&mut tx, auth, id).await?;
+    let group = db::links::rename_group(&mut tx, group.id, &title).await?.ok_or(ApiError::NotFound)?;
     let links = db::links::list_links_of(&mut *tx, id).await?;
     tx.commit().await?;
     Ok(Json(LinkGroupDto::new(group, links)))
@@ -187,12 +214,15 @@ async fn update_group(
     )
 )]
 async fn delete_group(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
-    let mut conn = state.pool.acquire().await?;
-    if db::links::delete_group(&mut conn, id).await? { Ok(StatusCode::NO_CONTENT) } else { Err(ApiError::NotFound) }
+    let mut tx = state.pool.begin().await?;
+    group_for_write(&mut tx, auth, id).await?;
+    let deleted = db::links::delete_group(&mut tx, id).await?;
+    tx.commit().await?;
+    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(ApiError::NotFound) }
 }
 
 /// Новая ссылка в конце группы. Адрес без `http://` и `https://` получает `https://`.
@@ -211,7 +241,7 @@ async fn delete_group(
     )
 )]
 async fn create_link(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(group_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateLink>,
@@ -226,7 +256,7 @@ async fn create_link(
     }
 
     let mut tx = state.pool.begin().await?;
-    db::links::lock_group(&mut tx, group_id).await?.ok_or(ApiError::NotFound)?;
+    group_for_write(&mut tx, auth, group_id).await?;
     let link = db::links::insert_link(&mut tx, group_id, &title, &url, description).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(link.into())))
@@ -246,10 +276,14 @@ async fn create_link(
     )
 )]
 async fn delete_link(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
-    let mut conn = state.pool.acquire().await?;
-    if db::links::delete_link(&mut conn, id).await? { Ok(StatusCode::NO_CONTENT) } else { Err(ApiError::NotFound) }
+    let mut tx = state.pool.begin().await?;
+    let project_id = db::links::project_of_link(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut tx, auth, project_id).await?;
+    let deleted = db::links::delete_link(&mut tx, id).await?;
+    tx.commit().await?;
+    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(ApiError::NotFound) }
 }

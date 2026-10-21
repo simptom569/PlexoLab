@@ -447,12 +447,14 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     }
 
     // ----- Документы и холст -----
+    // документы и ссылки принадлежат проекту: в сиде это первый проект, как после миграции 0014
+    let first_project = pick(&projects, PROJECTS[0].id)?;
     // порядок списка как в макете: первый документ вверху, дальше с шагом 1024
     for (i, d) in DOCS.iter().enumerate() {
         let author = user(d.who)?;
         let doc_id: Uuid = sqlx::query_scalar(
-            "insert into docs (title, md, mode, note_x, note_y, note_w, position, created_by, updated_by, updated_at) \
-             values ($1, $2, $3::doc_mode, $4, $5, $6, $7, $8, $8, $9) returning id",
+            "insert into docs (title, md, mode, note_x, note_y, note_w, position, created_by, updated_by, updated_at, project_id) \
+             values ($1, $2, $3::doc_mode, $4, $5, $6, $7, $8, $8, $9, $10) returning id",
         )
         .bind(d.title)
         .bind(d.md.join("\n"))
@@ -463,6 +465,7 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         .bind(1024.0 * (i as f64 + 1.0))
         .bind(author)
         .bind(ctx.noon(d.updated)?)
+        .bind(first_project)
         .fetch_one(&mut *c)
         .await?;
         r.docs += 1;
@@ -530,14 +533,16 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         r.files += 1;
     }
 
-    // ----- Ссылки команды -----
+    // ----- Ссылки проекта -----
     for (g, (title, links)) in LINK_GROUPS.iter().enumerate() {
-        let group_id: Uuid =
-            sqlx::query_scalar("insert into link_groups (title, position) values ($1, $2) returning id")
-                .bind(title)
-                .bind(1024.0 * (g as f64 + 1.0))
-                .fetch_one(&mut *c)
-                .await?;
+        let group_id: Uuid = sqlx::query_scalar(
+            "insert into link_groups (title, position, project_id) values ($1, $2, $3) returning id",
+        )
+        .bind(title)
+        .bind(1024.0 * (g as f64 + 1.0))
+        .bind(first_project)
+        .fetch_one(&mut *c)
+        .await?;
         r.link_groups += 1;
         for (i, (link_title, url, description)) in links.iter().enumerate() {
             sqlx::query("insert into links (group_id, title, url, description, position) values ($1, $2, $3, $4, $5)")

@@ -1,5 +1,5 @@
 //! Документы: название и текст с версией (`rev`), порядок в списке, звёздочки по пользователям и холст
-//! (объекты и стрелки). Список документов общий для команды, звёздочка у каждого своя.
+//! (объекты и стрелки). Документ принадлежит проекту, порядок в списке общий для его участников, звёздочка у каждого своя.
 
 use domain::{
     docs::{Link, Note, Object},
@@ -13,6 +13,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Doc {
     pub id: Uuid,
+    pub project_id: Uuid,
     pub title: String,
     pub md: String,
     /// page | edge
@@ -40,6 +41,7 @@ impl Doc {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DocListItem {
     pub id: Uuid,
+    pub project_id: Uuid,
     pub title: String,
     pub head: String,
     pub mode: String,
@@ -71,7 +73,7 @@ pub struct DocObject {
 macro_rules! select_doc {
     ($tail:literal) => {
         concat!(
-            "select d.id, d.title, d.md, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, d.rev, d.canvas_rev, ",
+            "select d.id, d.project_id, d.title, d.md, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, d.rev, d.canvas_rev, ",
             "d.created_by, d.updated_by, d.updated_at, ",
             "exists(select 1 from doc_stars s where s.doc_id = d.id and s.user_id = $1) as starred ",
             "from docs d ",
@@ -80,22 +82,23 @@ macro_rules! select_doc {
     };
 }
 
-/// Документы для списка в порядке `position`. `query` ищет по названию и тексту без учёта регистра (как макет),
+/// Документы проекта для списка в порядке `position`. `query` ищет по названию и тексту без учёта регистра (как макет),
 /// `starred_only` оставляет документы со звёздочкой `user`.
 pub async fn list<'e>(
     ex: impl PgExecutor<'e>,
+    project_id: Uuid,
     user: Uuid,
     query: Option<&str>,
     starred_only: bool,
     head_len: i32,
 ) -> Result<Vec<DocListItem>, sqlx::Error> {
     sqlx::query_as(concat!(
-        "select d.id, d.title, left(d.md, $4) as head, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, ",
+        "select d.id, d.project_id, d.title, left(d.md, $4) as head, d.mode::text as mode, d.note_x, d.note_y, d.note_w, d.position, ",
         "d.created_by, d.updated_at, ",
         "exists(select 1 from doc_stars s where s.doc_id = d.id and s.user_id = $1) as starred, ",
         "(select count(*) from doc_objects o where o.doc_id = d.id) as object_count ",
         "from docs d ",
-        "where ($2::text is null or position(lower($2) in lower(d.title)) > 0 or position(lower($2) in lower(d.md)) > 0) ",
+        "where d.project_id = $5 and ($2::text is null or position(lower($2) in lower(d.title)) > 0 or position(lower($2) in lower(d.md)) > 0) ",
         "and (not $3 or exists(select 1 from doc_stars s where s.doc_id = d.id and s.user_id = $1)) ",
         "order by d.position, d.id"
     ))
@@ -103,6 +106,7 @@ pub async fn list<'e>(
     .bind(query)
     .bind(starred_only)
     .bind(head_len)
+    .bind(project_id)
     .fetch_all(ex)
     .await
 }
@@ -116,15 +120,11 @@ pub async fn get_for_update(conn: &mut PgConnection, id: Uuid, user: Uuid) -> Re
     sqlx::query_as(select_doc!("where d.id = $2 for update of d")).bind(user).bind(id).fetch_optional(conn).await
 }
 
-/// Создание и перенос документов идут по очереди: позиции соседей считаются «в начало» и «между»
-pub async fn lock(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    sqlx::query("select pg_advisory_xact_lock(hashtext('docs_order'))").execute(conn).await?;
-    Ok(())
-}
-
-/// Новый документ в начало списка (как createDoc в макете)
+/// Новый документ в начало списка проекта (как createDoc в макете). Создание и перенос документов идут по очереди
+/// под блокировкой проекта: позиции соседей считаются «в начало» и «между».
 pub async fn insert(
     conn: &mut PgConnection,
+    project_id: Uuid,
     title: &str,
     md: &str,
     mode: &str,
@@ -132,8 +132,8 @@ pub async fn insert(
     user: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
     sqlx::query_scalar(concat!(
-        "insert into docs (title, md, mode, note_x, note_y, note_w, position, created_by, updated_by) ",
-        "values ($1, $2, $3::doc_mode, $4, $5, $6, coalesce((select min(position) from docs) - 1024, 1024), $7, $7) ",
+        "insert into docs (project_id, title, md, mode, note_x, note_y, note_w, position, created_by, updated_by) ",
+        "values ($8, $1, $2, $3::doc_mode, $4, $5, $6, coalesce((select min(position) from docs where project_id = $8) - 1024, 1024), $7, $7) ",
         "returning id"
     ))
     .bind(title)
@@ -143,6 +143,7 @@ pub async fn insert(
     .bind(note.y)
     .bind(note.w)
     .bind(user)
+    .bind(project_id)
     .fetch_one(conn)
     .await
 }
@@ -204,12 +205,15 @@ pub enum PlaceError {
     Db(#[from] sqlx::Error),
 }
 
-/// Ставит документ перед документом `before` (None: в конец списка). Меняет только место в списке:
+/// Ставит документ перед документом `before` (None: в конец списка его проекта). Меняет только место в списке:
 /// версия, текст и время правки не трогаются. Если документ уже стоит там, ничего не пишется.
-/// Вызывающий держит `lock`.
+/// Вызывающий держит блокировку проекта.
 pub async fn place(conn: &mut PgConnection, id: Uuid, before: Option<Uuid>) -> Result<(), PlaceError> {
     let all: Vec<(Uuid, f64)> =
-        sqlx::query_as("select id, position from docs order by position, id").fetch_all(&mut *conn).await?;
+        sqlx::query_as("select id, position from docs where project_id = (select project_id from docs where id = $1) order by position, id")
+            .bind(id)
+            .fetch_all(&mut *conn)
+            .await?;
     if let Some(i) = all.iter().position(|(k, _)| *k == id)
         && all.get(i + 1).map(|(k, _)| *k) == before
     {

@@ -165,12 +165,14 @@ impl From<DocObject> for ThumbObjectDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DocSummaryDto {
     pub id: Uuid,
+    /// Проект, которому принадлежит документ
+    pub project_id: Uuid,
     pub title: String,
     /// Первые строки текста без разметки через « · ». Пусто, если текста нет.
     pub snippet: String,
     pub mode: DocMode,
     pub note: NoteDto,
-    /// Порядок в списке: меньше — выше. Общий для всей команды.
+    /// Порядок в списке: меньше — выше. Общий для участников проекта.
     pub position: f64,
     /// Автор документа
     pub created_by: Option<Uuid>,
@@ -200,6 +202,7 @@ impl DocSummaryDto {
                 note: NoteDto { x: d.note_x, y: d.note_y, w: d.note_w },
                 thumb: by_doc.remove(&d.id).unwrap_or_default(),
                 id: d.id,
+                project_id: d.project_id,
                 title: d.title,
                 position: d.position,
                 created_by: d.created_by,
@@ -215,6 +218,8 @@ impl DocSummaryDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DocDto {
     pub id: Uuid,
+    /// Проект, которому принадлежит документ
+    pub project_id: Uuid,
     pub title: String,
     /// Весь текст документа одной строкой markdown
     pub md: String,
@@ -241,6 +246,7 @@ impl DocDto {
             note: doc.note().into(),
             mode: DocMode::from_db(&doc.mode),
             id: doc.id,
+            project_id: doc.project_id,
             title: doc.title,
             md: doc.md,
             position: doc.position,

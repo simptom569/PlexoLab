@@ -1,4 +1,5 @@
-//! Документы и холст. Название и текст живут под одной версией (`rev`): если за время правки их изменил другой
+//! Документы и холст проекта. Список и создание идут по проекту, остальное по самому документу: проект находится по нему,
+//! и человек должен быть его участником (`access`). Название и текст живут под одной версией (`rev`): если за время правки их изменил другой
 //! участник, сохранение отвечает 409 и отдаёт актуальную версию. Холст (объекты и стрелки) сохраняется целиком
 //! одним запросом, без версии: последнее сохранение побеждает. Запись в ленту активности делается в той же
 //! транзакции, что и действие.
@@ -10,7 +11,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use db::{
-    docs::{CanvasError, Patch, PlaceError},
+    docs::{CanvasError, Doc, Patch, PlaceError},
+    projects::Project,
     sqlx::PgConnection,
 };
 use domain::docs::{self, MAX_MD_LEN, MAX_TITLE_LEN, NEW_NOTE, Note, Object};
@@ -22,6 +24,7 @@ use super::docs_dto::{
     UpdateDoc,
 };
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, ApiQuery, AuthUser},
     state::AppState,
@@ -54,6 +57,33 @@ fn clean_md(raw: &str) -> ApiResult<String> {
     Ok(raw.replace("\r\n", "\n"))
 }
 
+/// Документ и его проект для чтения: человек должен быть участником проекта
+async fn doc_for_read(conn: &mut PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<(Doc, Project)> {
+    let doc = db::docs::get(&mut *conn, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project(&mut *conn, auth, doc.project_id).await?.project;
+    Ok((doc, project))
+}
+
+/// Документ и его проект для изменения: блокирует строку документа до конца транзакции, а с `lock_project` и проект
+/// (создание и перенос меняют порядок списка и идут по очереди)
+async fn doc_for_write(
+    conn: &mut PgConnection,
+    auth: AuthUser,
+    id: Uuid,
+    lock_project: bool,
+) -> ApiResult<(Doc, Project)> {
+    let doc = db::docs::get(&mut *conn, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    let project = if lock_project {
+        access::project_locked(&mut *conn, auth, doc.project_id).await?
+    } else {
+        access::project(&mut *conn, auth, doc.project_id).await?
+    }
+    .project;
+    // пока ждали блокировку проекта, документ могли удалить или изменить: читаем заново с блокировкой строки
+    let doc = db::docs::get_for_update(conn, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    Ok((doc, project))
+}
+
 /// Документ вместе с холстом
 async fn load(conn: &mut PgConnection, doc: db::docs::Doc) -> ApiResult<DocDto> {
     let objects = db::docs::objects_of(&mut *conn, &[doc.id]).await?;
@@ -61,35 +91,44 @@ async fn load(conn: &mut PgConnection, doc: db::docs::Doc) -> ApiResult<DocDto> 
     Ok(DocDto::build(doc, objects, links))
 }
 
-/// Документы в порядке списка, без текста
+/// Документы проекта в порядке списка, без текста
 ///
-/// Порядок общий для команды (его меняют перетаскиванием карточек), новые документы встают первыми. У каждого
+/// Порядок общий для участников проекта (его меняют перетаскиванием карточек), новые документы встают первыми. У каждого
 /// документа есть фрагмент текста и счётчик объектов холста; объекты для миниатюры приходят только у документов в
 /// режиме «Холст».
 #[utoipa::path(
     get,
-    path = "/docs",
+    path = "/projects/{id}/docs",
     tag = "docs",
     security(("bearer" = [])),
-    params(ListDocsQuery),
+    params(("id" = Uuid, Path, description = "Проект"), ListDocsQuery),
     responses(
         (status = 200, description = "Документы", body = [DocSummaryDto]),
         (status = 400, description = "Некорректные условия отбора", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )
 )]
 async fn list_docs(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
     ApiQuery(req): ApiQuery<ListDocsQuery>,
 ) -> ApiResult<Json<Vec<DocSummaryDto>>> {
     let query = req.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
     if query.is_some_and(|q| q.chars().count() > MAX_QUERY_LEN) {
         return Err(bad(format!("Поиск: не длиннее {MAX_QUERY_LEN} символов")));
     }
-    let items =
-        db::docs::list(&state.pool, auth.id, query, req.starred.unwrap_or(false), docs::SNIPPET_SOURCE_LEN as i32)
-            .await?;
+    access::project(&state.pool, auth, project_id).await?;
+    let items = db::docs::list(
+        &state.pool,
+        project_id,
+        auth.id,
+        query,
+        req.starred.unwrap_or(false),
+        docs::SNIPPET_SOURCE_LEN as i32,
+    )
+    .await?;
     let edge: Vec<Uuid> = items.iter().filter(|d| d.mode == "edge" && d.object_count > 0).map(|d| d.id).collect();
     let objects = if edge.is_empty() { Vec::new() } else { db::docs::objects_of(&state.pool, &edge).await? };
     Ok(Json(DocSummaryDto::build(items, objects)))
@@ -110,26 +149,29 @@ async fn list_docs(
 )]
 async fn get_doc(auth: AuthUser, State(state): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<Json<DocDto>> {
     let mut conn = state.pool.acquire().await?;
-    let doc = db::docs::get(&mut *conn, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    let (doc, _) = doc_for_read(&mut conn, auth, id).await?;
     Ok(Json(load(&mut conn, doc).await?))
 }
 
-/// Новый документ в начало списка. В ленту пишется «создан» или «создан как холст».
+/// Новый документ в начало списка проекта. В ленту проекта пишется «создан» или «создан как холст».
 #[utoipa::path(
     post,
-    path = "/docs",
+    path = "/projects/{id}/docs",
     tag = "docs",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Проект")),
     request_body = CreateDoc,
     responses(
         (status = 201, description = "Документ создан", body = DocDto),
         (status = 400, description = "Некорректный запрос", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )
 )]
 async fn create_doc(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateDoc>,
 ) -> ApiResult<(StatusCode, Json<DocDto>)> {
     let title = req.title.as_deref().map(clean_title).transpose()?.unwrap_or_default();
@@ -137,10 +179,17 @@ async fn create_doc(
     let mode = req.mode.unwrap_or(DocMode::Page);
 
     let mut tx = state.pool.begin().await?;
-    db::docs::lock(&mut tx).await?;
-    let id = db::docs::insert(&mut tx, &title, &md, mode.as_str(), NEW_NOTE, auth.id).await?;
-    db::activity::insert(&mut tx, auth.id, None, "doc", &docs::target(&title), docs::created_text(mode.as_str()))
-        .await?;
+    access::project_locked(&mut tx, auth, project_id).await?;
+    let id = db::docs::insert(&mut tx, project_id, &title, &md, mode.as_str(), NEW_NOTE, auth.id).await?;
+    db::activity::insert(
+        &mut tx,
+        auth.id,
+        Some(project_id),
+        "doc",
+        &docs::target(&title),
+        docs::created_text(mode.as_str()),
+    )
+    .await?;
     let doc = db::docs::get(&mut *tx, id, auth.id).await?.ok_or(ApiError::NotFound)?;
     let dto = load(&mut tx, doc).await?;
     tx.commit().await?;
@@ -186,11 +235,8 @@ async fn update_doc(
     let moving = req.before_id.is_some();
 
     let mut tx = state.pool.begin().await?;
-    if moving {
-        // перенос меняет позиции соседей: по очереди с созданием и другими переносами
-        db::docs::lock(&mut tx).await?;
-    }
-    let doc = db::docs::get_for_update(&mut tx, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    // перенос меняет позиции соседей: по очереди с созданием и другими переносами, то есть под блокировкой проекта
+    let (doc, _) = doc_for_write(&mut tx, auth, id, moving).await?;
 
     if content {
         if req.rev != Some(doc.rev) {
@@ -247,9 +293,9 @@ async fn delete_doc(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    let doc = db::docs::get_for_update(&mut tx, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    let (doc, project) = doc_for_write(&mut tx, auth, id, false).await?;
     db::docs::delete(&mut tx, id).await?;
-    db::activity::insert(&mut tx, auth.id, None, "doc", &docs::target(&doc.title), "удалён").await?;
+    db::activity::insert(&mut tx, auth.id, Some(project.id), "doc", &docs::target(&doc.title), "удалён").await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -275,7 +321,7 @@ async fn set_star(
     ApiJson(req): ApiJson<SetStar>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    db::docs::get_for_update(&mut tx, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    doc_for_write(&mut tx, auth, id, false).await?;
     db::docs::set_star(&mut tx, id, auth.id, req.starred).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
@@ -312,7 +358,7 @@ async fn put_canvas(
     docs::check_canvas(&note, &objects, &links).map_err(bad)?;
 
     let mut tx = state.pool.begin().await?;
-    db::docs::get_for_update(&mut tx, id, auth.id).await?.ok_or(ApiError::NotFound)?;
+    doc_for_write(&mut tx, auth, id, false).await?;
     db::docs::replace_canvas(&mut tx, id, note, &objects, &links, auth.id).await.map_err(|e| match e {
         CanvasError::ObjectTaken => bad("Идентификатор объекта уже занят объектом другого документа"),
         CanvasError::Db(e) => e.into(),

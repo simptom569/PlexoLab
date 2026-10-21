@@ -193,7 +193,7 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("PATCH",  "/wiki/{id}",                &[one("wiki.updated"), ACTIVITY]),
     ("DELETE", "/wiki/{id}",                &[one("wiki.updated"), all("file.changed"), ACTIVITY]),
     // документы и холст
-    ("POST",   "/docs",                     &[all("doc.updated"), ACTIVITY]),
+    ("POST",   "/projects/{id}/docs",       &[all("doc.updated"), ACTIVITY]),
     ("PATCH",  "/docs/{id}",                &[one("doc.updated"), ACTIVITY]),
     ("DELETE", "/docs/{id}",                &[one("doc.updated"), ACTIVITY]),
     ("PUT",    "/docs/{id}/canvas",         &[one("doc.canvas")]),
@@ -205,8 +205,8 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("DELETE", "/folders/{id}",             &[all("file.changed")]),
     // участники: человек поменял своё имя, подпись или цвет аватара; клиенты перечитывают список участников
     ("PATCH",  "/me",                       &[all("user.changed")]),
-    // ссылки команды
-    ("POST",   "/link-groups",              &[all("link.changed")]),
+    // ссылки проекта
+    ("POST",   "/projects/{id}/link-groups", &[all("link.changed")]),
     ("PATCH",  "/link-groups/{id}",         &[one("link.changed")]),
     ("DELETE", "/link-groups/{id}",         &[one("link.changed")]),
     ("POST",   "/link-groups/{id}/links",   &[one("link.changed")]),

@@ -11,8 +11,9 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
-    extract::{ApiQuery, AuthUser},
+    extract::{ApiPath, ApiQuery, AuthUser},
     state::AppState,
 };
 
@@ -25,7 +26,7 @@ pub struct ActivityDto {
     pub id: Uuid,
     /// Кто сделал
     pub actor_id: Uuid,
-    /// Проект события; у вики, документов и файлов библиотеки проекта нет
+    /// Проект события; у вики и файлов библиотеки проекта нет, они видны в ленте любого проекта
     pub project_id: Option<Uuid>,
     /// Категория для цветной метки: tasks | comment | code | doc | release | file | module
     #[schema(example = "tasks")]
@@ -75,27 +76,31 @@ fn cursor_of(e: &Event) -> Cursor {
     Cursor { micros: (e.created_at.unix_timestamp_nanos() / 1_000) as i64, id: e.id }
 }
 
-/// Лента событий команды
+/// Лента проекта
 ///
-/// События всех проектов, новые первыми. Фильтры «Участник» и «Тип события» сочетаются. Страница — 50 событий;
+/// События проекта и общие события без проекта (вики, файлы библиотеки), новые первыми. Фильтры «Участник» и «Тип
+/// события» сочетаются. Страница — 50 событий;
 /// пока есть более старые, в ответе приходит `next`, его передают как `before`.
 #[utoipa::path(
     get,
-    path = "/activity",
+    path = "/projects/{id}/activity",
     tag = "activity",
     security(("bearer" = [])),
-    params(ListActivityQuery),
+    params(("id" = Uuid, Path, description = "Проект"), ListActivityQuery),
     responses(
         (status = 200, description = "Страница ленты", body = ActivityPageDto),
         (status = 400, description = "Незнакомая категория или испорченный курсор", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )
 )]
 async fn list_activity(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(project_id): ApiPath<Uuid>,
     ApiQuery(query): ApiQuery<ListActivityQuery>,
 ) -> ApiResult<Json<ActivityPageDto>> {
+    access::project(&state.pool, auth, project_id).await?;
     let kinds = match query.kind.as_deref() {
         None => None,
         Some(category) => Some(activity::kinds_of(category).ok_or_else(|| {
@@ -114,7 +119,7 @@ async fn list_activity(
     };
 
     // на одно событие больше страницы: так видно, есть ли что-то дальше, без отдельного запроса
-    let mut events = db::activity::list(&state.pool, auth.id, query.actor, kinds, after, PAGE_SIZE + 1).await?;
+    let mut events = db::activity::list(&state.pool, project_id, query.actor, kinds, after, PAGE_SIZE + 1).await?;
     let more = events.len() as i64 > PAGE_SIZE;
     events.truncate(PAGE_SIZE as usize);
     let next = more.then(|| events.last().map(|e| cursor_of(e).encode())).flatten();
