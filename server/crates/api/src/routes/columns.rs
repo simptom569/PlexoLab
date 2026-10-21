@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use super::dto::{ColumnDto, CreateColumn, DeleteColumnQuery, UpdateColumn};
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, ApiQuery, AuthUser},
     state::AppState,
@@ -41,7 +42,7 @@ fn check_color(color: &str) -> ApiResult<()> {
     )
 )]
 async fn create_column(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(project_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateColumn>,
@@ -52,7 +53,7 @@ async fn create_column(
     }
 
     let mut tx = state.pool.begin().await?;
-    db::projects::lock(&mut tx, project_id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut tx, auth, project_id).await?;
     let existing = db::columns::list(&mut *tx, project_id).await?.len();
     let color = req.color.as_deref().unwrap_or_else(|| board::default_column_color(existing));
     let column = db::columns::insert(&mut tx, project_id, &title, color, req.is_done.unwrap_or(false)).await?;
@@ -76,7 +77,7 @@ async fn create_column(
     )
 )]
 async fn update_column(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateColumn>,
@@ -88,7 +89,7 @@ async fn update_column(
 
     let mut tx = state.pool.begin().await?;
     let column = db::columns::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
-    db::projects::lock(&mut tx, column.project_id).await?;
+    access::project_locked(&mut tx, auth, column.project_id).await?;
     // пока ждали блокировку, колонку могли удалить
     if db::columns::get(&mut *tx, id).await?.is_none() {
         return Err(ApiError::NotFound);
@@ -126,14 +127,14 @@ async fn update_column(
     )
 )]
 async fn delete_column(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiQuery(query): ApiQuery<DeleteColumnQuery>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     let column = db::columns::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
-    db::projects::lock(&mut tx, column.project_id).await?;
+    access::project_locked(&mut tx, auth, column.project_id).await?;
 
     let all = db::columns::list(&mut *tx, column.project_id).await?;
     if !all.iter().any(|c| c.id == id) {

@@ -92,7 +92,7 @@ fn cursor_of(e: &Event) -> Cursor {
     )
 )]
 async fn list_activity(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiQuery(query): ApiQuery<ListActivityQuery>,
 ) -> ApiResult<Json<ActivityPageDto>> {
@@ -114,7 +114,7 @@ async fn list_activity(
     };
 
     // на одно событие больше страницы: так видно, есть ли что-то дальше, без отдельного запроса
-    let mut events = db::activity::list(&state.pool, query.actor, kinds, after, PAGE_SIZE + 1).await?;
+    let mut events = db::activity::list(&state.pool, auth.id, query.actor, kinds, after, PAGE_SIZE + 1).await?;
     let more = events.len() as i64 > PAGE_SIZE;
     events.truncate(PAGE_SIZE as usize);
     let next = more.then(|| events.last().map(|e| cursor_of(e).encode())).flatten();

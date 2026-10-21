@@ -30,6 +30,14 @@ pub fn default_column_color(existing_columns: usize) -> &'static str {
 /// Префикс id задач, у которых нет ни ключа модуля, ни ключа проекта
 pub const DEFAULT_KEY: &str = "TASK";
 
+/// Колонки новой доски (название, цвет, «готово»): как в макете
+pub const DEFAULT_COLUMNS: [(&str, &str, bool); 4] = [
+    ("К выполнению", "muted", false),
+    ("В работе", "accent", false),
+    ("На ревью", "warn", false),
+    ("Готово", "ok", true),
+];
+
 /// Префикс id задачи (docs/PROJECTS.md, раздел 4.1): ключ модуля, если задача в его ряду, иначе ключ проекта,
 /// иначе `TASK`
 pub fn id_prefix<'a>(series_key: Option<&'a str>, project_key: Option<&'a str>) -> &'a str {

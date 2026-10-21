@@ -12,6 +12,7 @@ use tracing::Level;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
+pub mod access;
 pub mod config;
 pub mod cors;
 pub mod error;

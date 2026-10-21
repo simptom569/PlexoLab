@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use super::dto::{CreateRelease, CreateReleaseItem, ReleaseDto, ReleaseItemDto, UpdateRelease, UpdateReleaseItem};
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
@@ -49,18 +50,22 @@ fn target(release: &Release) -> String {
 }
 
 /// Находит релиз и блокирует его проект до конца транзакции
-async fn load_locked(conn: &mut PgConnection, id: Uuid) -> ApiResult<(Release, Project)> {
+async fn load_locked(conn: &mut PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<(Release, Project)> {
     let release = db::releases::get(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
-    let project = db::projects::lock(&mut *conn, release.project_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project_locked(&mut *conn, auth, release.project_id).await?.project;
     // пока ждали блокировку проекта, релиз могли удалить или изменить: читаем заново
     let release = db::releases::get(conn, id).await?.ok_or(ApiError::NotFound)?;
     Ok((release, project))
 }
 
 /// Находит шаг вместе с его релизом и блокирует проект
-async fn load_item_locked(conn: &mut PgConnection, id: Uuid) -> ApiResult<(ReleaseItem, Release, Project)> {
+async fn load_item_locked(
+    conn: &mut PgConnection,
+    auth: AuthUser,
+    id: Uuid,
+) -> ApiResult<(ReleaseItem, Release, Project)> {
     let item = db::releases::get_item(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
-    let (release, project) = load_locked(&mut *conn, item.release_id).await?;
+    let (release, project) = load_locked(&mut *conn, auth, item.release_id).await?;
     let item = db::releases::get_item(conn, id).await?.ok_or(ApiError::NotFound)?;
     Ok((item, release, project))
 }
@@ -86,12 +91,12 @@ async fn full(conn: &mut PgConnection, release: Release) -> ApiResult<ReleaseDto
     )
 )]
 async fn list_releases(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(project_id): ApiPath<Uuid>,
 ) -> ApiResult<Json<Vec<ReleaseDto>>> {
     let mut conn = state.pool.acquire().await?;
-    db::projects::get(&mut *conn, project_id).await?.ok_or(ApiError::NotFound)?;
+    access::project(&mut *conn, auth, project_id).await?;
     let releases = db::releases::list(&mut *conn, project_id).await?;
     let mut items: HashMap<Uuid, Vec<ReleaseItem>> = HashMap::new();
     for item in db::releases::list_items_for_project(&mut *conn, project_id).await? {
@@ -131,7 +136,7 @@ async fn create_release(
     let version = clean_version(&req.version)?;
 
     let mut tx = state.pool.begin().await?;
-    db::projects::lock(&mut tx, project_id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut tx, auth, project_id).await?;
     let release = db::releases::insert(&mut tx, project_id, &version, req.release_date).await?;
     for step in DEFAULT_RELEASE_STEPS {
         db::releases::insert_item(&mut tx, release.id, step).await?;
@@ -176,7 +181,7 @@ async fn update_release(
     }
 
     let mut tx = state.pool.begin().await?;
-    let (before, project) = load_locked(&mut tx, id).await?;
+    let (before, project) = load_locked(&mut tx, auth, id).await?;
     let release = db::releases::update(
         &mut tx,
         id,
@@ -214,7 +219,7 @@ async fn delete_release(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    let (release, project) = load_locked(&mut tx, id).await?;
+    let (release, project) = load_locked(&mut tx, auth, id).await?;
     db::releases::delete(&mut tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "release", &target(&release), "удалён").await?;
     tx.commit().await?;
@@ -239,7 +244,7 @@ async fn delete_release(
     )
 )]
 async fn create_item(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(release_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateReleaseItem>,
@@ -247,7 +252,7 @@ async fn create_item(
     let title = clean_step(&req.title)?;
 
     let mut tx = state.pool.begin().await?;
-    load_locked(&mut tx, release_id).await?;
+    load_locked(&mut tx, auth, release_id).await?;
     let item = db::releases::insert_item(&mut tx, release_id, &title).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(item.into())))
@@ -277,7 +282,7 @@ async fn update_item(
     let title = req.title.as_deref().map(clean_step).transpose()?;
 
     let mut tx = state.pool.begin().await?;
-    let (before, release, project) = load_item_locked(&mut tx, id).await?;
+    let (before, release, project) = load_item_locked(&mut tx, auth, id).await?;
     let item = db::releases::update_item(&mut tx, id, title.as_deref(), req.done).await?;
     if item.done && !before.done {
         let text = format!("отмечен шаг «{}»", item.title);
@@ -301,12 +306,12 @@ async fn update_item(
     )
 )]
 async fn delete_item(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    load_item_locked(&mut tx, id).await?;
+    load_item_locked(&mut tx, auth, id).await?;
     db::releases::delete_item(&mut tx, id).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)

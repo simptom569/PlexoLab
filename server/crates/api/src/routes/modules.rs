@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::dto::{CreateMilestone, CreateModule, MilestoneDto, ModuleDto, UpdateMilestone, UpdateModule};
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
@@ -53,17 +54,17 @@ fn milestone_target(title: &str) -> String {
 }
 
 /// Находит модуль и блокирует его проект до конца транзакции
-async fn load_module_locked(conn: &mut PgConnection, id: Uuid) -> ApiResult<(Module, Project)> {
+async fn load_module_locked(conn: &mut PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<(Module, Project)> {
     let module = db::modules::get_module(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
-    let project = db::projects::lock(&mut *conn, module.project_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project_locked(&mut *conn, auth, module.project_id).await?.project;
     // пока ждали блокировку проекта, модуль могли удалить или изменить: читаем заново
     let module = db::modules::get_module(conn, id).await?.ok_or(ApiError::NotFound)?;
     Ok((module, project))
 }
 
-async fn load_milestone_locked(conn: &mut PgConnection, id: Uuid) -> ApiResult<(Milestone, Project)> {
+async fn load_milestone_locked(conn: &mut PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<(Milestone, Project)> {
     let milestone = db::modules::get_milestone(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
-    let project = db::projects::lock(&mut *conn, milestone.project_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project_locked(&mut *conn, auth, milestone.project_id).await?.project;
     let milestone = db::modules::get_milestone(conn, id).await?.ok_or(ApiError::NotFound)?;
     Ok((milestone, project))
 }
@@ -94,7 +95,7 @@ async fn create_module(
     let title = module_title(&req.title)?;
 
     let mut tx = state.pool.begin().await?;
-    db::projects::lock(&mut tx, project_id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut tx, auth, project_id).await?;
     let module = db::modules::insert_module(&mut tx, project_id, &title, auth.id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project_id), "module", &module_target(&module.title), "создан").await?;
     tx.commit().await?;
@@ -141,7 +142,7 @@ async fn update_module(
     }
 
     let mut tx = state.pool.begin().await?;
-    let (before, project) = load_module_locked(&mut tx, id).await?;
+    let (before, project) = load_module_locked(&mut tx, auth, id).await?;
     if let Some(Some(lead)) = patch.lead
         && !db::users::exists(&mut *tx, lead).await?
     {
@@ -177,7 +178,7 @@ async fn delete_module(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    let (module, project) = load_module_locked(&mut tx, id).await?;
+    let (module, project) = load_module_locked(&mut tx, auth, id).await?;
     db::modules::delete_module(&mut tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "module", &module_target(&module.title), "удалён").await?;
     tx.commit().await?;
@@ -210,7 +211,7 @@ async fn create_milestone(
     let title = milestone_title(&req.title)?;
 
     let mut tx = state.pool.begin().await?;
-    db::projects::lock(&mut tx, project_id).await?.ok_or(ApiError::NotFound)?;
+    access::project_locked(&mut tx, auth, project_id).await?;
     let milestone = db::modules::insert_milestone(&mut tx, project_id, &title, req.due_date).await?;
     db::activity::insert(&mut tx, auth.id, Some(project_id), "release", &milestone_target(&milestone.title), "создана")
         .await?;
@@ -234,7 +235,7 @@ async fn create_milestone(
     )
 )]
 async fn update_milestone(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateMilestone>,
@@ -242,7 +243,7 @@ async fn update_milestone(
     let title = req.title.as_deref().map(milestone_title).transpose()?;
 
     let mut tx = state.pool.begin().await?;
-    load_milestone_locked(&mut tx, id).await?;
+    load_milestone_locked(&mut tx, auth, id).await?;
     let milestone = db::modules::update_milestone(&mut tx, id, title.as_deref(), req.due_date).await?;
     tx.commit().await?;
     Ok(Json(milestone.into()))
@@ -267,7 +268,7 @@ async fn delete_milestone(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    let (milestone, project) = load_milestone_locked(&mut tx, id).await?;
+    let (milestone, project) = load_milestone_locked(&mut tx, auth, id).await?;
     db::modules::delete_milestone(&mut tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "release", &milestone_target(&milestone.title), "удалена")
         .await?;

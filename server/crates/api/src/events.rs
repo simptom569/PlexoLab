@@ -6,7 +6,7 @@
 //! рассылается. Какие события даёт ручка, записано в таблице `TABLE`; тест сверяет её со схемой OpenAPI, поэтому новая
 //! ручка записи без строки в таблице не пройдёт тесты.
 
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use axum::{
     extract::{MatchedPath, RawPathParams, Request, State},
@@ -40,6 +40,49 @@ pub struct Event {
     pub project_id: Option<Uuid>,
     /// Метка клиента, который это сделал (заголовок `X-Client-Id`); он своё событие пропускает
     pub origin: Option<String>,
+    /// Кому событие доставляется. Клиенту не передаётся: фильтрует сервер (`ws`).
+    #[serde(skip)]
+    pub audience: Audience,
+}
+
+/// Кому доставляется событие (docs/PROJECTS.md, раздел 5): события проекта получают только его участники
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Audience {
+    /// Всем вошедшим: вики, документы, ссылки и другие общие данные
+    #[default]
+    Everyone,
+    /// Участникам проекта (и глобальным админам)
+    Project(Uuid),
+    /// Только этим людям, независимо от участия в проекте: приглашённому, исключённому
+    Users(Vec<Uuid>),
+}
+
+/// Что ручка сообщает слою событий о том, к кому относится изменение. Хранится на время одного запроса.
+#[derive(Debug, Clone, Default)]
+struct Hints {
+    project: Option<Uuid>,
+    users: Vec<Uuid>,
+}
+
+tokio::task_local! {
+    static HINTS: RefCell<Hints>;
+}
+
+/// Ручка сообщает, что изменение относится к этому проекту: событие уйдёт только его участникам.
+/// Вызывается при получении проекта через `access`, так что ручки делают это не вручную.
+pub fn note_project(project_id: Uuid) {
+    let _ = HINTS.try_with(|h| h.borrow_mut().project = Some(project_id));
+}
+
+/// Ручка сообщает, что событие нужно доставить ещё и этому человеку, даже если он не участник проекта
+/// (приглашённый, исключённый, принявший приглашение)
+pub fn note_user(user_id: Uuid) {
+    let _ = HINTS.try_with(|h| {
+        let mut h = h.borrow_mut();
+        if !h.users.contains(&user_id) {
+            h.users.push(user_id);
+        }
+    });
 }
 
 /// Канал, по которому события идут ко всем подключённым клиентам. Внутри одного процесса: сервер один.
@@ -69,21 +112,28 @@ impl Default for Events {
     }
 }
 
-/// Одно событие ручки: тип и берётся ли `id` из адреса (`{id}`)
+/// Одно событие ручки: тип, берётся ли `id` из адреса (`{id}`) и кому оно адресовано
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rule {
     pub kind: &'static str,
     pub with_id: bool,
+    /// Только людям, названным ручкой (`note_user`), а не участникам проекта
+    pub to_users: bool,
 }
 
 /// Событие без `id`: клиент перечитывает всё такого рода
 const fn all(kind: &'static str) -> Rule {
-    Rule { kind, with_id: false }
+    Rule { kind, with_id: false, to_users: false }
 }
 
 /// Событие с `id` из адреса
 const fn one(kind: &'static str) -> Rule {
-    Rule { kind, with_id: true }
+    Rule { kind, with_id: true, to_users: false }
+}
+
+/// Событие только названным людям (приглашения): остальным участникам проекта оно не нужно
+const fn users(kind: &'static str) -> Rule {
+    Rule { kind, with_id: false, to_users: true }
 }
 
 /// В ленту активности могла попасть запись
@@ -110,8 +160,20 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("DELETE", "/subtasks/{id}",            &[all("task.updated")]),
     ("POST",   "/tasks/{id}/comments",      &[one("comment.created"), ACTIVITY]),
     ("POST",   "/tasks/{id}/files",         &[one("task.updated"), all("file.changed"), ACTIVITY]),
-    ("POST",   "/tags",                     &[all("tag.changed")]),
+    ("POST",   "/projects/{id}/tags",       &[all("tag.changed")]),
+    ("PATCH",  "/tags/{id}",                &[one("tag.changed")]),
     ("DELETE", "/tags/{id}",                &[one("tag.changed"), all("task.updated")]),
+    // проекты, участники, приглашения: проект, список его участников или чьё-то приглашение изменились
+    ("POST",   "/projects",                 &[all("project.changed")]),
+    ("PATCH",  "/projects/{id}",            &[all("project.changed")]),
+    ("POST",   "/projects/{id}/archive",    &[all("project.changed")]),
+    ("POST",   "/projects/{id}/unarchive",  &[all("project.changed")]),
+    ("PATCH",  "/projects/{id}/members/{user_id}",  &[all("project.changed")]),
+    ("DELETE", "/projects/{id}/members/{user_id}",  &[all("project.changed")]),
+    ("POST",   "/projects/{id}/invites",    &[all("project.changed"), users("invite.changed")]),
+    ("DELETE", "/invites/{id}",             &[all("project.changed"), users("invite.changed")]),
+    ("POST",   "/invites/{id}/accept",      &[all("project.changed"), users("invite.changed")]),
+    ("POST",   "/invites/{id}/decline",     &[all("project.changed"), users("invite.changed")]),
     // модули, вехи, релизы
     ("POST",   "/projects/{id}/modules",    &[all("module.changed"), ACTIVITY]),
     ("PATCH",  "/modules/{id}",             &[one("module.changed"), ACTIVITY]),
@@ -177,18 +239,35 @@ pub async fn publish_events(
     let path = matched.as_str().to_owned();
     let id = params.iter().find(|(name, _)| *name == "id").and_then(|(_, value)| Uuid::parse_str(value).ok());
 
-    let response = next.run(request).await;
+    // ручка по ходу работы сообщает, к какому проекту и каким людям относится изменение (`note_project`, `note_user`)
+    let (response, hints) = HINTS
+        .scope(RefCell::new(Hints::default()), async {
+            let response = next.run(request).await;
+            let hints = HINTS.with(|h| h.borrow().clone());
+            (response, hints)
+        })
+        .await;
 
     if response.status().is_success() {
         // в адресах `/projects/{id}/...` идентификатор — проект, у остальных — сама запись
         let in_project = path.starts_with("/api/v1/projects/{id}/");
+        let project_id = hints.project.or(if in_project { id } else { None });
+        let for_project = project_id.map_or(Audience::Everyone, Audience::Project);
         for rule in rules(&method, &path) {
-            state.events.publish(Event {
+            let event = |audience: Audience| Event {
                 kind: rule.kind,
                 id: if rule.with_id && !in_project { id } else { None },
-                project_id: if in_project { id } else { None },
+                project_id,
                 origin: origin.clone(),
-            });
+                audience,
+            };
+            if !rule.to_users {
+                state.events.publish(event(for_project.clone()));
+            }
+            // названные люди получают событие, даже если они не участники проекта (приглашённый, исключённый)
+            if !hints.users.is_empty() {
+                state.events.publish(event(Audience::Users(hints.users.clone())));
+            }
         }
     }
     response

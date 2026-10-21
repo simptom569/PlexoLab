@@ -14,7 +14,10 @@
 //!    (сон ноутбука, смена сети), иначе осталась бы «живой» до таймаута TCP;
 //! 5. когда токен истекает, сервер закрывает соединение с кодом 4401, и клиент входит заново с новым токеном.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashSet,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use axum::{
     extract::{
@@ -30,7 +33,12 @@ use tokio::{
     time::{Instant, interval, sleep, timeout},
 };
 
-use crate::{events::Event, state::AppState};
+use uuid::Uuid;
+
+use crate::{
+    events::{Audience, Event},
+    state::AppState,
+};
 
 /// Токен не принят или истёк: клиент должен получить новый и подключиться заново
 pub const CLOSE_UNAUTHORIZED: u16 = 4401;
@@ -75,8 +83,8 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &'static str) {
     let _ = socket.send(Message::Close(Some(CloseFrame { code, reason: reason.into() }))).await;
 }
 
-/// Ждёт сообщение с токеном. `Some(срок действия токена)`, если вошли; иначе уже отправлено закрытие.
-async fn authenticate(socket: &mut WebSocket, state: &AppState) -> Option<u64> {
+/// Ждёт сообщение с токеном. `Some((срок действия токена, человек))`, если вошли; иначе уже отправлено закрытие.
+async fn authenticate(socket: &mut WebSocket, state: &AppState) -> Option<(u64, Uuid)> {
     loop {
         let message = socket.recv().await?.ok()?;
         let text = match message {
@@ -95,7 +103,7 @@ async fn authenticate(socket: &mut WebSocket, state: &AppState) -> Option<u64> {
             _ => None,
         };
         return match claims {
-            Some(claims) => Some(claims.exp),
+            Some(claims) => Some((claims.exp, claims.sub)),
             None => {
                 send_text(socket, UNAUTHORIZED).await;
                 close(socket, CLOSE_UNAUTHORIZED, "токен не принят").await;
@@ -110,8 +118,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
     let mut shutdown = state.shutdown.subscribe();
 
     // 1. вход
-    let expires_at = match timeout(realtime.auth_timeout, authenticate(&mut socket, &state)).await {
-        Ok(Some(exp)) => exp,
+    let (expires_at, user_id) = match timeout(realtime.auth_timeout, authenticate(&mut socket, &state)).await {
+        Ok(Some(who)) => who,
         Ok(None) => return,
         Err(_) => {
             close(&mut socket, CLOSE_TIMEOUT, "не дождались токена").await;
@@ -121,6 +129,9 @@ async fn session(mut socket: WebSocket, state: AppState) {
 
     // 2. подписка раньше, чем «ready»: ни одно событие после «ready» не потеряется
     let mut events = state.events.subscribe();
+    // проекты, события которых получает этот человек; обновляется, когда меняется состав участников
+    let mut visible = HashSet::new();
+    refresh(&mut visible, &state, user_id).await;
     if !send_text(&mut socket, READY).await {
         return;
     }
@@ -145,7 +156,7 @@ async fn session(mut socket: WebSocket, state: AppState) {
             }
             received = events.recv() => {
                 let sent = match received {
-                    Ok(event) => send_event(&mut socket, &event).await,
+                    Ok(event) => !wanted(&event, user_id, &mut visible, &state).await || send_event(&mut socket, &event).await,
                     // отстали: часть событий потеряна, пусть клиент перечитает всё
                     Err(RecvError::Lagged(_)) => send_text(&mut socket, RESYNC).await,
                     Err(RecvError::Closed) => return,
@@ -168,6 +179,35 @@ async fn session(mut socket: WebSocket, state: AppState) {
                     return;
                 }
             }
+        }
+    }
+}
+
+/// Перечитывает, события каких проектов положено получать человеку. Не вышло прочитать: остаётся прежний список.
+async fn refresh(visible: &mut HashSet<Uuid>, state: &AppState, user_id: Uuid) {
+    if let Ok(ids) = db::members::project_ids(&state.pool, user_id).await {
+        *visible = ids.into_iter().collect();
+    }
+}
+
+/// Нужно ли слать событие этому человеку (docs/PROJECTS.md, раздел 5): события проекта получают только его участники
+async fn wanted(event: &Event, user_id: Uuid, visible: &mut HashSet<Uuid>, state: &AppState) -> bool {
+    match &event.audience {
+        Audience::Everyone => true,
+        Audience::Users(users) => {
+            let mine = users.contains(&user_id);
+            // человека добавили в проект или убрали из него: список его проектов изменился
+            if mine {
+                refresh(visible, state, user_id).await;
+            }
+            mine
+        }
+        Audience::Project(project_id) => {
+            // состав участников мог поменяться и без личного события для этого человека (глобальный админ видит все проекты)
+            if event.kind == "project.changed" {
+                refresh(visible, state, user_id).await;
+            }
+            visible.contains(project_id)
         }
     }
 }

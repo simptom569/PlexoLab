@@ -9,9 +9,11 @@ pub mod docs;
 pub mod docs_dto;
 pub mod dto;
 pub mod files;
+pub mod invites;
 pub mod library_dto;
 pub mod links;
 pub mod modules;
+pub mod project_dto;
 pub mod projects;
 pub mod releases;
 pub mod tags;
@@ -25,6 +27,7 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(auth::router())
         .merge(users::router())
         .merge(projects::router())
+        .merge(invites::router())
         .merge(columns::router())
         .merge(tasks::router())
         .merge(tags::router())

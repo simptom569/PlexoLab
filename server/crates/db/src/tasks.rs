@@ -120,8 +120,11 @@ pub async fn tag_ids<'e>(ex: impl PgExecutor<'e>, task_id: Uuid) -> Result<Vec<U
 /// Заменяет набор меток задачи
 pub async fn set_tags(conn: &mut PgConnection, task_id: Uuid, tag_ids: &[Uuid]) -> Result<(), sqlx::Error> {
     sqlx::query("delete from task_tags where task_id = $1").bind(task_id).execute(&mut *conn).await?;
-    sqlx::query("insert into task_tags (task_id, tag_id) select $1, unnest($2::uuid[]) on conflict do nothing")
-        .bind(task_id)
+    // только метки проекта задачи: чужие молча не привязываются (ручка проверяет набор заранее)
+    sqlx::query(
+        "insert into task_tags (task_id, tag_id)          select $1, g.id from tags g          where g.id = any($2) and g.project_id = (select project_id from tasks where id = $1)          on conflict do nothing",
+    )
+    .bind(task_id)
         .bind(tag_ids)
         .execute(conn)
         .await?;

@@ -26,6 +26,7 @@ use super::{
     tasks,
 };
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, ApiQuery, AuthUser},
     state::AppState,
@@ -217,10 +218,11 @@ async fn insert_all(
     )
 )]
 async fn list_files(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiQuery(q): ApiQuery<ListFilesQuery>,
 ) -> ApiResult<Json<FileListDto>> {
+    access::wiki(auth)?;
     let folder = match q.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         None => FolderScope::Any,
         Some("root") => FolderScope::Root,
@@ -261,6 +263,7 @@ async fn upload_files(
     State(state): State<AppState>,
     multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Vec<FileDto>>)> {
+    access::wiki(auth)?;
     let incoming = receive(&state, multipart).await?;
     let saved = save_library_files(&state, &incoming, auth.id).await;
     let saved = discard_on_error(&state, &incoming, saved).await?;
@@ -304,11 +307,16 @@ async fn save_library_files(state: &AppState, incoming: &Incoming, uploader: Uui
     )
 )]
 async fn download_file(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Response> {
     let file = db::files::get(&state.pool, id).await?.ok_or(ApiError::NotFound)?;
+    // вложение задачи видят только участники её проекта; файлы библиотеки (вики) видны всем
+    if let Some(task_id) = file.task_id {
+        let mut conn = state.pool.acquire().await?;
+        tasks::load(&mut conn, auth, task_id).await?;
+    }
     let path = storage::path(&state.data_dir, &file.storage_key).ok_or(ApiError::NotFound)?;
     let content = tokio::fs::File::open(&path).await.map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => ApiError::NotFound,
@@ -365,7 +373,7 @@ async fn delete_file(
     match file.task_id {
         Some(task_id) => {
             // вложение задачи: запись в ленту идёт на задачу, поэтому нужны её проект и блокировка
-            let (task, project) = tasks::load_locked(&mut tx, task_id).await?;
+            let (task, project) = tasks::load_locked(&mut tx, auth, task_id).await?;
             db::files::delete(&mut tx, id).await?;
             let text = format!("удалён файл «{}»", file.name);
             db::activity::insert(&mut tx, auth.id, Some(project.id), "file", &tasks::target(&project, &task), &text)
@@ -405,13 +413,16 @@ async fn upload_task_files(
     ApiPath(task_id): ApiPath<Uuid>,
     multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Vec<TaskFileDto>>)> {
-    // не принимаем гигабайты для задачи, которой нет
-    db::tasks::get(&state.pool, task_id).await?.ok_or(ApiError::NotFound)?;
+    // не принимаем гигабайты для задачи, которой нет или к которой нет доступа
+    {
+        let mut conn = state.pool.acquire().await?;
+        tasks::load(&mut conn, auth, task_id).await?;
+    }
     let mut incoming = receive(&state, multipart).await?;
     // к задаче прикрепляют только файлы, привязка к странице и папке тут не нужна
     incoming.folder_id = None;
     incoming.wiki_page_id = None;
-    let saved = save_task_files(&state, &incoming, task_id, auth.id).await;
+    let saved = save_task_files(&state, &incoming, task_id, auth).await;
     let saved = discard_on_error(&state, &incoming, saved).await?;
     Ok((StatusCode::CREATED, Json(saved.into_iter().map(task_file).collect())))
 }
@@ -427,9 +438,10 @@ fn task_file(f: File) -> TaskFileDto {
     }
 }
 
-async fn save_task_files(state: &AppState, incoming: &Incoming, task_id: Uuid, uploader: Uuid) -> ApiResult<Vec<File>> {
+async fn save_task_files(state: &AppState, incoming: &Incoming, task_id: Uuid, auth: AuthUser) -> ApiResult<Vec<File>> {
+    let uploader = auth.id;
     let mut tx = state.pool.begin().await?;
-    let (task, project) = tasks::load_locked(&mut tx, task_id).await?;
+    let (task, project) = tasks::load_locked(&mut tx, auth, task_id).await?;
     let saved = insert_all(&mut tx, incoming, uploader, None, Some(task_id)).await?;
     let text = match saved.as_slice() {
         [one] => format!("прикреплён файл «{}»", one.name),
@@ -453,7 +465,8 @@ async fn save_task_files(state: &AppState, incoming: &Incoming, task_id: Uuid, u
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
     )
 )]
-async fn list_folders(_auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<FolderDto>>> {
+async fn list_folders(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<FolderDto>>> {
+    access::wiki(auth)?;
     let folders = db::folders::list(&state.pool).await?;
     Ok(Json(folders.into_iter().map(Into::into).collect()))
 }
@@ -473,10 +486,11 @@ async fn list_folders(_auth: AuthUser, State(state): State<AppState>) -> ApiResu
     )
 )]
 async fn create_folder(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiJson(req): ApiJson<CreateFolder>,
 ) -> ApiResult<(StatusCode, Json<FolderDto>)> {
+    access::wiki(auth)?;
     let name = clean_folder_name(&req.name)
         .ok_or_else(|| bad(format!("Название папки: от 1 до {} символов", domain::files::MAX_FOLDER_NAME_LEN)))?;
     let mut conn = state.pool.acquire().await?;
@@ -501,10 +515,11 @@ async fn create_folder(
     )
 )]
 async fn delete_folder(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
+    access::wiki(auth)?;
     let mut tx = state.pool.begin().await?;
     let folder = db::folders::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
     if folder.file_count > 0 {

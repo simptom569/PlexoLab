@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use super::library_dto::{CreateWikiPage, UpdateWikiPage, WikiConflictDto, WikiNodeDto, WikiPageDto};
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
@@ -61,7 +62,8 @@ async fn check_parent(conn: &mut PgConnection, parent_id: Uuid) -> ApiResult<()>
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
     )
 )]
-async fn list_pages(_auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<WikiNodeDto>>> {
+async fn list_pages(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<WikiNodeDto>>> {
+    access::wiki(auth)?;
     let pages = db::wiki::list(&state.pool).await?;
     Ok(Json(pages.into_iter().map(Into::into).collect()))
 }
@@ -80,10 +82,11 @@ async fn list_pages(_auth: AuthUser, State(state): State<AppState>) -> ApiResult
     )
 )]
 async fn get_page(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<WikiPageDto>> {
+    access::wiki(auth)?;
     let page = db::wiki::get(&state.pool, id).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(page.into()))
 }
@@ -106,6 +109,7 @@ async fn create_page(
     State(state): State<AppState>,
     ApiJson(req): ApiJson<CreateWikiPage>,
 ) -> ApiResult<(StatusCode, Json<WikiPageDto>)> {
+    access::wiki(auth)?;
     let title = req.title.as_deref().map(clean_title).transpose()?.unwrap_or_default();
     let md = req.md.as_deref().map(clean_md).transpose()?.unwrap_or_default();
 
@@ -150,6 +154,7 @@ async fn update_page(
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateWikiPage>,
 ) -> ApiResult<Response> {
+    access::wiki(auth)?;
     let title = req.title.as_deref().map(clean_title).transpose()?;
     let md = req.md.as_deref().map(clean_md).transpose()?;
 
@@ -225,6 +230,7 @@ async fn delete_page(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
+    access::wiki(auth)?;
     let mut tx = state.pool.begin().await?;
     db::wiki::lock(&mut tx).await?;
     let page = db::wiki::get_for_update(&mut tx, id).await?.ok_or(ApiError::NotFound)?;

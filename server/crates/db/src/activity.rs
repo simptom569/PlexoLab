@@ -38,10 +38,12 @@ pub async fn insert(
     Ok(())
 }
 
-/// События от новых к старым. `actor` и `kinds` сужают выбор; `after` — место, после которого (то есть старше)
-/// продолжать: время события и его идентификатор. Идентификатор разводит события с одинаковым временем.
+/// События от новых к старым, которые видит `viewer`: события его проектов и события без проекта (вики и т. п.).
+/// `actor` и `kinds` сужают выбор; `after` — место, после которого (то есть старше) продолжать: время события и его
+/// идентификатор. Идентификатор разводит события с одинаковым временем.
 pub async fn list<'e>(
     ex: impl PgExecutor<'e>,
+    viewer: Uuid,
     actor: Option<Uuid>,
     kinds: Option<&[&str]>,
     after: Option<(OffsetDateTime, Uuid)>,
@@ -53,6 +55,9 @@ pub async fn list<'e>(
          where ($1::uuid is null or actor_id = $1) \
            and ($2::text[] is null or kind::text = any($2)) \
            and ($3::timestamptz is null or (created_at, id) < ($3, $4::uuid)) \
+           and (project_id is null or exists ( \
+                select 1 from users u where u.id = $6 and (u.is_admin or exists ( \
+                  select 1 from project_members m where m.project_id = activity.project_id and m.user_id = u.id)))) \
          order by created_at desc, id desc limit $5",
     )
     .bind(actor)
@@ -60,6 +65,7 @@ pub async fn list<'e>(
     .bind(after.map(|a| a.0))
     .bind(after.map(|a| a.1))
     .bind(limit)
+    .bind(viewer)
     .fetch_all(ex)
     .await
 }

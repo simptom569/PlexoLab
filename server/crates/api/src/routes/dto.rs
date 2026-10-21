@@ -31,11 +31,22 @@ pub struct ProjectDto {
     /// Токен цвета: accent | warn | ok
     #[schema(example = "accent")]
     pub color: String,
+    /// Роль текущего человека в проекте: admin | member (у глобального админа всегда admin)
+    #[schema(example = "member")]
+    pub role: String,
+    /// Проект в архиве
+    pub archived: bool,
 }
 
-impl From<Project> for ProjectDto {
-    fn from(p: Project) -> Self {
-        ProjectDto { id: p.id, key: p.key, name: p.name, color: p.color }
+impl ProjectDto {
+    pub fn new(p: Project, role: &str) -> Self {
+        ProjectDto { id: p.id, key: p.key, name: p.name, color: p.color, role: role.to_owned(), archived: p.archived }
+    }
+}
+
+impl From<db::projects::MemberProject> for ProjectDto {
+    fn from(m: db::projects::MemberProject) -> Self {
+        ProjectDto::new(m.project, &m.role)
     }
 }
 
@@ -69,6 +80,7 @@ impl From<Column> for ColumnDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct TagDto {
     pub id: Uuid,
+    pub project_id: Uuid,
     #[schema(example = "Баг")]
     pub label: String,
     /// Индекс цвета в TONES (0..7)
@@ -77,7 +89,7 @@ pub struct TagDto {
 
 impl From<Tag> for TagDto {
     fn from(t: Tag) -> Self {
-        TagDto { id: t.id, label: t.label, tone: t.tone }
+        TagDto { id: t.id, project_id: t.project_id, label: t.label, tone: t.tone }
     }
 }
 
@@ -345,7 +357,7 @@ pub struct BoardDto {
     pub columns: Vec<ColumnDto>,
     /// Все задачи проекта, доска и бэклог, по возрастанию позиции
     pub tasks: Vec<TaskCardDto>,
-    /// Метки (общие для всех проектов) в порядке создания
+    /// Метки проекта в порядке создания
     pub tags: Vec<TagDto>,
     pub modules: Vec<ModuleDto>,
     pub milestones: Vec<MilestoneDto>,

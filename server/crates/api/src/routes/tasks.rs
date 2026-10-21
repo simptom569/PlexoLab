@@ -17,6 +17,7 @@ use super::dto::{
     task_label,
 };
 use crate::{
+    access,
     error::{ApiError, ApiResult, ErrorBody},
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
@@ -53,18 +54,24 @@ async fn column_in_project(conn: &mut PgConnection, column_id: Uuid, project_id:
         .ok_or_else(|| bad("Колонка не найдена в проекте этой задачи"))
 }
 
-/// Находит задачу и блокирует проект и задачу до конца транзакции
-pub(super) async fn load_locked(conn: &mut PgConnection, task_id: Uuid) -> ApiResult<(Task, Project)> {
+/// Находит задачу, если человек участник её проекта (для чтения и мелких правок без блокировки)
+pub(super) async fn load(conn: &mut PgConnection, auth: AuthUser, task_id: Uuid) -> ApiResult<(Task, Project)> {
     let task = tasks::get(&mut *conn, task_id).await?.ok_or(ApiError::NotFound)?;
-    let project = db::projects::lock(conn, task.project_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project(conn, auth, task.project_id).await?.project;
+    Ok((task, project))
+}
+
+/// Находит задачу и блокирует проект и задачу до конца транзакции
+pub(super) async fn load_locked(conn: &mut PgConnection, auth: AuthUser, task_id: Uuid) -> ApiResult<(Task, Project)> {
+    let task = tasks::get(&mut *conn, task_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project_locked(conn, auth, task.project_id).await?.project;
     // пока ждали блокировку проекта, задачу могли удалить или изменить: читаем заново
     let task = tasks::get_for_update(conn, task_id).await?.ok_or(ApiError::NotFound)?;
     Ok((task, project))
 }
 
 /// Задача со всем содержимым для панели
-async fn detail(conn: &mut PgConnection, task: Task) -> ApiResult<TaskDetailDto> {
-    let project = db::projects::get(&mut *conn, task.project_id).await?.ok_or(ApiError::NotFound)?;
+async fn detail(conn: &mut PgConnection, task: Task, project: &Project) -> ApiResult<TaskDetailDto> {
     let tag_ids = tasks::tag_ids(&mut *conn, task.id).await?;
     let subtasks = db::subtasks::list(&mut *conn, task.id).await?;
     let comments = db::comments::list(&mut *conn, task.id).await?;
@@ -121,7 +128,7 @@ async fn create_task(
     let title = clean_title(&req.title)?;
 
     let mut tx = state.pool.begin().await?;
-    let project = db::projects::lock(&mut tx, project_id).await?.ok_or(ApiError::NotFound)?;
+    let project = access::project_locked(&mut tx, auth, project_id).await?.project;
     if let Some(column_id) = req.column_id {
         column_in_project(&mut tx, column_id, project_id).await?;
     }
@@ -134,7 +141,7 @@ async fn create_task(
     )
     .await?;
     db::activity::insert(&mut tx, auth.id, Some(project_id), "create", &target(&project, &task), "создана").await?;
-    let dto = detail(&mut tx, task).await?;
+    let dto = detail(&mut tx, task, &project).await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(dto)))
 }
@@ -153,13 +160,13 @@ async fn create_task(
     )
 )]
 async fn get_task(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<TaskDetailDto>> {
     let mut conn = state.pool.acquire().await?;
-    let task = tasks::get(&mut *conn, id).await?.ok_or(ApiError::NotFound)?;
-    Ok(Json(detail(&mut conn, task).await?))
+    let (task, project) = load(&mut conn, auth, id).await?;
+    Ok(Json(detail(&mut conn, task, &project).await?))
 }
 
 /// Изменить любые поля задачи. Перенос: `column_id` (null — в бэклог) и `before_id` (встать перед этой задачей,
@@ -225,8 +232,15 @@ async fn update_task(
     });
 
     let mut tx = state.pool.begin().await?;
-    let (task, project) = load_locked(&mut tx, id).await?;
+    let (task, project) = load_locked(&mut tx, auth, id).await?;
 
+    // исполнитель должен быть участником проекта; тот, кто уже назначен и вышел из проекта, остаётся
+    if let Some(Some(assignee)) = patch.assignee
+        && task.assignee_id != Some(assignee)
+        && db::members::role_of(&mut *tx, project.id, assignee).await?.is_none()
+    {
+        return Err(bad("Исполнитель должен быть участником проекта"));
+    }
     if let Some(Some(module_id)) = patch.module
         && !db::modules::module_in_project(&mut *tx, module_id, project.id).await?
     {
@@ -241,8 +255,8 @@ async fn update_task(
     let mut current = if patch.is_empty() { task.clone() } else { tasks::update(&mut tx, id, &patch).await? };
 
     if let Some(ids) = &tag_ids {
-        if db::tags::count_existing(&mut *tx, ids).await? != ids.len() as i64 {
-            return Err(bad("Среди меток есть несуществующая"));
+        if db::tags::count_in_project(&mut *tx, project.id, ids).await? != ids.len() as i64 {
+            return Err(bad("Среди меток есть несуществующая или из другого проекта"));
         }
         tasks::set_tags(&mut tx, id, ids).await?;
         tasks::touch(&mut tx, id).await?;
@@ -278,7 +292,7 @@ async fn update_task(
     }
 
     let current = tasks::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
-    let dto = detail(&mut tx, current).await?;
+    let dto = detail(&mut tx, current, &project).await?;
     tx.commit().await?;
     Ok(Json(dto))
 }
@@ -302,7 +316,7 @@ async fn delete_task(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    let (task, project) = load_locked(&mut tx, id).await?;
+    let (task, project) = load_locked(&mut tx, auth, id).await?;
     // записи о вложениях уйдут вместе с задачей, а файлы на диске надо убрать самим
     let file_keys = db::files::storage_keys_for_task(&mut *tx, id).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "delete", &target(&project, &task), "удалена").await?;
@@ -330,14 +344,14 @@ async fn delete_task(
     )
 )]
 async fn create_subtask(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(task_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateSubtask>,
 ) -> ApiResult<(StatusCode, Json<SubtaskDto>)> {
     let title = clean_title(&req.title)?;
     let mut tx = state.pool.begin().await?;
-    tasks::get(&mut *tx, task_id).await?.ok_or(ApiError::NotFound)?;
+    load(&mut tx, auth, task_id).await?;
     let subtask = db::subtasks::insert(&mut tx, task_id, &title).await?;
     tasks::touch(&mut tx, task_id).await?;
     tx.commit().await?;
@@ -360,7 +374,7 @@ async fn create_subtask(
     )
 )]
 async fn update_subtask(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateSubtask>,
@@ -368,6 +382,7 @@ async fn update_subtask(
     let title = req.title.as_deref().map(clean_title).transpose()?;
     let mut tx = state.pool.begin().await?;
     let existing = db::subtasks::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    load(&mut tx, auth, existing.task_id).await?;
     let subtask = db::subtasks::update(&mut tx, id, title.as_deref(), req.done).await?;
     tasks::touch(&mut tx, existing.task_id).await?;
     tx.commit().await?;
@@ -388,12 +403,13 @@ async fn update_subtask(
     )
 )]
 async fn delete_subtask(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
     let existing = db::subtasks::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    load(&mut tx, auth, existing.task_id).await?;
     db::subtasks::delete(&mut tx, id).await?;
     tasks::touch(&mut tx, existing.task_id).await?;
     tx.commit().await?;
@@ -427,8 +443,7 @@ async fn create_comment(
         .ok_or_else(|| bad(format!("Комментарий: от 1 до {MAX_COMMENT_LEN} символов")))?;
 
     let mut tx = state.pool.begin().await?;
-    let task = tasks::get(&mut *tx, task_id).await?.ok_or(ApiError::NotFound)?;
-    let project = db::projects::get(&mut *tx, task.project_id).await?.ok_or(ApiError::NotFound)?;
+    let (task, project) = load(&mut tx, auth, task_id).await?;
     let comment = db::comments::insert(&mut tx, task_id, auth.id, &body).await?;
     db::activity::insert(&mut tx, auth.id, Some(project.id), "comment", &target(&project, &task), "новый комментарий")
         .await?;

@@ -254,16 +254,26 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         }
     }
 
-    // ----- Метки, модули, вехи -----
-    let mut tags: HashMap<&str, Uuid> = HashMap::new();
-    for (key, label, tone) in TAGS {
-        let id = sqlx::query_scalar("insert into tags (label, tone) values ($1, $2) returning id")
-            .bind(label)
-            .bind(tone)
-            .fetch_one(&mut *c)
-            .await?;
-        tags.insert(key, id);
-        r.tags += 1;
+    // ----- Участники проектов: все пользователи сида во всех проектах, глобальные админы администраторами -----
+    sqlx::query(
+        "insert into project_members (project_id, user_id, role)          select p.id, u.id, case when u.is_admin then 'admin'::project_role else 'member'::project_role end          from projects p cross join users u",
+    )
+    .execute(&mut *c)
+    .await?;
+
+    // ----- Метки (у каждого проекта свои, одинаковый набор), модули, вехи -----
+    let mut tags: HashMap<(&str, &str), Uuid> = HashMap::new();
+    for p in PROJECTS {
+        for (key, label, tone) in TAGS {
+            let id = sqlx::query_scalar("insert into tags (project_id, label, tone) values ($1, $2, $3) returning id")
+                .bind(pick(&projects, p.id)?)
+                .bind(label)
+                .bind(tone)
+                .fetch_one(&mut *c)
+                .await?;
+            tags.insert((p.id, key), id);
+            r.tags += 1;
+        }
     }
     let mut modules: HashMap<&str, Uuid> = HashMap::new();
     for m in MODULES {
@@ -334,7 +344,7 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         for tag in t.tags {
             sqlx::query("insert into task_tags (task_id, tag_id) values ($1, $2)")
                 .bind(task_id)
-                .bind(pick(&tags, *tag)?)
+                .bind(pick(&tags, (t.project, *tag))?)
                 .execute(&mut *c)
                 .await?;
         }
