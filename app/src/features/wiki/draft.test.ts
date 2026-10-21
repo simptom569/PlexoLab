@@ -226,6 +226,31 @@ describe('слияние при конфликте', () => {
     expect(t.deps.onError).not.toHaveBeenCalled()
   })
 
+  it('оба дописали новый блок в конец: остаются оба, чужой выше, мой блок остаётся открытым', async () => {
+    const t = setup(page({ md: three }))
+    // я печатаю в новом блоке в конце (строка 6), курсор после четырёх букв
+    t.draft.setActiveProbe(() => ({ start: 6, end: 7, caret: 4 }))
+    t.server.page = page({ rev: 2, md: `${three}
+
+Его` })
+    t.draft.setMd(`${three}
+
+Мой`)
+    await t.draft.flush()
+
+    expect(t.server.page).toMatchObject({ rev: 3, md: `${three}
+
+Его
+
+Мой` })
+    expect(t.draft.getState()).toMatchObject({ conflict: null, md: `${three}
+
+Его
+
+Мой` })
+    expect(t.draft.getState().restore, 'мой блок теперь ниже чужого').toEqual({ start: 8, end: 9, caret: 4 })
+  })
+
   it('правки пересеклись: баннер, ничего не склеено и не сохранено', async () => {
     const t = setup(page({ md: three }))
     t.server.page = page({ rev: 2, md: 'Первый (сосед)\n\nВторой\n\nТретий' })

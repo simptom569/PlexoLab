@@ -2,12 +2,13 @@
 //
 // Есть общая основа (то, что оба видели последним), моя версия и чужая. Правки каждой стороны относительно основы
 // складываются, если они не пересекаются. Строго, как в git: правки считаются пересекающимися, если задевают одни и те же
-// строки или стоят вплотную (соседние строки, две вставки в одно место). Тогда слияния нет, и вызывающий показывает
-// человеку выбор. Одинаковые правки с обеих сторон принимаются один раз.
+// строки или стоят вплотную (соседние строки). Тогда слияния нет, и вызывающий показывает человеку выбор. Одинаковые
+// правки с обеих сторон принимаются один раз.
 //
-// Одно улучшение сверх git: вставку (и удаление) блока можно «сдвинуть» через равные строки, например через пустую строку
-// между абзацами. Один и тот же новый абзац описывается двумя способами («после абзаца 4» и «перед абзацем 5»), и
-// без сдвига вставка между абзацами давала бы ложный конфликт с правкой любого из соседей.
+// Два отличия от git. Первое: вставку (и удаление) блока можно «сдвинуть» через равные строки, например через пустую
+// строку между абзацами. Один и тот же новый абзац описывается двумя способами («после абзаца 4» и «перед абзацем 5»), и
+// без сдвига вставка между абзацами давала бы ложный конфликт с правкой любого из соседей. Второе: две разные вставки в
+// одно место (оба дописали новый блок в конец) не конфликтуют, остаются обе: чужая, уже сохранённая, выше, моя ниже.
 
 /** Строки основы `[start, end)` заменены строками `lines` */
 export type Hunk = { start: number; end: number; lines: string[] }
@@ -112,18 +113,18 @@ function alternatives(base: string[], hunk: Hunk, floor: number, ceil: number): 
 /** Правки пересекаются или стоят вплотную: общая строка, соседние строки, две вставки в одно место */
 const touches = (a: Hunk, b: Hunk) => a.start <= b.end && b.start <= a.end
 
-type Item = { alts: Hunk[]; chosen: Hunk; twin: Item | null }
+type Item = { alts: Hunk[]; chosen: Hunk; twin: Item | null; joint: Item | null }
 
 function items(base: string[], hunks: Hunk[]): Item[] {
   return hunks.map((h, i) => {
     const alts = alternatives(base, h, hunks[i - 1]?.end ?? 0, hunks[i + 1]?.start ?? base.length)
-    return { alts, chosen: h, twin: null }
+    return { alts, chosen: h, twin: null, joint: null }
   })
 }
 
 /** Выбирает такое описание правки, которое не задевает правки другой стороны; если такого нет, остаётся исходное */
 function settle(item: Item, others: Item[]) {
-  if (item.twin) return
+  if (item.twin || item.joint) return
   for (const alt of item.alts) {
     if (others.every((o) => !touches(alt, o.chosen))) {
       item.chosen = alt
@@ -138,9 +139,13 @@ const isInsertion = (h: Hunk) => h.start === h.end && h.lines.length > 0
 
 /**
  * Две разные вставки в одно место: у них есть общее равноценное положение (например, обе «между абзацами 4 и 5»).
- * Сдвиг нужен, чтобы вставка не конфликтовала с правкой соседа, а не чтобы разводить две вставки: как в git, это конфликт.
+ * Возвращает описания обеих вставок с одним началом, чтобы уложить их друг за другом; `null`, если места разные.
  */
-const sameSpot = (a: Item, b: Item) => isInsertion(a.chosen) && isInsertion(b.chosen) && a.alts.some((x) => b.alts.some((y) => x.start === y.start))
+function sameSpot(x: Item, y: Item): [Hunk, Hunk] | null {
+  if (!isInsertion(x.chosen) || !isInsertion(y.chosen)) return null
+  for (const p of x.alts) for (const q of y.alts) if (p.start === q.start) return [p, q]
+  return null
+}
 
 export type Merge3 = {
   lines: string[]
@@ -173,20 +178,33 @@ export function merge3(base: string[], mine: string[], theirs: string[]): Merge3
       y.twin = x
     }
   }
+  // разные вставки в одно место остаются обе, они стоят друг за другом и пересекающимися не считаются
+  for (const x of a) {
+    for (const y of b) {
+      if (x.twin || y.twin || x.joint || y.joint) continue
+      const spot = sameSpot(x, y)
+      if (!spot) continue
+      ;[x.chosen, y.chosen] = spot
+      x.joint = y
+      y.joint = x
+    }
+  }
   for (const x of a) settle(x, b)
   for (const y of b) settle(y, a)
 
   for (const x of a) {
-    for (const y of b) if (x.twin !== y && (touches(x.chosen, y.chosen) || sameSpot(x, y))) return null
+    for (const y of b) if (x.twin !== y && x.joint !== y && touches(x.chosen, y.chosen)) return null
   }
   // соседние правки одной стороны после сдвигов не должны налезать друг на друга
   for (const side of [a, b]) {
     for (let k = 1; k < side.length; k++) if (side[k].chosen.start < side[k - 1].chosen.end) return null
   }
 
-  // мои правки и чужие, не совпавшие с моими, по порядку в основе
-  const order = [...a.map((x) => x.chosen), ...b.filter((y) => y.twin === null).map((y) => y.chosen)].sort((p, q) => p.start - q.start || p.end - q.end)
+  // мои правки и чужие, не совпавшие с моими, по порядку в основе; две вставки в одно место: чужая выше, моя ниже
   const mineSet = new Set(a.map((x) => x.chosen))
+  const order = [...a.map((x) => x.chosen), ...b.filter((y) => y.twin === null).map((y) => y.chosen)].sort(
+    (p, q) => p.start - q.start || p.end - q.end || Number(mineSet.has(p)) - Number(mineSet.has(q)),
+  )
 
   const out: string[] = []
   const map: number[] = []

@@ -79,7 +79,7 @@ test.describe('вики', () => {
     }
   })
 
-  test('оба добавили новый блок в одно место: как в git, баннер, ничего не склеено', async ({ page, browser }) => {
+  test('оба добавили новый блок в одно место: остаются оба, чужой выше, баннера нет', async ({ page, browser }) => {
     const id = await makePage(page, 'Спор о конце', THREE)
     await openPageById(page, id)
     const second = await blindSecond(browser, { page: 'wiki', wikiPage: id }, 'Название страницы')
@@ -92,9 +92,10 @@ test.describe('вики', () => {
       await second.page.locator('.md-add').click()
       await second.page.keyboard.type('Второй новый')
       await second.page.keyboard.press('Escape')
-      await expect(second.page.getByRole('alert')).toContainText('Страницу изменил другой участник')
+      await expectSaved(page, id, `${THREE}\n\nПервый новый\n\nВторой новый`)
+      await expect(second.page.getByRole('alert')).toHaveCount(0)
       await expect(toast(second.page)).toHaveCount(0)
-      expect((await wikiPage(page, id)).md).toBe(`${THREE}\n\nПервый новый`)
+      await expect(blocks(second.page)).toHaveText(['Первый абзац', 'Второй абзац', 'Третий абзац', 'Первый новый', 'Второй новый'])
     } finally {
       await second.close()
     }
@@ -223,6 +224,37 @@ test.describe('чужая версия пришла вживую: мой отк�
 })
 
 test.describe('документы', () => {
+  test('двое одновременно пишут в новой строке: остаются оба текста, баннера нет, фокус у обоих на месте', async ({ page, browser }) => {
+    const id = await makeDoc(page, 'Две новые строки', 'page', THREE)
+    await openDoc(page, id)
+    const other = await liveSecond(browser, { page: 'docs', docOpen: id }, 'Название документа')
+    try {
+      await page.locator('.md-add').click()
+      await other.page.locator('.md-add').click()
+      await page.keyboard.type('Новый от Лены')
+      await other.page.keyboard.type('Новый от Артёма')
+      await expect.poll(async () => (await docFull(page, id)).md, { timeout: 6000 }).toBe(`${THREE}\n\nНовый от Лены\n\nНовый от Артёма`)
+
+      for (const who of [page, other.page]) {
+        await expect(who.getByRole('alert')).toHaveCount(0)
+        await expect(editor(who)).toBeFocused()
+      }
+      await expect(editor(page)).toHaveValue('Новый от Лены')
+      await expect(editor(other.page)).toHaveValue('Новый от Артёма')
+
+      // оба продолжают печатать там, где стояли
+      await page.keyboard.type(' и ещё')
+      await other.page.keyboard.type(' и ещё')
+      await expect
+        .poll(async () => (await docFull(page, id)).md, { timeout: 6000 })
+        .toBe(`${THREE}\n\nНовый от Лены и ещё\n\nНовый от Артёма и ещё`)
+      await expect(page.getByRole('alert')).toHaveCount(0)
+      await expect(other.page.getByRole('alert')).toHaveCount(0)
+    } finally {
+      await other.close()
+    }
+  })
+
   test('чужой абзац добавлен выше: мой блок остаётся открытым, печатать можно дальше', async ({ page, browser }) => {
     const id = await makeDoc(page, 'Слияние документа', 'page', THREE)
     await openDoc(page, id)
