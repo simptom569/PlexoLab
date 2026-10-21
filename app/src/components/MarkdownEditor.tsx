@@ -373,7 +373,10 @@ function View({ view, onToggle, onOpenWiki, onOpenUrl }: ViewProps) {
         <div className="md-tbl">
           <div className="md-grid" style={{ gridTemplateColumns: `repeat(${view.cols},minmax(110px,1fr))` }}>
             {view.cells.map((cell, i) => (
-              <div key={i} className={cx('md-cell', cell.head && 'head')}>
+              <div
+                key={i}
+                className={cx('md-cell', cell.head && 'head', i % view.cols === view.cols - 1 && 'last-col', i >= view.cells.length - view.cols && 'last-row')}
+              >
                 <Runs runs={cell.runs} {...links} />
               </div>
             ))}
