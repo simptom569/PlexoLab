@@ -1,29 +1,12 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
-import { openApp, resetData, SERVER } from './fixtures'
+import { expect, test, type Page } from '@playwright/test'
+import { openApp, resetData } from './fixtures'
+import { apiAs, projectsOf, secondClient } from './projects-helpers'
 
 // Проекты в интерфейсе (docs/PROJECTS.md, раздел 3): «+» у заголовка, меню по правой кнопке, окна «Новый проект»,
 // «Настройки проекта», «Приглашения» и «Архив проектов». В макете их нет, поэтому эталона из design/screenshots нет:
 // снимки окон свои, в обеих темах. Обновить: npm run update. Приглашения проверяются двумя живыми клиентами.
 
 test.beforeEach(() => resetData())
-
-type Init = { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; data?: unknown }
-
-/** Запрос к серверу от имени человека, минуя интерфейс */
-async function apiAs<T>(page: Page, email: string, path: string, init: Init = {}): Promise<T> {
-  const login = await page.request.post(`${SERVER}/api/v1/auth/login`, { data: { email, password: 'dev' } })
-  const { access_token } = (await login.json()) as { access_token: string }
-  const res = await page.request.fetch(`${SERVER}/api/v1${path}`, {
-    method: init.method ?? 'GET',
-    data: init.data,
-    headers: { Authorization: `Bearer ${access_token}` },
-  })
-  expect(res.ok(), `${init.method ?? 'GET'} ${path}: ${res.status()}`).toBeTruthy()
-  return res.status() === 204 ? (undefined as T) : ((await res.json()) as T)
-}
-
-type ApiProject = { id: string; name: string; key: string | null; color: string; role: string; archived: boolean }
-const projectsOf = (page: Page, email: string) => apiAs<ApiProject[]>(page, email, '/projects')
 
 /** Ближайшая строка списка (`.proj-row`, но не `.proj-rows`) */
 const ROW = 'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), " "), " proj-row ")][1]'
@@ -35,14 +18,6 @@ const userButton = (page: Page) => page.locator('.side button[aria-haspopup="men
 async function openUserMenuItem(page: Page, name: string) {
   await userButton(page).click()
   await page.getByRole('menuitem', { name }).click()
-}
-
-/** Второй человек в отдельном окне браузера, с живыми обновлениями */
-async function secondClient(browser: Browser, email: string, theme: 'light' | 'dark' = 'light'): Promise<{ page: Page; close: () => Promise<void> }> {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'ru-RU', timezoneId: 'UTC', reducedMotion: 'reduce' })
-  const page = await context.newPage()
-  await openApp(page, { email, theme })
-  return { page, close: () => context.close() }
 }
 
 /** Новый проект через «+» и окно; возвращает название */
@@ -187,6 +162,8 @@ test.describe('настройки проекта', () => {
     await dialog.getByRole('button', { name: 'Синий' }).click()
     await dialog.getByLabel('Ключ задач').fill('ops')
     await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    // у проекта есть задачи, их id меняются: сначала вопрос (подробно в keys.spec.ts)
+    await page.getByRole('dialog', { name: /изменятся id/ }).getByRole('button', { name: 'Продолжить' }).click()
     await expect(dialog.getByRole('status')).toHaveText('Сохранено')
     await expect(projectButton(page, 'Инфра и сервера')).toBeVisible()
 
@@ -194,6 +171,7 @@ test.describe('настройки проекта', () => {
     expect({ key: saved.key, color: saved.color }).toEqual({ key: 'OPS', color: 'accent' })
     await dialog.getByLabel('Ключ задач').fill('')
     await dialog.getByRole('button', { name: 'Сохранить' }).click()
+    await page.getByRole('dialog', { name: /изменятся id/ }).getByRole('button', { name: 'Продолжить' }).click()
     await expect(dialog.getByRole('status')).toHaveText('Сохранено')
     expect((await projectsOf(page, 'lena@example.com')).find((p) => p.name === 'Инфра и сервера')!.key).toBeNull()
   })
