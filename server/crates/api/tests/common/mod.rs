@@ -420,3 +420,27 @@ pub fn file_part(filename: &str, data: &[u8]) -> Part {
 pub fn nameless_file_part(data: &[u8]) -> Part {
     Part { name: "file", filename: None, data: data.to_vec() }
 }
+
+/// Правило рядов по всей базе (docs/PROJECTS.md, раздел 4): ряд задачи это её модуль, если у модуля есть ключ, иначе
+/// проект; видимые id (ключ ряда и номер) внутри проекта не повторяются. Вызывать в конце сценариев со сменой рядов.
+pub async fn assert_series_rule(pool: &PgPool) {
+    let wrong: Vec<(Uuid, Option<Uuid>, Option<Uuid>)> = db::sqlx::query_as(
+        "select t.id, t.module_id, t.series_module_id from tasks t left join modules m on m.id = t.module_id \
+         where t.series_module_id is distinct from (case when m.key is not null then t.module_id end)",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(wrong.is_empty(), "ряд не тот, что у модуля с ключом: {wrong:?}");
+
+    let repeated: Vec<(Uuid, String, i64)> = db::sqlx::query_as(
+        "select t.project_id, coalesce(m.key, p.key, 'TASK') || '-' || t.number as label, count(*) \
+         from tasks t join projects p on p.id = t.project_id \
+         left join modules m on m.id = t.series_module_id \
+         group by 1, 2 having count(*) > 1",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(repeated.is_empty(), "одинаковые id в проекте: {repeated:?}");
+}

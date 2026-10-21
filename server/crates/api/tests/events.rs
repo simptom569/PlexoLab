@@ -119,7 +119,7 @@ async fn work_changes_send_events(pool: PgPool) {
     assert_eq!(drain(&mut rx), [in_project("module.changed", p), in_project(ACTIVITY, p)]);
     let m = id_of(&module);
     c.ok(c.patch(&url(&format!("/modules/{m}")), json!({ "status": "progress" })).await, StatusCode::OK).await;
-    assert_eq!(drain(&mut rx), [pon(p, "module.changed", m), pall(p, ACTIVITY)]);
+    assert_eq!(drain(&mut rx), [pon(p, "module.changed", m), pall(p, "task.updated"), pall(p, ACTIVITY)]);
     assert_eq!(c.delete(&url(&format!("/modules/{m}"))).await.status, StatusCode::NO_CONTENT);
     assert_eq!(
         drain(&mut rx),
