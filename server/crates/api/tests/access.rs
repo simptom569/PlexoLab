@@ -75,6 +75,7 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("GET",    "/projects/{id}/board",                 Proj,   Scoped),
     ("GET",    "/projects/{id}/members",               Proj,   Scoped),
     ("GET",    "/projects/{id}/activity",              Proj,   Scoped), // события проекта и общие (вики)
+    ("GET",    "/projects/{id}/activity/actors",       Proj,   Scoped),
     ("PATCH",  "/projects/{id}/members/{user_id}",     Proj,   AdminOnly),
     ("DELETE", "/projects/{id}/members/{user_id}",     Proj,   AdminOnly),
     ("POST",   "/projects/{id}/invites",               Proj,   AdminOnly),

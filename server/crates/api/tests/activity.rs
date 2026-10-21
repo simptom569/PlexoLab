@@ -351,3 +351,44 @@ async fn a_stranger_gets_no_feed_of_a_project_and_a_missing_project_is_the_same_
     assert_eq!(c.get(&missing).await.status, StatusCode::NOT_FOUND);
     assert_eq!(c.get(&uri).await.status, StatusCode::OK);
 }
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn the_feed_names_everyone_who_has_events_in_it(pool: PgPool) {
+    let c = ctx(pool.clone()).await;
+    let mine = project_of(&pool).await;
+    let other_project = make_project(&pool, "API", "Мобильный API", "warn").await;
+    let here = make_user(&pool, "here@example.com", "Здесь З.", "password-123").await;
+    let there = make_user(&pool, "there@example.com", "Там Т.", "password-123").await;
+    let wiki = make_user(&pool, "wiki@example.com", "Вики В.", "password-123").await;
+    let quiet = make_user(&pool, "quiet@example.com", "Тихий Т.", "password-123").await;
+    for (who, project, kind) in
+        [(here.id, Some(mine), "code"), (there.id, Some(other_project), "code"), (wiki.id, None, "doc")]
+    {
+        db::sqlx::query(
+            "insert into activity (actor_id, project_id, kind, target, text) values ($1, $2, $3::act_kind, 'цель', 'тест')",
+        )
+        .bind(who)
+        .bind(project)
+        .bind(kind)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let uri = format!("/api/v1/projects/{mine}/activity/actors");
+    let found = c.ok(c.get(&uri).await, StatusCode::OK).await;
+    let ids: std::collections::BTreeSet<String> =
+        found.as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_owned()).collect();
+    let expected: std::collections::BTreeSet<String> = [here.id, wiki.id].iter().map(|u| u.to_string()).collect();
+    assert_eq!(ids, expected, "свои и автор общего события, автора чужого проекта нет");
+    assert!(!ids.contains(&quiet.id.to_string()), "у кого событий нет, того нет");
+    assert!(!ids.contains(&there.id.to_string()));
+
+    // чужому проект закрыт, как и сама лента
+    let stranger = c.another("stranger@example.com", "Посторонний").await;
+    assert_eq!(stranger.get(&uri).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        c.get(&format!("/api/v1/projects/{}/activity/actors", Uuid::new_v4())).await.status,
+        StatusCode::NOT_FOUND
+    );
+}

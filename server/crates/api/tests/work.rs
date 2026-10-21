@@ -161,6 +161,7 @@ async fn update_module_changes_fields_and_null_clears_them(pool: PgPool) {
     let f = Fx::new(pool).await;
     let m = f.module("SSO").await;
     let colleague = make_user(&f.c.pool, "kolya@example.com", "Коля К.", "pass-pass").await;
+    join(&f.c.pool, f.project, colleague.id, "member").await;
 
     let r =
         f.c.patch(
@@ -208,6 +209,41 @@ async fn module_status_change_goes_to_the_feed_once(pool: PgPool) {
     let r = f.c.patch(&uri("modules", &m), json!({ "status": "done" })).await;
     f.c.ok(r, StatusCode::OK).await;
     assert_eq!(f.activity().await.len(), before, "тот же статус повторно не пишется");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn module_lead_must_be_a_project_member_but_a_lead_who_left_may_stay(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let m = f.module("SSO").await;
+    let url = uri("modules", &m);
+    let outsider = make_user(&f.c.pool, "outsider@example.com", "Чужой Ч.", "pass-pass").await;
+    let colleague = make_user(&f.c.pool, "kolya@example.com", "Коля К.", "pass-pass").await;
+    join(&f.c.pool, f.project, colleague.id, "member").await;
+
+    let r = f.c.patch(&url, json!({ "lead_id": outsider.id })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
+    assert_eq!(r.body["message"], "Ответственный должен быть участником проекта");
+    assert_eq!(
+        f.c.ok(f.c.patch(&url, json!({ "lead_id": colleague.id })).await, StatusCode::OK).await["lead_id"],
+        colleague.id.to_string()
+    );
+
+    // коллега вышел из проекта: он остаётся ответственным, остальное правится как обычно, а назначить его заново нельзя
+    let r = f.c.delete(&format!("/api/v1/projects/{}/members/{}", f.project, colleague.id)).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let kept =
+        f.c.ok(f.c.patch(&url, json!({ "lead_id": colleague.id, "title": "SSO 2" })).await, StatusCode::OK).await;
+    assert_eq!(
+        (kept["lead_id"].as_str(), kept["title"].as_str()),
+        (Some(colleague.id.to_string().as_str()), Some("SSO 2"))
+    );
+    let other = f.module("Другой").await;
+    let r = f.c.patch(&uri("modules", &other), json!({ "lead_id": colleague.id })).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "в другой модуль вышедшего не назначить");
+
+    // снять ответственного можно всегда
+    let cleared = f.c.ok(f.c.patch(&url, json!({ "lead_id": null })).await, StatusCode::OK).await;
+    assert!(cleared["lead_id"].is_null());
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
