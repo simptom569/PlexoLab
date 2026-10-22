@@ -58,6 +58,23 @@ describe('thumbBoxes', () => {
   it('мелкие объекты не меньше 6×4', () => {
     expect(thumbBoxes(doc)[3]).toMatchObject({ w: 6, h: 4 })
   })
+
+  it('объект левее и выше нуля сдвигает миниатюру, чтобы он не остался за краем', () => {
+    const far: Pick<DocSummary, 'note' | 'thumb'> = {
+      note: { x: 24, y: 28, w: 400 },
+      thumb: [{ type: 'rect', x: -100, y: -50, w: 110, h: 64, color: 3 }],
+    }
+    const [note, rect] = thumbBoxes(far)
+    expect(rect!.l).toBeCloseTo(0)
+    expect(rect!.t).toBeCloseTo(0)
+    expect(note!.l).toBeCloseTo((24 + 100) * 0.2)
+    expect(note!.t).toBeCloseTo((28 + 50) * 0.2)
+  })
+
+  it('когда всё правее и ниже нуля, сдвига нет', () => {
+    expect(thumbBoxes(doc)[1]!.l).toBeCloseTo(92)
+    expect(thumbBoxes(doc)[1]!.t).toBeCloseTo(24)
+  })
 })
 
 describe('moveDoc', () => {

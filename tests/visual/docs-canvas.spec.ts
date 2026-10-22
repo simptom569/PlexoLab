@@ -144,14 +144,26 @@ test.describe('перетаскивание', () => {
     await expect(lines(page)).toHaveCount(5)
   })
 
-  test('объект нельзя утащить за левый и верхний край холста', async ({ page }) => {
+  test('объект можно утащить левее и выше начала координат: числа уходят в минус и сохраняются', async ({ page }) => {
     const id = await openDocByTitle(page, 'Схема сервисов')
+    // сначала сдвигаем холст, чтобы начало координат оказалось правее и ниже: так объекту есть куда идти, а указатель
+    // остаётся вдали от краёв окна (у края холст поехал бы сам)
+    await wheelOver(page, { x: 0, y: -400 }, { shift: true })
+    await wheelOver(page, { x: 0, y: -300 })
+    const before = (await docFull(page, id)).objects.find((o) => o.text === 'Клиент')!
     const from = await center(named(page, 'Клиент'))
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
-    await page.mouse.move(from.x - 900, from.y - 400, { steps: 8 })
+    await page.mouse.move(from.x - 800, from.y - 150, { steps: 8 })
     await page.mouse.up()
-    await expectCanvas(page, id, (d) => [d.objects.find((o) => o.text === 'Клиент')?.x, d.objects.find((o) => o.text === 'Клиент')?.y], [0, 0])
+    await expectCanvas(page, id, (d) => [d.objects.find((o) => o.text === 'Клиент')?.x, d.objects.find((o) => o.text === 'Клиент')?.y], [before.x - 800, before.y - 150])
+    expect(before.x - 800).toBeLessThan(0)
+    expect(before.y - 150).toBeLessThan(0)
+
+    // и после перезапуска объект на месте, левее и выше нуля
+    await page.reload()
+    await expect(named(page, 'Клиент')).toHaveCSS('left', `${before.x - 800}px`)
+    await expect(named(page, 'Клиент')).toHaveCSS('top', `${before.y - 150}px`)
   })
 
   test('карточка с текстом двигается за верхнюю полоску и хранит положение', async ({ page }) => {
@@ -287,4 +299,193 @@ test('новый объект лежит поверх прежних и на с�
   await expect(items(page)).toHaveCount(3)
   await tools(page).getByRole('button', { name: '+ Текст' }).click()
   await expectCanvas(page, id, (d) => d.objects.map((o) => o.type), ['sticky', 'sticky', 'sticky', 'text'])
+})
+
+// ---- Камера: холст двигается колесом и пустым местом, объекты не зависят от окна ----
+
+/** Камера: на сколько сдвинут слой холста и в каком он масштабе (по матрице, как видит браузер) */
+const cameraOf = (page: Page) =>
+  page.locator('.cv-world').evaluate((el) => {
+    const m = new DOMMatrix(getComputedStyle(el).transform)
+    return { x: m.e, y: m.f, z: m.a }
+  })
+
+const canvasBox = async (page: Page) => (await page.locator('.cv.edge').boundingBox())!
+
+/** Пустое место холста: правее карточки с текстом и ниже всех объектов, выше панели инструментов */
+const emptySpot = async (page: Page) => {
+  const box = await canvasBox(page)
+  return { x: box.x + box.width - 200, y: box.y + box.height - 150 }
+}
+
+/** Колесо над пустым местом холста; с Shift вертикальное колесо двигает по горизонтали */
+async function wheelOver(page: Page, delta: { x: number; y: number }, options: { shift?: boolean } = {}) {
+  const at = await emptySpot(page)
+  await page.mouse.move(at.x, at.y)
+  if (options.shift) await page.keyboard.down('Shift')
+  await page.mouse.wheel(delta.x, delta.y)
+  if (options.shift) await page.keyboard.up('Shift')
+}
+
+test.describe('камера холста', () => {
+  test('колесо двигает холст, а не страницу; объекты остаются на своих числах', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const scrollY = await page.evaluate(() => window.scrollY)
+    const leftBefore = await named(page, 'Клиент').evaluate((el) => (el as HTMLElement).style.left)
+    const boxBefore = (await named(page, 'Клиент').boundingBox())!
+
+    await wheelOver(page, { x: 0, y: 120 })
+    await expect.poll(async () => (await cameraOf(page)).y).toBe(-120)
+    expect((await cameraOf(page)).x).toBe(0)
+    expect(await page.evaluate(() => window.scrollY), 'страница не прокрутилась').toBe(scrollY)
+    // на экране объект уехал вверх, а его положение на холсте то же
+    const boxAfter = (await named(page, 'Клиент').boundingBox())!
+    expect(Math.round(boxAfter.y - boxBefore.y)).toBe(-120)
+    expect(await named(page, 'Клиент').evaluate((el) => (el as HTMLElement).style.left)).toBe(leftBefore)
+
+    // с Shift колесо двигает по горизонтали
+    await wheelOver(page, { x: 0, y: 80 }, { shift: true })
+    await expect.poll(async () => (await cameraOf(page)).x).toBe(-80)
+  })
+
+  test('сетка точек на фоне едет вместе с холстом', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    await expect(page.locator('.cv.edge')).toHaveCSS('background-position', '0px 0px')
+    await expect(page.locator('.cv.edge')).toHaveCSS('background-size', '22px 22px')
+    await wheelOver(page, { x: 0, y: 50 })
+    await wheelOver(page, { x: 0, y: 70 }, { shift: true })
+    await expect(page.locator('.cv.edge')).toHaveCSS('background-position', '-70px -50px')
+  })
+
+  test('пустое место берёт холст: он двигается за указателем, ничего не сохраняется, выбор снимается', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Схема сервисов')
+    const saves = countCanvasSaves(page)
+    const rev = (await docFull(page, id)).canvas_rev
+    await named(page, 'Клиент').click()
+    await expect(named(page, 'Клиент')).toHaveClass(/\bsel\b/)
+
+    const at = await emptySpot(page)
+    await page.mouse.move(at.x, at.y)
+    await page.mouse.down()
+    await page.mouse.move(at.x - 120, at.y - 50, { steps: 6 })
+    await expect(page.locator('.cv.edge')).toHaveClass(/\bpanning\b/)
+    await page.mouse.up()
+    await expect(page.locator('.cv.edge')).not.toHaveClass(/\bpanning\b/)
+
+    expect(await cameraOf(page)).toMatchObject({ x: -120, y: -50 })
+    await expect(named(page, 'Клиент')).not.toHaveClass(/\bsel\b/)
+    await page.waitForTimeout(900)
+    expect(saves.n).toBe(0)
+    expect((await docFull(page, id)).canvas_rev).toBe(rev)
+  })
+
+  test('средняя кнопка двигает холст даже над объектом и объект не трогает', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Схема сервисов')
+    const before = (await docFull(page, id)).objects.find((o) => o.text === 'Клиент')!
+    const from = await center(named(page, 'Клиент'))
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down({ button: 'middle' })
+    await page.mouse.move(from.x + 90, from.y + 40, { steps: 5 })
+    await page.mouse.up({ button: 'middle' })
+    expect(await cameraOf(page)).toMatchObject({ x: 90, y: 40 })
+    await page.waitForTimeout(900)
+    expect((await docFull(page, id)).objects.find((o) => o.text === 'Клиент')).toMatchObject({ x: before.x, y: before.y })
+  })
+
+  test('объект тащат у края: холст едет сам, объект остаётся под указателем и на обратном пути не отстаёт', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Схема сервисов')
+    const canvas = await canvasBox(page)
+    const item = named(page, 'Клиент')
+    const start = await center(item)
+    const inside = start.x - (await item.boundingBox())!.x // где внутри объекта взялись
+
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x + 8, start.y, { steps: 3 })
+    // к самому правому краю: холст поедет влево, пока указатель там
+    await page.mouse.move(canvas.x + canvas.width - 10, start.y, { steps: 12 })
+    await expect.poll(async () => (await cameraOf(page)).x, { message: 'холст поехал сам' }).toBeLessThan(-150)
+
+    const glued = async (pointerX: number) => {
+      const box = (await item.boundingBox())!
+      expect(Math.abs(box.x + inside - pointerX), `объект под указателем (${pointerX})`).toBeLessThanOrEqual(1)
+    }
+    // уводим указатель от края: холст встал, объект под указателем
+    const mid = canvas.x + canvas.width / 2
+    await page.mouse.move(mid, start.y, { steps: 8 })
+    await page.waitForTimeout(120)
+    const stopped = await cameraOf(page)
+    await glued(mid)
+    // обратно влево: холст не сжимается и не прыгает, объект идёт за указателем шаг в шаг
+    for (const x of [mid - 60, mid - 140, mid - 220, mid - 300]) {
+      await page.mouse.move(x, start.y, { steps: 5 })
+      await page.waitForTimeout(60)
+      await glued(x)
+    }
+    expect(await cameraOf(page), 'камера на обратном пути не двигалась').toEqual(stopped)
+
+    // что нарисовано, то и сохранено
+    const shown = parseFloat(await item.evaluate((el) => (el as HTMLElement).style.left))
+    await page.mouse.up()
+    await expectCanvas(page, id, (d) => d.objects.find((o) => o.text === 'Клиент')?.x, shown)
+    expect(shown).toBeGreaterThan(460)
+  })
+
+  test('карточку с текстом тоже можно тащить к краю: холст едет, карточка остаётся под указателем', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const canvas = await canvasBox(page)
+    const grip = await center(page.locator('.note-grip'))
+    await page.mouse.move(grip.x, grip.y)
+    await page.mouse.down()
+    await page.mouse.move(grip.x + 8, grip.y, { steps: 3 })
+    await page.mouse.move(canvas.x + canvas.width - 10, grip.y, { steps: 12 })
+    await expect.poll(async () => (await cameraOf(page)).x).toBeLessThan(-150)
+    const mid = canvas.x + canvas.width / 2
+    await page.mouse.move(mid, grip.y, { steps: 6 })
+    await page.waitForTimeout(120)
+    // полоску взяли за середину: она под указателем
+    const gripBox = (await page.locator('.note-grip').boundingBox())!
+    expect(Math.abs(gripBox.x + gripBox.width / 2 - mid)).toBeLessThanOrEqual(1)
+    await page.mouse.up()
+  })
+
+  test('новый объект встаёт в видимую часть, если холст уехал далеко', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    await wheelOver(page, { x: 0, y: 3000 }, { shift: true })
+    await expect.poll(async () => (await cameraOf(page)).x).toBe(-3000)
+    await tools(page).getByRole('button', { name: '+ Стикер' }).click()
+    const box = (await items(page).last().boundingBox())!
+    const canvas = await canvasBox(page)
+    expect(box.x).toBeGreaterThanOrEqual(canvas.x)
+    expect(box.x + box.width).toBeLessThanOrEqual(canvas.x + canvas.width)
+    expect(box.y).toBeGreaterThanOrEqual(canvas.y)
+    expect(box.y + box.height).toBeLessThanOrEqual(canvas.y + canvas.height)
+  })
+
+  test('с клавиатуры: Tab к объекту, которого не видно, двигает холст к нему', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    await named(page, 'Клиент').focus()
+    await wheelOver(page, { x: 0, y: 1500 }, { shift: true }) // всё уехало влево за край
+    await expect.poll(async () => (await cameraOf(page)).x).toBe(-1500)
+    const next = named(page, 'API-шлюз') // следующий по порядку
+    const canvas = await canvasBox(page)
+    const hidden = (await next.boundingBox())!
+    expect(hidden.x + hidden.width).toBeLessThan(canvas.x)
+
+    await page.keyboard.press('Tab')
+    await expect(next).toBeFocused()
+    await expect
+      .poll(async () => {
+        const box = (await next.boundingBox())!
+        return box.x >= canvas.x && box.x + box.width <= canvas.x + canvas.width
+      })
+      .toBe(true)
+  })
+
+  test('режим «Страница»: слой холста не рисуется и камеры нет', async ({ page }) => {
+    await openDocByTitle(page, 'Планирование Q4')
+    await expect(page.locator('.cv.page')).toBeVisible()
+    await expect(page.locator('.cv.page > .cv-world')).toHaveCSS('display', 'contents')
+    await expect(page.locator('.cv.page > .cv-world')).toHaveCSS('transform', 'none')
+  })
 })

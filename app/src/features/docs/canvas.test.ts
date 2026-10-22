@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CanvasObject } from '../../lib/api/types'
 import {
-  addObject, canvasLines, linkLine, moveNote, newObject, patchObject, removeObject, sameCanvas, toggleLink, type CanvasState,
+  addObject, canvasBounds, canvasLines, linkLine, moveNote, newObject, patchObject, removeObject, sameCanvas, toggleLink, type CanvasState,
 } from './canvas'
 
 const obj = (id: string, x: number, y: number, w = 100, h = 60, type: CanvasObject['type'] = 'rect'): CanvasObject => ({
@@ -33,6 +33,34 @@ describe('newObject', () => {
   it('учитывает положение и ширину карточки', () => {
     const s: CanvasState = { ...base(), note: { x: 100, y: 10, w: 500 } }
     expect(newObject(s, 'rect', 'n').x).toBe(100 + 500 + 40)
+  })
+
+  it('видимо место справа от карточки: остаётся там же', () => {
+    const view = { x: 0, y: 0, w: 1100, h: 678 }
+    expect(newObject(base(), 'sticky', 'n', view)).toMatchObject({ x: 464, y: 60 })
+  })
+
+  it('место справа не видно (холст уехал): объект встаёт в центр видимой части, со сдвигом', () => {
+    const view = { x: 5000, y: -2000, w: 1000, h: 600 }
+    expect(newObject(base(), 'sticky', 'n', view)).toMatchObject({ x: 5000 + (1000 - 190) / 2, y: -2000 + (600 - 120) / 2 })
+    const second = newObject(base([obj('a', 0, 0)]), 'sticky', 'n', view)
+    expect(second).toMatchObject({ x: 5000 + (1000 - 190) / 2 + 26, y: -2000 + (600 - 120) / 2 + 26 })
+  })
+
+  it('объект на краю видимой части, но не целиком: тоже в центр', () => {
+    const view = { x: 0, y: 0, w: 500, h: 400 } // 464 + 190 не помещается
+    expect(newObject(base(), 'sticky', 'n', view).x).toBe(Math.round((500 - 190) / 2))
+  })
+})
+
+describe('canvasBounds', () => {
+  it('охватывает карточку с текстом и все объекты, в том числе левее нуля', () => {
+    const s = base([obj('a', -300, -50, 100, 60), obj('b', 900, 400, 150, 80)])
+    expect(canvasBounds(s, 300)).toEqual({ x: -300, y: -50, w: 1350, h: 530 })
+  })
+
+  it('без объектов это одна карточка', () => {
+    expect(canvasBounds(base(), 250)).toEqual({ x: 24, y: 28, w: 400, h: 250 })
   })
 })
 

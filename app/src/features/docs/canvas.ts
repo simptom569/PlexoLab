@@ -2,6 +2,7 @@
 // Все функции чистые: берут состояние холста и возвращают новое.
 
 import type { CanvasLink, CanvasObject, ObjectKind } from '../../lib/api/types'
+import { MAX_COORD, contains, type Rect } from './camera'
 
 /** Положение и ширина карточки с текстом документа (note в макете) */
 export type Note = { x: number; y: number; w: number }
@@ -29,22 +30,24 @@ export const DEFAULT_COLOR: Record<ObjectKind, number> = { sticky: 6, rect: 3, e
 
 /**
  * Новый объект: справа от карточки с текстом, каждый следующий со сдвигом (по кругу через шесть).
+ * Если `view` (видимая часть холста) задана и там это место не видно целиком, объект встаёт в центр видимой части с тем
+ * же сдвигом: иначе после прокрутки или масштаба он появился бы за краем окна.
  * Идентификатор выдаёт вызывающий.
  */
-export function newObject(state: CanvasState, kind: ObjectKind, id: string): CanvasObject {
+export function newObject(state: CanvasState, kind: ObjectKind, id: string, view?: Rect): CanvasObject {
   const n = state.objects.length
+  const shift = (n % 6) * 26
   const [w, h] = DIMS[kind]
-  return {
-    id,
-    type: kind,
-    x: state.note.x + state.note.w + 40 + (n % 6) * 26,
-    y: 60 + (n % 6) * 26,
-    w,
-    h,
-    text: '',
-    color: DEFAULT_COLOR[kind],
+  let x = state.note.x + state.note.w + 40 + shift
+  let y = 60 + shift
+  if (view && !contains(view, { x, y, w, h })) {
+    x = Math.round(view.x + (view.w - w) / 2) + shift
+    y = Math.round(view.y + (view.h - h) / 2) + shift
   }
+  return { id, type: kind, x: clamp(x), y: clamp(y), w, h, text: '', color: DEFAULT_COLOR[kind] }
 }
+
+const clamp = (v: number): number => Math.min(MAX_COORD, Math.max(-MAX_COORD, v))
 
 export const addObject = (state: CanvasState, object: CanvasObject): CanvasState => ({ ...state, objects: [...state.objects, object] })
 
@@ -111,6 +114,19 @@ export function canvasLines(state: CanvasState): Line[] {
     if (line) lines.push(line)
   }
   return lines
+}
+
+/** Всё, что лежит на холсте: карточка с текстом (её высоту знает только страница) и все объекты */
+export function canvasBounds(state: CanvasState, noteHeight: number): Rect {
+  const boxes: Rect[] = [
+    { x: state.note.x, y: state.note.y, w: state.note.w, h: noteHeight },
+    ...state.objects.map((o) => ({ x: o.x, y: o.y, w: o.w, h: o.h })),
+  ]
+  const left = Math.min(...boxes.map((b) => b.x))
+  const top = Math.min(...boxes.map((b) => b.y))
+  const right = Math.max(...boxes.map((b) => b.x + b.w))
+  const bottom = Math.max(...boxes.map((b) => b.y + b.h))
+  return { x: left, y: top, w: right - left, h: bottom - top }
 }
 
 /** Совпадают ли два холста (порядок объектов важен: это слои; порядок стрелок нет) */

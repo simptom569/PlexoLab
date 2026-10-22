@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent } from 'react'
 import { Button, ConfirmDelete, ConflictBanner, EmptyState, Icon, Input, MarkdownEditor, Segmented } from '../../components'
 import { useDoc, useWiki } from '../../lib/api/queries'
 import { ApiError } from '../../lib/api/client'
@@ -10,18 +10,36 @@ import { newId } from '../../lib/uuid'
 import { useOpenWikiLink } from '../wiki/actions'
 import { lowerTitles } from '../wiki/logic'
 import { OBJECT_TOOLS, addObject, canvasLines, moveNote, newObject, patchObject, removeObject, toggleLink } from './canvas'
+import { clampCoord, edgeVelocity, gridStyle, panBy, revealCamera, tidy, toWorld, visibleRect, type Camera, type Point } from './camera'
 import { useCanvasDraft, useDocDraft } from './drafts'
 import { starLabel } from './logic'
 import { useDeleteDoc, useSetDocMode, useStarDoc } from './mutations'
 import { useDocsStore } from './store'
+import { useCanvasView } from './useCanvasView'
 
 const MODES: ReadonlyArray<{ value: DocMode; label: string }> = [
   { value: 'page', label: 'Страница' },
   { value: 'edge', label: 'Холст' },
 ]
 
-/** Что сейчас тащат: объект или карточка с текстом, откуда начали (_wb в макете) */
-type Grab = { kind: 'item' | 'note'; id: string; sx: number; sy: number; ox: number; oy: number }
+/**
+ * Что сейчас тащат: объект или карточка с текстом (_wb в макете). `dx`, `dy`: где угол объекта относительно указателя в
+ * координатах холста (они не меняются, пока тащат, даже если холст при этом едет). `sx`, `sy`: где нажали на экране;
+ * `moved`: указатель ушёл от места нажатия достаточно далеко, чтобы это было перетаскиванием, а не кликом.
+ */
+type Grab = { kind: 'item' | 'note'; id: string; dx: number; dy: number; sx: number; sy: number; moved: boolean }
+
+/** Холст двигают пустым местом: что взяли и какой была камера */
+type PanGrab = { sx: number; sy: number; cam: Camera }
+
+/** Меньше скольки пикселей от места нажатия движение ещё считается кликом: у края окна холст при этом не едет */
+const DRAG_SLOP = 4
+
+/** Сетка точек на фоне едет и масштабируется вместе с холстом; в покое это шаг 22 и нулевой сдвиг, как в макете */
+function gridBackground(cam: Camera): CSSProperties {
+  const grid = gridStyle(cam)
+  return { backgroundSize: `${grid.size}px ${grid.size}px`, backgroundPosition: `${Math.round(grid.x)}px ${Math.round(grid.y)}px` }
+}
 
 const HINT = 'Текст документа лежит на холсте карточкой: её можно двигать за верхнюю полоску. Фигуры и стикеры двигаются мышью, у выбранного можно поменять текст и цвет.'
 const HINT_CONNECT = 'Режим стрелок: нажми два объекта подряд, чтобы соединить их. Повторное соединение той же пары убирает стрелку.'
@@ -50,7 +68,21 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   const [from, setFrom] = useState<string | null>(null)
   const [connect, setConnect] = useState(false)
   const grab = useRef<Grab | null>(null)
+  const pan = useRef<PanGrab | null>(null)
+  const [panning, setPanning] = useState(false)
+  // последнее положение указателя на экране и кадр автопрокрутки: холст едет сам, пока объект тащат у края окна
+  const pointer = useRef<Point>({ x: 0, y: 0 })
+  const frame = useRef<number | null>(null)
+  const { cvRef, cam, camRef, setCamera, viewSize, screenOf } = useCanvasView(edge)
   const selected = edge ? (canvas.objects.find((o) => o.id === sel) ?? null) : null
+
+  // уходя из документа или выключив холст, останавливаем автопрокрутку
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    },
+    [],
+  )
 
   const pickMode = (mode: DocMode) => {
     if (mode === doc.mode) return
@@ -72,16 +104,25 @@ function LoadedDoc({ doc }: { doc: Doc }) {
     setSel(id)
   }
 
-  const itemDown = (id: string) => (e: PointerEvent<HTMLElement>) => {
-    if (connect) return link(id)
-    const it = canvas.objects.find((o) => o.id === id)
-    if (!it) return
-    grab.current = { kind: 'item', id, sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y }
+  /** Взять объект или карточку: запомнить, где угол относительно указателя, и захватить указатель */
+  const startGrab = (e: PointerEvent<HTMLElement>, kind: Grab['kind'], id: string, x: number, y: number) => {
+    pointer.current = { x: e.clientX, y: e.clientY }
+    const at = toWorld(camRef.current, screenOf(e.clientX, e.clientY))
+    grab.current = { kind, id, dx: x - at.x, dy: y - at.y, sx: e.clientX, sy: e.clientY, moved: false }
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
     } catch {
       // захват не удался (указатель уже отпущен): объект всё равно выбран
     }
+  }
+
+  const itemDown = (id: string) => (e: PointerEvent<HTMLElement>) => {
+    // средняя кнопка двигает холст (её ловит сам холст), правая ничего не тащит
+    if (e.button !== 0) return
+    if (connect) return link(id)
+    const it = canvas.objects.find((o) => o.id === id)
+    if (!it) return
+    startGrab(e, 'item', id, it.x, it.y)
     if (sel !== id) setSel(id)
   }
 
@@ -93,33 +134,103 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   }
 
   const noteDown = (e: PointerEvent<HTMLElement>) => {
-    grab.current = { kind: 'note', id: doc.id, sx: e.clientX, sy: e.clientY, ox: canvas.note.x, oy: canvas.note.y }
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      // см. выше
-    }
+    if (e.button !== 0) return
+    startGrab(e, 'note', doc.id, canvas.note.x, canvas.note.y)
     setSel(null)
     setFrom(null)
   }
 
-  // во время движения меняется только локальное состояние, на сервер холст уйдёт, когда указатель отпустят
-  const move = (e: PointerEvent<HTMLElement>) => {
+  // Объект стоит там, где указатель, плюс прежнее расстояние до угла: считается в координатах холста, поэтому не зависит
+  // от того, куда за это время сдвинулась камера. Во время движения меняется только локальное состояние, на сервер холст
+  // уйдёт, когда указатель отпустят.
+  const place = () => {
     const g = grab.current
     if (!g) return
-    const x = Math.max(0, g.ox + e.clientX - g.sx)
-    const y = Math.max(0, g.oy + e.clientY - g.sy)
+    const at = toWorld(camRef.current, screenOf(pointer.current.x, pointer.current.y))
+    const x = tidy(clampCoord(at.x + g.dx))
+    const y = tidy(clampCoord(at.y + g.dy))
     cv.change((s) => (g.kind === 'note' ? moveNote(s, x, y) : patchObject(s, g.id, { x, y })), { save: false })
   }
 
+  // Пока объект тащат у края окна, холст едет сам, а объект остаётся под указателем. Кадры идут, пока объект не отпустят.
+  const startAutopan = () => {
+    if (frame.current !== null) return
+    let last: number | null = null // время прошлого кадра; у первого кадра шага нет
+    const tick = (now: number) => {
+      frame.current = null
+      if (!grab.current) return
+      const seconds = last === null ? 0 : Math.min(0.05, (now - last) / 1000)
+      last = now
+      const speed = edgeVelocity(screenOf(pointer.current.x, pointer.current.y), viewSize())
+      if (speed.x !== 0 || speed.y !== 0) {
+        setCamera(panBy(camRef.current, speed.x * seconds, speed.y * seconds))
+        place()
+      }
+      frame.current = requestAnimationFrame(tick)
+    }
+    frame.current = requestAnimationFrame(tick)
+  }
+
+  const move = (e: PointerEvent<HTMLElement>) => {
+    const p = pan.current
+    if (p) {
+      setCamera({ ...p.cam, x: p.cam.x + e.clientX - p.sx, y: p.cam.y + e.clientY - p.sy })
+      return
+    }
+    const g = grab.current
+    if (!g) return
+    pointer.current = { x: e.clientX, y: e.clientY }
+    place()
+    if (!g.moved && Math.hypot(e.clientX - g.sx, e.clientY - g.sy) >= DRAG_SLOP) {
+      g.moved = true
+      startAutopan()
+    }
+  }
+
   const release = () => {
+    if (pan.current) {
+      pan.current = null
+      setPanning(false)
+      return
+    }
     if (!grab.current) return
     grab.current = null
+    if (frame.current !== null) {
+      cancelAnimationFrame(frame.current)
+      frame.current = null
+    }
     cv.commit()
   }
 
+  /** Пустое место или средняя кнопка берут холст целиком */
+  const background = (e: PointerEvent<HTMLElement>) => {
+    if (e.target === e.currentTarget) {
+      setSel(null)
+      setFrom(null)
+    }
+    if (!edge) return
+    if (e.button === 1 || (e.button === 0 && e.target === e.currentTarget)) {
+      pan.current = { sx: e.clientX, sy: e.clientY, cam: camRef.current }
+      setPanning(true)
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        // захват не удался: холст всё равно двигается, пока указатель над ним
+      }
+    }
+  }
+
+  // с клавиатуры (Tab) выбрали объект, которого сейчас не видно: холст сдвигается к нему на минимум
+  const reveal = (e: FocusEvent<HTMLElement>) => {
+    const el = e.target
+    if (!(el instanceof HTMLElement) || !el.matches('.wb-item') || !el.matches(':focus-visible')) return
+    const box = el.getBoundingClientRect()
+    const at = screenOf(box.left, box.top)
+    setCamera(revealCamera(camRef.current, { x: at.x, y: at.y, w: box.width, h: box.height }, viewSize()))
+  }
+
   const add = (kind: ObjectKind) => {
-    const object = newObject(canvas, kind, newId())
+    const object = newObject(canvas, kind, newId(), visibleRect(camRef.current, viewSize()))
     cv.change((s) => addObject(s, object))
     setSel(object.id)
   }
@@ -149,75 +260,82 @@ function LoadedDoc({ doc }: { doc: Doc }) {
       </div>
       <div className="cv-wrap">
         <div
-          className={cx('cv', edge ? 'edge' : 'page')}
-          onPointerDown={(e) => {
-            if (e.target === e.currentTarget) {
-              setSel(null)
-              setFrom(null)
-            }
+          ref={cvRef}
+          className={cx('cv', edge ? 'edge' : 'page', panning && 'panning')}
+          style={edge ? gridBackground(cam) : undefined}
+          onPointerDown={background}
+          // средняя кнопка двигает холст, а не включает прокрутку страницы
+          onMouseDown={(e) => {
+            if (e.button === 1) e.preventDefault()
           }}
           onPointerMove={move}
           onPointerUp={release}
           onPointerCancel={release}
         >
-          {edge &&
-            canvasLines(canvas).map((ln, i) => (
-              <div key={i} className="wb-line" style={{ left: ln.x, top: ln.y, width: ln.len, transform: `rotate(${ln.ang}deg)` }} />
-            ))}
-          {edge &&
-            canvas.objects.map((it) => {
-              const text = it.type === 'text'
-              const tone = toneAt(it.color)
-              return (
-                <button
-                  key={it.id}
-                  className={cx('wb-item', it.type, (sel === it.id || from === it.id) && 'sel')}
-                  type="button"
-                  style={{
-                    left: it.x,
-                    top: it.y,
-                    width: it.w,
-                    height: it.h,
-                    background: text ? 'transparent' : tone.bg,
-                    color: text ? 'var(--ink)' : tone.fg,
-                  }}
-                  onPointerDown={itemDown(it.id)}
-                  onClick={itemKey(it.id)}
-                >
-                  {it.text || (text ? 'Текст' : 'Пусто')}
-                </button>
-              )
-            })}
           <div
-            className={cx('note', edge ? 'edge' : 'page')}
-            style={{ left: canvas.note.x, top: canvas.note.y, width: edge ? `${canvas.note.w}px` : '100%' }}
+            className="cv-world"
+            style={edge ? { transform: `translate(${Math.round(cam.x)}px, ${Math.round(cam.y)}px) scale(${cam.z})` } : undefined}
+            onFocus={edge ? reveal : undefined}
           >
-            {edge && (
-              <div className="note-grip" role="presentation" title="Перетащить карточку с текстом" onPointerDown={noteDown}>
-                <span />
-              </div>
-            )}
-            <input
-              className="doc-title"
-              placeholder="Без названия"
-              aria-label="Название документа"
-              value={state.title}
-              onChange={(e) => draft.setTitle(e.target.value)}
-            />
-            {state.conflict && <ConflictBanner message="Документ изменил другой участник" onTheirs={() => draft.acceptTheirs()} onMine={() => draft.keepMine()} />}
-            <MarkdownEditor
-              // чужая версия заменила текст: редактор начинается заново
-              key={state.resetKey}
-              md={state.md}
-              onChange={(md) => draft.setMd(md)}
-              wikiTitles={lowerTitles(pages)}
-              onOpenWiki={openLink}
-              onOpenUrl={(url) => void openExternal(url)}
-              autoEdit={autoEdit}
-              onFinish={() => void draft.flush()}
-              restore={state.restore}
-              registerProbe={draft.setActiveProbe}
-            />
+            {edge &&
+              canvasLines(canvas).map((ln, i) => (
+                <div key={i} className="wb-line" style={{ left: ln.x, top: ln.y, width: ln.len, transform: `rotate(${ln.ang}deg)` }} />
+              ))}
+            {edge &&
+              canvas.objects.map((it) => {
+                const text = it.type === 'text'
+                const tone = toneAt(it.color)
+                return (
+                  <button
+                    key={it.id}
+                    className={cx('wb-item', it.type, (sel === it.id || from === it.id) && 'sel')}
+                    type="button"
+                    style={{
+                      left: it.x,
+                      top: it.y,
+                      width: it.w,
+                      height: it.h,
+                      background: text ? 'transparent' : tone.bg,
+                      color: text ? 'var(--ink)' : tone.fg,
+                    }}
+                    onPointerDown={itemDown(it.id)}
+                    onClick={itemKey(it.id)}
+                  >
+                    {it.text || (text ? 'Текст' : 'Пусто')}
+                  </button>
+                )
+              })}
+            <div
+              className={cx('note', edge ? 'edge' : 'page')}
+              style={{ left: canvas.note.x, top: canvas.note.y, width: edge ? `${canvas.note.w}px` : '100%' }}
+            >
+              {edge && (
+                <div className="note-grip" role="presentation" title="Перетащить карточку с текстом" onPointerDown={noteDown}>
+                  <span />
+                </div>
+              )}
+              <input
+                className="doc-title"
+                placeholder="Без названия"
+                aria-label="Название документа"
+                value={state.title}
+                onChange={(e) => draft.setTitle(e.target.value)}
+              />
+              {state.conflict && <ConflictBanner message="Документ изменил другой участник" onTheirs={() => draft.acceptTheirs()} onMine={() => draft.keepMine()} />}
+              <MarkdownEditor
+                // чужая версия заменила текст: редактор начинается заново
+                key={state.resetKey}
+                md={state.md}
+                onChange={(md) => draft.setMd(md)}
+                wikiTitles={lowerTitles(pages)}
+                onOpenWiki={openLink}
+                onOpenUrl={(url) => void openExternal(url)}
+                autoEdit={autoEdit}
+                onFinish={() => void draft.flush()}
+                restore={state.restore}
+                registerProbe={draft.setActiveProbe}
+              />
+            </div>
           </div>
         </div>
         {edge && (

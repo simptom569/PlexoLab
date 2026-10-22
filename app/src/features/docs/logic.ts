@@ -17,17 +17,23 @@ export type ThumbBox = { l: number; t: number; w: number; h: number; bg: string;
 /** Миниатюра есть у документа-холста, на котором что-то лежит; у остальных в карточке фрагмент текста */
 export const hasThumb = (d: Pick<DocSummary, 'mode' | 'object_count'>): boolean => d.mode === 'edge' && d.object_count > 0
 
-/** Карточка с текстом первой, потом объекты холста. Объекты меньше 6×4 пикселей увеличиваются до них. */
+/**
+ * Карточка с текстом первой, потом объекты холста. Объекты меньше 6×4 пикселей увеличиваются до них.
+ * Миниатюра начинается с левого верхнего угла холста; если что-то лежит левее или выше нуля, она начинается с самого
+ * дальнего такого объекта (без этого он остался бы за краем миниатюры). Когда всё правее и ниже нуля, сдвига нет.
+ */
 export function thumbBoxes(d: Pick<DocSummary, 'note' | 'thumb'>): ThumbBox[] {
   const sc = THUMB_SCALE
+  const ox = Math.min(0, d.note.x, ...d.thumb.map((it) => it.x))
+  const oy = Math.min(0, d.note.y, ...d.thumb.map((it) => it.y))
   return [
-    { l: d.note.x * sc, t: d.note.y * sc, w: d.note.w * sc, h: THUMB_NOTE_H * sc, bg: 'var(--surface2)', bd: 'var(--line-strong)' },
+    { l: (d.note.x - ox) * sc, t: (d.note.y - oy) * sc, w: d.note.w * sc, h: THUMB_NOTE_H * sc, bg: 'var(--surface2)', bd: 'var(--line-strong)' },
     ...d.thumb.map((it) => {
       const text = it.type === 'text'
       const tone = toneAt(it.color)
       return {
-        l: it.x * sc,
-        t: it.y * sc,
+        l: (it.x - ox) * sc,
+        t: (it.y - oy) * sc,
         w: Math.max(6, it.w * sc),
         h: Math.max(4, it.h * sc),
         bg: text ? 'var(--line-strong)' : tone.bg,
