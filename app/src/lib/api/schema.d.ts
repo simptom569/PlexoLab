@@ -498,8 +498,9 @@ export interface paths {
         };
         /**
          * Кто есть в ленте проекта
-         * @description Все, у кого есть события в ленте (проекта и общие), независимо от фильтров. Клиент собирает из них и из участников
-         *     проекта список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события.
+         * @description Все, у кого есть собственные события проекта, независимо от фильтров. Клиент собирает из них и из участников проекта
+         *     список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события. Авторы общих событий (вики, файлы
+         *     библиотеки) сюда не входят: человек, которого нет в проекте, в списке не нужен.
          */
         get: operations["activity_actors"];
         put?: never;
@@ -1000,7 +1001,7 @@ export interface components {
              */
             actor_id: string;
             /**
-             * @description Категория для цветной метки: tasks | comment | code | doc | release | file | module
+             * @description Категория для цветной метки: tasks | comment | code | doc | wiki | release | file | module
              * @example tasks
              */
             category: string;
@@ -3605,7 +3606,7 @@ export interface operations {
                 id: string;
                 /** @description Только события этого участника */
                 actor: string | null;
-                /** @description Только события этой категории: tasks | comment | code | doc | release | file | module */
+                /** @description Только события этой категории: tasks | comment | code | doc | wiki | release | file | module */
                 kind: string | null;
                 /** @description Курсор из `next` предыдущего ответа: вернуть события старше того места */
                 before: string | null;
@@ -3664,7 +3665,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Идентификаторы людей, у которых есть события в ленте */
+            /** @description Идентификаторы людей, у которых есть собственные события проекта */
             200: {
                 headers: {
                     [name: string]: unknown;

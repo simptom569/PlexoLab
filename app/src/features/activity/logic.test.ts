@@ -15,12 +15,13 @@ const event = (id: string, at: Date, category = 'tasks'): ActivityEvent => ({
 })
 
 describe('метки типов события', () => {
-  it('подписи и цвета как в макете, плюс «Модуль»', () => {
+  it('подписи и цвета как в макете, плюс «Модуль» и «Вики»', () => {
     expect(KIND_META).toEqual({
       tasks: { label: 'Задача', tone: 1 },
       comment: { label: 'Комментарий', tone: 7 },
       code: { label: 'Код', tone: 5 },
       doc: { label: 'Документ', tone: 3 },
+      wiki: { label: 'Вики', tone: 3 },
       release: { label: 'Релиз', tone: 6 },
       file: { label: 'Файл', tone: 2 },
       module: { label: 'Модуль', tone: 4 },
@@ -39,6 +40,7 @@ describe('метки типов события', () => {
       'Комментарии',
       'Код',
       'Документы',
+      'Вики',
       'Релизы',
       'Файлы',
       'Модули',

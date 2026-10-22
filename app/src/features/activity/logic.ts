@@ -10,6 +10,9 @@ export const KIND_META: Record<string, { label: string; tone: number }> = {
   comment: { label: 'Комментарий', tone: 7 },
   code: { label: 'Код', tone: 5 },
   doc: { label: 'Документ', tone: 3 },
+  // страницы вики в макете шли как «Документ»; отдельная категория добавлена по решению владельца (проектный уровень),
+  // цвет тот же: вики и документы родственны, различает подпись
+  wiki: { label: 'Вики', tone: 3 },
   release: { label: 'Релиз', tone: 6 },
   file: { label: 'Файл', tone: 2 },
   // категории «Модуль» в макете нет: добавлена по решению владельца (этап 4), цвет из тех же TONES
@@ -26,6 +29,7 @@ export const KIND_CHIPS: ReadonlyArray<readonly [ActKind, string]> = [
   ['comment', 'Комментарии'],
   ['code', 'Код'],
   ['doc', 'Документы'],
+  ['wiki', 'Вики'],
   ['release', 'Релизы'],
   ['file', 'Файлы'],
   ['module', 'Модули'],

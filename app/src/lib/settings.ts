@@ -28,7 +28,7 @@ export const DISPLAY_KEYS = ['who', 'due', 'tags', 'prio', 'subs', 'pr', 'module
 export type DisplayKey = (typeof DISPLAY_KEYS)[number]
 
 /** Фильтр «Тип события» в ленте: категории сервера (GET /activity?kind=) и «все» */
-export const ACT_KINDS = ['all', 'tasks', 'comment', 'code', 'doc', 'release', 'file', 'module'] as const
+export const ACT_KINDS = ['all', 'tasks', 'comment', 'code', 'doc', 'wiki', 'release', 'file', 'module'] as const
 export type ActKind = (typeof ACT_KINDS)[number]
 
 export const filtersSchema = z.object({
