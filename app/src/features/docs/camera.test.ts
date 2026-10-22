@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  EDGE_SPEED, EDGE_ZONE, HOME, MAX_COORD, MAX_ZOOM, MIN_ZOOM, clampCoord, clampZoom, contains, edgeVelocity, fitCamera, gridStyle, panBy,
-  revealCamera, snap, tidy, toScreen, toWorld, visibleRect, wheelPan, wheelZoomFactor, zoomBy, zoomTo, type Camera,
+  EDGE_SPEED, EDGE_ZONE, HOME, MAX_COORD, MAX_ZOOM, MIN_ZOOM, ZOOM_PRESETS, clampCoord, clampZoom, contains, edgeVelocity, fitCamera, gridStyle,
+  intersects, nextZoom, panBy, revealCamera, snap, tidy, toScreen, toWorld, visibleRect, wheelPan, wheelZoomFactor, zoomBy, zoomTo, type Camera,
 } from './camera'
 
 const VIEW = { w: 1000, h: 600 }
@@ -63,6 +63,29 @@ describe('масштаб', () => {
     expect(wheelZoomFactor(100)).toBeLessThan(1)
     expect(wheelZoomFactor(0)).toBe(1)
     expect(wheelZoomFactor(-100) * wheelZoomFactor(100)).toBeCloseTo(1, 12)
+  })
+})
+
+describe('ступени масштаба для кнопок', () => {
+  it('вверх и вниз по ступеням от 100%', () => {
+    expect(nextZoom(1, true)).toBe(1.25)
+    expect(nextZoom(1, false)).toBe(0.75)
+    expect(nextZoom(0.75, false)).toBe(0.67)
+    expect(nextZoom(0.5, true)).toBe(0.67)
+  })
+
+  it('от произвольного масштаба (после колеса) к ближайшей ступени в нужную сторону', () => {
+    expect(nextZoom(0.8, true)).toBe(1)
+    expect(nextZoom(0.8, false)).toBe(0.75)
+    expect(nextZoom(1.3, true)).toBe(1.5)
+    expect(nextZoom(1.3, false)).toBe(1.25)
+  })
+
+  it('на краях остаётся прежний масштаб', () => {
+    expect(nextZoom(MAX_ZOOM, true)).toBe(MAX_ZOOM)
+    expect(nextZoom(MIN_ZOOM, false)).toBe(MIN_ZOOM)
+    expect(ZOOM_PRESETS[0]).toBe(MIN_ZOOM)
+    expect(ZOOM_PRESETS.at(-1)).toBe(MAX_ZOOM)
   })
 })
 
@@ -150,6 +173,15 @@ describe('видимая часть и «Показать всё»', () => {
   it('пустое место нулевого размера не ломает расчёт', () => {
     const c = fitCamera({ x: 10, y: 10, w: 0, h: 0 }, VIEW)
     expect(Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.z)).toBe(true)
+  })
+})
+
+describe('пересечение', () => {
+  it('видно хоть что-то: прямоугольники пересекаются; касание краем не в счёт', () => {
+    const view = { x: 0, y: 0, w: 100, h: 100 }
+    expect(intersects(view, { x: 90, y: 90, w: 50, h: 50 })).toBe(true)
+    expect(intersects(view, { x: 100, y: 0, w: 50, h: 50 })).toBe(false)
+    expect(intersects(view, { x: -5000, y: -5000, w: 10, h: 10 })).toBe(false)
   })
 })
 

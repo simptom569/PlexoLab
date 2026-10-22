@@ -12,8 +12,8 @@ export const HOME: Camera = { x: 0, y: 0, z: 1 }
 
 export const MIN_ZOOM = 0.25
 export const MAX_ZOOM = 2
-/** Во сколько раз меняют масштаб кнопки «−» и «+» */
-export const ZOOM_BUTTON_STEP = 1.25
+/** Ступени масштаба для кнопок «−» и «+»: от нынешнего к ближайшей ступени в нужную сторону */
+export const ZOOM_PRESETS = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2] as const
 /** Чувствительность колеса: один щелчок мыши (deltaY = 100) меняет масштаб примерно в 1,16 раза */
 const WHEEL_ZOOM_RATE = 0.0015
 
@@ -58,6 +58,13 @@ export function zoomTo(c: Camera, z: number, at: Point): Camera {
 /** То же, но во столько-то раз от нынешнего масштаба */
 export const zoomBy = (c: Camera, factor: number, at: Point): Camera => zoomTo(c, c.z * factor, at)
 
+/** Ближайшая ступень масштаба выше (`up`) или ниже нынешнего; на краю остаётся тот же масштаб */
+export function nextZoom(z: number, up: boolean): number {
+  const eps = 1e-6
+  if (up) return ZOOM_PRESETS.find((p) => p > z + eps) ?? z
+  return [...ZOOM_PRESETS].reverse().find((p) => p < z - eps) ?? z
+}
+
 /** Во сколько раз колесо с прокруткой `deltaY` меняет масштаб: вперёд (deltaY < 0) приближает, назад отдаляет */
 export const wheelZoomFactor = (deltaY: number): number => Math.exp(-deltaY * WHEEL_ZOOM_RATE)
 
@@ -101,6 +108,9 @@ export function visibleRect(c: Camera, view: Size): Rect {
 /** Целиком ли `inner` лежит внутри `outer` */
 export const contains = (outer: Rect, inner: Rect): boolean =>
   inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h
+
+/** Пересекаются ли два прямоугольника (касание краем не считается) */
+export const intersects = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
 
 /** Камера, при которой `bounds` целиком в окне по центру; не крупнее 100%, чтобы маленькая схема не раздувалась */
 export function fitCamera(bounds: Rect, view: Size): Camera {

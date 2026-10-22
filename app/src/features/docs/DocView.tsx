@@ -9,8 +9,8 @@ import { TONES, toneAt } from '../../lib/tones'
 import { newId } from '../../lib/uuid'
 import { useOpenWikiLink } from '../wiki/actions'
 import { lowerTitles } from '../wiki/logic'
-import { OBJECT_TOOLS, addObject, canvasLines, moveNote, newObject, patchObject, removeObject, toggleLink } from './canvas'
-import { clampCoord, edgeVelocity, gridStyle, panBy, revealCamera, tidy, toWorld, visibleRect, type Camera, type Point } from './camera'
+import { OBJECT_TOOLS, addObject, canvasBounds, canvasLines, moveNote, newObject, patchObject, removeObject, toggleLink } from './canvas'
+import { MAX_ZOOM, MIN_ZOOM, clampCoord, edgeVelocity, gridStyle, panBy, revealCamera, tidy, toWorld, visibleRect, type Camera, type Point } from './camera'
 import { useCanvasDraft, useDocDraft } from './drafts'
 import { starLabel } from './logic'
 import { useDeleteDoc, useSetDocMode, useStarDoc } from './mutations'
@@ -73,7 +73,11 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   // последнее положение указателя на экране и кадр автопрокрутки: холст едет сам, пока объект тащат у края окна
   const pointer = useRef<Point>({ x: 0, y: 0 })
   const frame = useRef<number | null>(null)
-  const { cvRef, cam, camRef, setCamera, viewSize, screenOf } = useCanvasView(edge)
+  // высота карточки с текстом зависит от текста: для «Показать всё» её берём с экрана, а пока её нет, как у миниатюры
+  const noteRef = useRef<HTMLDivElement>(null)
+  const { cvRef, cam, camRef, setCamera, viewSize, screenOf, zoomStep, resetZoom, showAll } = useCanvasView(edge, doc.id, () =>
+    canvasBounds(canvas, noteRef.current?.offsetHeight ?? 150),
+  )
   const selected = edge ? (canvas.objects.find((o) => o.id === sel) ?? null) : null
 
   // уходя из документа или выключив холст, останавливаем автопрокрутку
@@ -306,6 +310,7 @@ function LoadedDoc({ doc }: { doc: Doc }) {
                 )
               })}
             <div
+              ref={noteRef}
               className={cx('note', edge ? 'edge' : 'page')}
               style={{ left: canvas.note.x, top: canvas.note.y, width: edge ? `${canvas.note.w}px` : '100%' }}
             >
@@ -338,6 +343,20 @@ function LoadedDoc({ doc }: { doc: Doc }) {
             </div>
           </div>
         </div>
+        {edge && (
+          <div className="cv-zoom" role="group" aria-label="Масштаб холста">
+            <Button aria-label="Уменьшить" title="Уменьшить" disabled={cam.z <= MIN_ZOOM} onClick={() => zoomStep(false)}>
+              −
+            </Button>
+            <Button className="zoom-pct" aria-label={`Масштаб ${Math.round(cam.z * 100)}%, вернуть 100%`} title="Вернуть 100%" onClick={resetZoom}>
+              {Math.round(cam.z * 100)}%
+            </Button>
+            <Button aria-label="Увеличить" title="Увеличить" disabled={cam.z >= MAX_ZOOM} onClick={() => zoomStep(true)}>
+              +
+            </Button>
+            <Button onClick={showAll}>Показать всё</Button>
+          </div>
+        )}
         {edge && (
           <div className="eg-tools" role="toolbar" aria-label="Инструменты холста">
             {OBJECT_TOOLS.map((t) => (

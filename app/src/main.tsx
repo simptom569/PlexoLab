@@ -17,6 +17,7 @@ import './styles/syntax.css'
 import './styles/projects.css'
 import './styles/editor.css'
 import App from './App.tsx'
+import { blockPageZoom } from './lib/noPageZoom'
 import { loadSettings } from './lib/settings'
 import { useSession } from './lib/session'
 import { hydrateUi } from './lib/ui-store'
@@ -25,6 +26,7 @@ import { hydrateDocs } from './features/docs/store'
 import { hydrateWiki } from './features/wiki/store'
 
 async function start() {
+  blockPageZoom()
   // Настройки читаем до показа интерфейса: тема и открытая страница сразу правильные
   const settings = await loadSettings()
   hydrateUi(settings)

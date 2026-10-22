@@ -33,3 +33,28 @@
 .cv.page > .cv-world {
   display: contents;
 }
+
+/*
+  Масштаб холста: «−», «100%» (показывает нынешний, по нажатию возвращает 100%), «+» и «Показать всё». Группа лежит в
+  правом верхнем углу холста, не по нему: нажатия на неё холст не двигают. Оформление как у панели инструментов
+  .eg-tools из макета (фон, рамка, радиус, тень, отступы), только в углу. Эталона в макете нет.
+*/
+.cv-zoom {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(15, 20, 35, 0.16);
+}
+.cv-zoom .zoom-pct {
+  min-width: 64px;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}

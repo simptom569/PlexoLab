@@ -2,8 +2,8 @@
 // стрелки (два клика, повторный убирает), удаление, сохранение после перезапуска.
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { docFull, expectCanvas, items, openDocByTitle } from './docs-helpers'
-import { resetData } from './fixtures'
+import { docFull, docId, expectCanvas, items, makeDoc, openDocByTitle } from './docs-helpers'
+import { openApp, resetData } from './fixtures'
 
 test.beforeEach(() => resetData())
 
@@ -487,5 +487,215 @@ test.describe('камера холста', () => {
     await expect(page.locator('.cv.page')).toBeVisible()
     await expect(page.locator('.cv.page > .cv-world')).toHaveCSS('display', 'contents')
     await expect(page.locator('.cv.page > .cv-world')).toHaveCSS('transform', 'none')
+  })
+})
+
+// ---- Масштаб холста: Ctrl + колесо, кнопки, «Показать всё», запоминание вида ----
+
+const zoomGroup = (page: Page) => page.getByRole('group', { name: 'Масштаб холста' })
+const percent = (page: Page, value: number) => zoomGroup(page).getByRole('button', { name: new RegExp(`^Масштаб ${value}%`) })
+
+/** Колесо с зажатым Ctrl: так приходит и щипок на тачпаде. `steps` щелчков по 100 в сторону `deltaY`. */
+async function ctrlWheel(page: Page, at: { x: number; y: number }, deltaY: number, steps = 1) {
+  await page.mouse.move(at.x, at.y)
+  await page.keyboard.down('Control')
+  for (let i = 0; i < steps; i++) await page.mouse.wheel(0, deltaY)
+  await page.keyboard.up('Control')
+}
+
+/** Сколько объекта лежит внутри окна холста; true, если целиком */
+const insideCanvas = async (page: Page, el: Locator) => {
+  const box = (await el.boundingBox())!
+  const canvas = await canvasBox(page)
+  return box.x >= canvas.x - 1 && box.y >= canvas.y - 1 && box.x + box.width <= canvas.x + canvas.width + 1 && box.y + box.height <= canvas.y + canvas.height + 1
+}
+
+test.describe('масштаб холста', () => {
+  test('Ctrl + колесо приближает и отдаляет вокруг указателя: точка под ним остаётся на месте', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const at = await center(named(page, 'Клиент'))
+    const scrollY = await page.evaluate(() => window.scrollY)
+
+    await ctrlWheel(page, at, -100)
+    const zoomed = await cameraOf(page)
+    expect(zoomed.z).toBeCloseTo(Math.exp(0.15), 4) // матрицу браузер отдаёт с шестью знаками
+    // центр объекта, на который указывал курсор, остался под курсором
+    const box = (await named(page, 'Клиент').boundingBox())!
+    expect(Math.abs(box.x + box.width / 2 - at.x)).toBeLessThan(1)
+    expect(Math.abs(box.y + box.height / 2 - at.y)).toBeLessThan(1)
+    await expect(percent(page, 116)).toBeVisible()
+    expect(await page.evaluate(() => window.scrollY), 'страница не прокрутилась').toBe(scrollY)
+
+    // обратно тем же щелчком: масштаб снова 100%
+    await ctrlWheel(page, at, 100)
+    const back = await cameraOf(page)
+    expect(back.z).toBeCloseTo(1, 4)
+    expect(Math.abs(back.x)).toBeLessThan(1) // сдвиг рисуется в целых пикселях
+    expect(Math.abs(back.y)).toBeLessThan(1)
+  })
+
+  test('масштаб держится между 25% и 200%, кнопки на пределе отключаются', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const at = await center(named(page, 'Клиент'))
+    await ctrlWheel(page, at, -100, 12)
+    await expect.poll(async () => (await cameraOf(page)).z).toBe(2)
+    await expect(percent(page, 200)).toBeVisible()
+    await expect(zoomGroup(page).getByRole('button', { name: 'Увеличить' })).toBeDisabled()
+    await expect(zoomGroup(page).getByRole('button', { name: 'Уменьшить' })).toBeEnabled()
+
+    // pointer мог уехать за край: берём середину холста
+    const box = await canvasBox(page)
+    await ctrlWheel(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, 100, 30)
+    await expect.poll(async () => (await cameraOf(page)).z).toBe(0.25)
+    await expect(percent(page, 25)).toBeVisible()
+    await expect(zoomGroup(page).getByRole('button', { name: 'Уменьшить' })).toBeDisabled()
+  })
+
+  test('кнопки: «−» и «+» идут по ступеням, «100%» возвращает масштаб; середина окна остаётся на месте', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const middle = async () => {
+      const cam = await cameraOf(page)
+      const view = await page.locator('.cv.edge').evaluate((el) => ({ w: el.clientWidth, h: el.clientHeight }))
+      return { x: (view.w / 2 - cam.x) / cam.z, y: (view.h / 2 - cam.y) / cam.z }
+    }
+    const before = await middle()
+    const minus = zoomGroup(page).getByRole('button', { name: 'Уменьшить' })
+    const plus = zoomGroup(page).getByRole('button', { name: 'Увеличить' })
+    await expect(percent(page, 100)).toBeVisible()
+
+    await minus.click()
+    await expect(percent(page, 75)).toBeVisible()
+    await minus.click()
+    await expect(percent(page, 67)).toBeVisible()
+    await plus.click()
+    await expect(percent(page, 75)).toBeVisible()
+    await plus.click()
+    await plus.click()
+    await expect(percent(page, 125)).toBeVisible()
+    const after = await middle()
+    // сдвиг рисуется в целых пикселях, поэтому до пикселя (в координатах холста чуть больше при малом масштабе)
+    expect(Math.abs(after.x - before.x)).toBeLessThan(1.5)
+    expect(Math.abs(after.y - before.y)).toBeLessThan(1.5)
+
+    await percent(page, 125).click() // «100%»: показывает нынешний, по нажатию возвращает 100%
+    await expect(percent(page, 100)).toBeVisible()
+    expect((await cameraOf(page)).z).toBe(1)
+  })
+
+  test('перенос на любом масштабе: объект идёт за указателем, на сервер числа холста, а не экрана', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Схема сервисов')
+    const item = named(page, 'Клиент')
+    let before = (await docFull(page, id)).objects.find((o) => o.text === 'Клиент')!
+
+    for (const [deltaY, steps] of [[100, 5], [-100, 9]] as const) {
+      // приближаем или отдаляем вокруг объекта: он остаётся под курсором и на виду
+      const at = await center(item)
+      await ctrlWheel(page, at, deltaY, steps)
+      const z = (await cameraOf(page)).z
+      const start = await center(item)
+      const boxBefore = (await item.boundingBox())!
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      await page.mouse.move(start.x + 100, start.y + 60, { steps: 6 })
+      // на экране объект ушёл ровно за указателем
+      const boxAfter = (await item.boundingBox())!
+      expect(Math.round(boxAfter.x - boxBefore.x)).toBe(100)
+      expect(Math.round(boxAfter.y - boxBefore.y)).toBe(60)
+      await page.mouse.up()
+      const expectedX = before.x + 100 / z
+      const expectedY = before.y + 60 / z
+      await expect
+        .poll(async () => {
+          const o = (await docFull(page, id)).objects.find((it) => it.text === 'Клиент')!
+          return [Math.abs(o.x - expectedX) < 0.02, Math.abs(o.y - expectedY) < 0.02]
+        })
+        .toEqual([true, true])
+      before = (await docFull(page, id)).objects.find((o) => o.text === 'Клиент')!
+      // стрелки следуют за объектом и на любом масштабе
+      await expect(lines(page)).toHaveCount(5)
+    }
+  })
+
+  test('«Показать всё»: из любого места и масштаба всё содержимое целиком в окне', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const at = await center(named(page, 'Клиент'))
+    await ctrlWheel(page, at, -100, 8) // 200%
+    await wheelOver(page, { x: 0, y: 2500 }, { shift: true }) // и далеко вбок: ничего не видно
+    await expect.poll(async () => (await cameraOf(page)).z).toBe(2)
+    expect(await insideCanvas(page, named(page, 'Клиент'))).toBe(false)
+
+    await zoomGroup(page).getByRole('button', { name: 'Показать всё' }).click()
+    const cam = await cameraOf(page)
+    expect(cam.z).toBeLessThanOrEqual(1)
+    expect(cam.z).toBeGreaterThanOrEqual(0.25)
+    for (const el of await items(page).all()) expect(await insideCanvas(page, el)).toBe(true)
+    expect(await insideCanvas(page, page.locator('.note.edge'))).toBe(true)
+  })
+
+  test('вид запоминается для документа и возвращается после перезапуска', async ({ page }) => {
+    const id = await openDocByTitle(page, 'Схема сервисов')
+    const at = await center(named(page, 'Клиент'))
+    await ctrlWheel(page, at, -100, 3)
+    await wheelOver(page, { x: 0, y: 80 })
+    const shown = await cameraOf(page)
+    expect(shown.z).toBeGreaterThan(1.4)
+    // запись на диск идёт с паузой (400 мс на камеру и 300 мс на настройки)
+    await expect
+      .poll(() => page.evaluate((docId) => JSON.parse(localStorage.getItem('plexolab.settings') ?? '{}').canvasViews?.[docId] ?? null, id))
+      .not.toBeNull()
+    await page.waitForTimeout(500) // дальше не менялось: запись уже последняя
+
+    await page.reload()
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    const restored = await cameraOf(page)
+    expect(restored.z).toBeCloseTo(shown.z, 2)
+    expect(Math.abs(restored.x - shown.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(restored.y - shown.y)).toBeLessThanOrEqual(1)
+  })
+
+  test('другой документ открывается в своём виде: вид не общий', async ({ page }) => {
+    await makeDoc(page, 'Пустая доска', 'edge')
+    await openDocByTitle(page, 'Схема сервисов')
+    const at = await center(named(page, 'Клиент'))
+    await ctrlWheel(page, at, -100, 3)
+    expect((await cameraOf(page)).z).toBeGreaterThan(1.4)
+
+    await page.getByRole('button', { name: 'Все документы' }).click()
+    await page.locator('.dgrid .dcard', { hasText: 'Пустая доска' }).click()
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    expect(await cameraOf(page)).toEqual({ x: 0, y: 0, z: 1 })
+
+    // и первый документ при возвращении стоит так, как его оставили
+    await page.getByRole('button', { name: 'Все документы' }).click()
+    await page.locator('.dgrid .dcard', { hasText: 'Схема сервисов' }).click()
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    expect((await cameraOf(page)).z).toBeGreaterThan(1.4)
+  })
+
+  test('запомненный вид, где ничего не видно (содержимое убрали или сдвинули), не используется: холст с начала', async ({ page }) => {
+    const id = await docId(page, 'Схема сервисов')
+    await openApp(page, { settings: { page: 'docs', docOpen: id, canvasViews: { [id]: { x: -60000, y: -60000, z: 1 } } } })
+    await expect(page.locator('.cv.edge')).toBeVisible()
+    expect(await cameraOf(page)).toEqual({ x: 0, y: 0, z: 1 })
+  })
+
+  test('окно приложения целиком не масштабируется: Ctrl + колесо и Ctrl + «+», «−», «0» отменяются, обычное колесо нет', async ({ page }) => {
+    await openDocByTitle(page, 'Схема сервисов')
+    const prevented = await page.evaluate(() => {
+      const bar = document.querySelector('.dbar')! // вне холста
+      const wheel = new WheelEvent('wheel', { ctrlKey: true, deltaY: -100, cancelable: true, bubbles: true })
+      bar.dispatchEvent(wheel)
+      const keys = ['=', '+', '-', '0'].map((key) => {
+        const e = new KeyboardEvent('keydown', { key, ctrlKey: true, cancelable: true, bubbles: true })
+        document.body.dispatchEvent(e)
+        return e.defaultPrevented
+      })
+      const plain = new WheelEvent('wheel', { deltaY: 100, cancelable: true, bubbles: true })
+      bar.dispatchEvent(plain)
+      const typing = new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, cancelable: true, bubbles: true })
+      document.body.dispatchEvent(typing)
+      return [wheel.defaultPrevented, ...keys, plain.defaultPrevented, typing.defaultPrevented]
+    })
+    expect(prevented).toEqual([true, true, true, true, true, false, false])
   })
 })

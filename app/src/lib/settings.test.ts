@@ -21,6 +21,7 @@ describe('parseSettings', () => {
       wikiPage: null,
       docOpen: null,
       docStar: false,
+      canvasViews: {},
       actWho: 'all',
       actKind: 'all',
     })
@@ -34,6 +35,14 @@ describe('parseSettings', () => {
   it('мусор в этих настройках заменяется значением по умолчанию', () => {
     const s = parseSettings({ theme: 'auto', scrollbars: 'thin', weekStart: 'tue', live: 'yes' })
     expect(s).toMatchObject({ theme: 'light', scrollbars: 'visible', weekStart: 'mon', live: true })
+  })
+
+  it('вид холста по документам хранится; мусор не ломает остальные записи', () => {
+    const good = { x: -40, y: 12, z: 1.25 }
+    expect(parseSettings({ canvasViews: { a: good } }).canvasViews).toEqual({ a: good })
+    expect(parseSettings({ canvasViews: { a: good, b: { x: 'много', y: 0, z: 1 }, c: null } }).canvasViews).toEqual({ a: good, b: null, c: null })
+    expect(parseSettings({ canvasViews: 'мусор' }).canvasViews).toEqual({})
+    expect(parseSettings({ canvasViews: { a: { x: Infinity, y: 0, z: 1 } } }).canvasViews).toEqual({ a: null })
   })
 
   it('фильтры ленты активности хранятся, мусор заменяется на «все»', () => {

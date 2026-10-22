@@ -51,6 +51,10 @@ export type Display = z.infer<typeof displaySchema>
 
 export const DEFAULT_DISPLAY: Display = { who: true, due: true, tags: true, prio: true, subs: true, pr: true, module: true }
 
+/** Вид холста документа: сдвиг и масштаб камеры (features/docs/camera.ts) */
+export const canvasViewSchema = z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() })
+export type CanvasView = z.infer<typeof canvasViewSchema>
+
 export const settingsSchema = z.object({
   serverUrl: z.string().nullable().catch(null),
   lastEmail: z.string().catch(''),
@@ -70,6 +74,8 @@ export const settingsSchema = z.object({
   docOpen: z.string().nullable().catch(null),
   /** В списке документов включён фильтр «Избранные» */
   docStar: z.boolean().catch(false),
+  /** Вид холста каждого документа (по идентификатору): при следующем открытии холст стоит там же и в том же масштабе */
+  canvasViews: z.record(z.string(), canvasViewSchema.nullable().catch(null)).catch({}),
   /** Фильтры ленты активности: участник ('all' или его идентификатор) и тип события */
   actWho: z.string().catch('all'),
   actKind: z.enum(ACT_KINDS).catch('all'),
