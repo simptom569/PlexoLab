@@ -1,9 +1,7 @@
-import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
-  type DragEndEvent, type DragMoveEvent, type DragStartEvent,
-} from '@dnd-kit/core'
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { setBusy } from '../../lib/busy'
+import { usePointer } from '../../lib/usePointer'
 import { DragContext, IDLE, targetAt, type DragData, type DragKind, type DragState } from './dnd'
 
 interface ProviderProps {
@@ -18,6 +16,7 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
   const [state, setState] = useState<DragState>(IDLE)
   const ref = useRef<DragState>(IDLE)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const pointer = usePointer()
 
   const set = useCallback((next: DragState) => {
     ref.current = next
@@ -46,14 +45,9 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
     set({ ...IDLE, kind: data.kind, id: data.id, h: Math.round(rect?.height ?? IDLE.h), w: Math.round(rect?.width ?? IDLE.w) })
   }
 
-  const pointer = (e: DragMoveEvent | DragEndEvent): { x: number; y: number } | null => {
-    const start = e.activatorEvent as PointerEvent | undefined
-    return start && 'clientX' in start ? { x: start.clientX + e.delta.x, y: start.clientY + e.delta.y } : null
-  }
-
-  const onDragMove = (e: DragMoveEvent) => {
+  const onDragMove = () => {
     const cur = ref.current
-    const p = pointer(e)
+    const p = pointer()
     if (!cur.kind || !p) return
     const target = targetAt(cur, cur.kind, p.x, p.y)
     if (!target) return
@@ -62,9 +56,9 @@ export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps)
     }
   }
 
-  const onDragEnd = (e: DragEndEvent) => {
+  const onDragEnd = () => {
     const cur = ref.current
-    const p = pointer(e)
+    const p = pointer()
     // бросок засчитывается, только если указатель над целью
     const over = cur.kind && p ? targetAt(cur, cur.kind, p.x, p.y) : null
     set(IDLE)

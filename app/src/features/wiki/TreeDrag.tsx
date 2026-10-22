@@ -2,12 +2,10 @@
 // определяется по тому, над чем сейчас указатель, так же, как у задач (см. features/board/dnd.ts): строки дерева помечены
 // `data-tree-id`, само дерево `data-tree-area`. Что значит место на строке, решает treeDrop.ts.
 
-import {
-  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
-  type DragEndEvent, type DragMoveEvent, type DragStartEvent,
-} from '@dnd-kit/core'
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WikiNode } from '../../lib/api/types'
+import { usePointer } from '../../lib/usePointer'
 import type { TreeRow } from './logic'
 import { IDLE, TreeDragContext, type DragData, type TreeDragState } from './treeDragState'
 import { levelAt, resolveDrop, sameDrop, type Drop, type Hover } from './treeDrop'
@@ -53,6 +51,7 @@ export function TreeDragProvider({ pages, rows, onMove, renderOverlay, children 
     latest.current = { pages, rows, onMove }
   })
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const pointer = usePointer()
 
   const set = useCallback((next: TreeDragState) => {
     ref.current = next
@@ -70,11 +69,6 @@ export function TreeDragProvider({ pages, rows, onMove, renderOverlay, children 
     }
   }, [dragging])
 
-  const pointer = (e: DragMoveEvent | DragEndEvent): { x: number; y: number } | null => {
-    const start = e.activatorEvent as PointerEvent | undefined
-    return start && 'clientX' in start ? { x: start.clientX + e.delta.x, y: start.clientY + e.delta.y } : null
-  }
-
   const dropAt = (cur: TreeDragState, p: { x: number; y: number }): Drop | null | typeof KEEP => {
     const hover = hoverAt(p.x, p.y)
     if (hover === KEEP) return KEEP
@@ -88,18 +82,18 @@ export function TreeDragProvider({ pages, rows, onMove, renderOverlay, children 
     set({ id: data.id, h: Math.round(rect?.height ?? IDLE.h), w: Math.round(rect?.width ?? IDLE.w), drop: null })
   }
 
-  const onDragMove = (e: DragMoveEvent) => {
+  const onDragMove = () => {
     const cur = ref.current
-    const p = pointer(e)
+    const p = pointer()
     if (!cur.id || !p) return
     const drop = dropAt(cur, p)
     if (drop === KEEP || sameDrop(drop, cur.drop)) return
     set({ ...cur, drop })
   }
 
-  const onDragEnd = (e: DragEndEvent) => {
+  const onDragEnd = () => {
     const cur = ref.current
-    const p = pointer(e)
+    const p = pointer()
     // бросок засчитывается по месту под указателем в момент отпускания; над заглушкой — по последнему известному
     const found = cur.id && p ? dropAt(cur, p) : null
     const drop = found === KEEP ? cur.drop : found
