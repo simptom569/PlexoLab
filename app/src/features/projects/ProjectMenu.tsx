@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Backdrop, Icon, MenuItem, Popover } from '../../components'
 import { useProjects } from '../../lib/api/queries'
 import { useSession } from '../../lib/session'
@@ -22,6 +22,7 @@ export function ProjectMenu() {
   const me = useSession((s) => s.user)
   const projects = useProjects()
   const project = projects.data?.find((p) => p.id === menu?.id)
+  const popover = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!menu) return
@@ -31,8 +32,20 @@ export function ProjectMenu() {
         close()
       }
     }
+    // Боковое меню лежит выше подложки (z-index 40 против 30, см. shell.css), поэтому нажатие в нём подложка не видит.
+    // Закрываем по нажатию вне меню сами; само нажатие идёт дальше, так что другой проект или раздел открывается с первого раза.
+    // Нажатие на подложке не трогаем: она закрывает меню своим кликом и не даёт ему попасть в страницу под ней.
+    const onDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Element) || popover.current?.contains(target) || target.closest('.backdrop')) return
+      close()
+    }
     document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
+    document.addEventListener('pointerdown', onDown, true)
+    return () => {
+      document.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('pointerdown', onDown, true)
+    }
   }, [menu, close])
 
   // проекта уже нет в списке (вышли с другого устройства): меню закрываем
@@ -62,7 +75,7 @@ export function ProjectMenu() {
   return (
     <>
       <Backdrop onClick={close} />
-      <Popover small role="menu" aria-label={`Проект «${project.name}»`} style={{ position: 'fixed', left, top, width: WIDTH, minWidth: 0 }}>
+      <Popover ref={popover} small role="menu" aria-label={`Проект «${project.name}»`} style={{ position: 'fixed', left, top, width: WIDTH, minWidth: 0 }}>
         {project.role === 'admin' && (
           <MenuItem onClick={() => openDialog({ kind: 'settings', id: project.id, tab: 'main' })}>
             <Icon name="gear" sm />
