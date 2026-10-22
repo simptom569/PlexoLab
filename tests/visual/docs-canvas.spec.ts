@@ -2,7 +2,7 @@
 // стрелки (два клика, повторный убирает), удаление, сохранение после перезапуска.
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { docFull, docId, expectCanvas, items, makeDoc, openDocByTitle } from './docs-helpers'
+import { docFull, docId, expectCanvas, items, makeDoc, openDoc, openDocByTitle } from './docs-helpers'
 import { openApp, resetData } from './fixtures'
 
 test.beforeEach(() => resetData())
@@ -697,5 +697,72 @@ test.describe('масштаб холста', () => {
       return [wheel.defaultPrevented, ...keys, plain.defaultPrevented, typing.defaultPrevented]
     })
     expect(prevented).toEqual([true, true, true, true, true, false, false])
+  })
+})
+
+// ---- Колесо над блоком со своей прокруткой: ось принадлежит блоку, холст не уносит ----
+
+test.describe('колесо над широким блоком в карточке', () => {
+  /** Документ-холст, где в карточке есть блок кода шире самой карточки (у него своя горизонтальная прокрутка) */
+  async function openWide(page: Page) {
+    const wide = 'const wide = "' + 'x'.repeat(220) + '"'
+    const id = await makeDoc(page, 'Широкий код', 'edge', ['Короткий абзац.', '', '```', wide, '```', '', 'Хвост.'].join('\n'))
+    await openDoc(page, id)
+    const code = page.locator('.md-code')
+    await expect(code).toBeVisible()
+    expect(await code.evaluate((el) => el.scrollWidth > el.clientWidth + 50), 'блок шире карточки').toBe(true)
+    const box = (await code.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    return { code, scrollLeft: () => code.evaluate((el) => el.scrollLeft), maxScroll: () => code.evaluate((el) => el.scrollWidth - el.clientWidth) }
+  }
+
+  test('Shift + колесо листает блок вбок, холст стоит', async ({ page }) => {
+    const { scrollLeft } = await openWide(page)
+    await page.keyboard.down('Shift')
+    await page.mouse.wheel(0, 100)
+    await page.keyboard.up('Shift')
+    await expect.poll(scrollLeft).toBeGreaterThan(0)
+    expect(await cameraOf(page)).toMatchObject({ x: 0, y: 0 })
+  })
+
+  test('горизонтальный жест (тачпад) листает блок, а когда блок кончился, остаток жеста холст не уносит', async ({ page }) => {
+    const { scrollLeft, maxScroll } = await openWide(page)
+    // жест заметно длиннее блока, как с инерцией тачпада: после края события идут дальше
+    for (let i = 0; i < 40; i++) await page.mouse.wheel(60, 0)
+    await expect.poll(async () => (await scrollLeft()) >= (await maxScroll()) - 1).toBe(true)
+    for (let i = 0; i < 20; i++) await page.mouse.wheel(60, 0)
+    await page.waitForTimeout(300)
+    expect(await cameraOf(page), 'холст не сдвинулся').toMatchObject({ x: 0, y: 0 })
+
+    // и в обратную сторону тоже: до начала блока и дальше
+    for (let i = 0; i < 80; i++) await page.mouse.wheel(-60, 0)
+    await expect.poll(scrollLeft).toBe(0)
+    await page.waitForTimeout(300)
+    expect(await cameraOf(page)).toMatchObject({ x: 0, y: 0 })
+  })
+
+  test('вертикальное колесо над таким блоком двигает холст (по вертикали блок не прокручивается), блок на месте', async ({ page }) => {
+    const { scrollLeft } = await openWide(page)
+    await page.mouse.wheel(0, 100)
+    await expect.poll(async () => (await cameraOf(page)).y).toBe(-100)
+    expect(await scrollLeft()).toBe(0)
+  })
+
+  test('над обычным текстом карточки колесо двигает холст', async ({ page }) => {
+    await openWide(page)
+    const text = (await page.locator('.note.edge').getByText('Короткий абзац.').boundingBox())!
+    await page.mouse.move(text.x + 20, text.y + text.height / 2)
+    await page.mouse.wheel(0, 80)
+    await expect.poll(async () => (await cameraOf(page)).y).toBe(-80)
+  })
+
+  test('Shift + колесо над обычным текстом двигает холст по горизонтали', async ({ page }) => {
+    await openWide(page)
+    const text = (await page.locator('.note.edge').getByText('Короткий абзац.').boundingBox())!
+    await page.mouse.move(text.x + 20, text.y + text.height / 2)
+    await page.keyboard.down('Shift')
+    await page.mouse.wheel(0, 90)
+    await page.keyboard.up('Shift')
+    await expect.poll(async () => (await cameraOf(page)).x).toBe(-90)
   })
 })

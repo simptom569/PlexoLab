@@ -9,17 +9,16 @@ import { rememberView, rememberedView } from './views'
 const REMEMBER_DELAY_MS = 400
 
 /**
- * Есть ли под указателем внутри холста блок со своей прокруткой (широкий код или таблица в карточке с текстом), которому
- * есть куда крутиться в эту сторону: тогда колесо крутит его, а не двигает весь холст.
+ * Умеет ли блок под указателем внутри холста (широкий код или таблица в карточке с текстом) прокручиваться по оси `axis`.
+ * Если умеет, эта ось принадлежит ему целиком, пока указатель над ним: даже когда блок дошёл до края, остаток жеста
+ * (у тачпада это инерция) не должен уносить холст. Поэтому проверяется только наличие прокрутки, а не «есть ли куда».
  */
-function scrollsInside(target: EventTarget | null, boundary: HTMLElement, dx: number, dy: number): boolean {
+function ownsAxis(target: EventTarget | null, boundary: HTMLElement, axis: 'x' | 'y'): boolean {
   for (let el = target instanceof Element ? target : null; el && el !== boundary; el = el.parentElement) {
     if (!(el instanceof HTMLElement)) continue
     const style = getComputedStyle(el)
-    const room = (overflow: string, pos: number, client: number, full: number, delta: number): boolean =>
-      /auto|scroll/.test(overflow) && full > client + 1 && (delta > 0 ? pos + client < full - 1 : delta < 0 && pos > 0)
-    if (room(style.overflowY, el.scrollTop, el.clientHeight, el.scrollHeight, dy)) return true
-    if (room(style.overflowX, el.scrollLeft, el.clientWidth, el.scrollWidth, dx)) return true
+    const scrolls = axis === 'x' ? /auto|scroll/.test(style.overflowX) && el.scrollWidth > el.clientWidth + 1 : /auto|scroll/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 1
+    if (scrolls) return true
   }
   return false
 }
@@ -91,7 +90,11 @@ export function useCanvasView(edge: boolean, docId: string, getBounds: () => Rec
         setCamera(zoomBy(camRef.current, wheelZoomFactor(delta), screenOf(e.clientX, e.clientY)))
         return
       }
-      if (scrollsInside(e.target, el, e.deltaX, e.deltaY)) return
+      // Главная ось жеста с учётом Shift (с ним вертикальное колесо идёт по горизонтали). Если по ней прокручивается блок под
+      // указателем, жест целиком его: браузер крутит блок сам, холст стоит (и в конце блока тоже, см. canvas.css про
+      // overscroll-behavior).
+      const horizontal = e.shiftKey && e.deltaX === 0 ? e.deltaY !== 0 : Math.abs(e.deltaX) > Math.abs(e.deltaY)
+      if (ownsAxis(e.target, el, horizontal ? 'x' : 'y')) return
       e.preventDefault()
       const d = wheelPan(e, viewSize())
       if (d.x !== 0 || d.y !== 0) setCamera(panBy(camRef.current, d.x, d.y))
