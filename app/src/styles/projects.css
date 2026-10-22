@@ -69,8 +69,14 @@
   padding: 10px 0;
 }
 
-.proj-row + .proj-row {
+.proj-row + .proj-row,
+.proj-problem + .proj-row {
   border-top: 1px solid var(--line);
+}
+
+/* ошибка действия со строкой: сразу под ней */
+.proj-problem {
+  padding: 0 0 10px;
 }
 
 .proj-person {

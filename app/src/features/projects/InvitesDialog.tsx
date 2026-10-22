@@ -1,17 +1,18 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Button, Sq } from '../../components'
 import { useMyInvites } from '../../lib/api/queries'
 import { ROLE_LABELS, roleOf } from '../../lib/project-dialogs'
 import { useUi } from '../../lib/ui-store'
 import { answerInvite, errorText } from './api'
-import { DialogFrame, Problem } from './parts'
+import { DialogFrame, Problem, RowProblem } from './parts'
 
 /** «Приглашения»: проекты, куда меня позвали и где я ещё не ответил. Принять или отклонить. */
 export function InvitesDialog() {
   const close = useUi((s) => s.closeProjectDialog)
   const invites = useMyInvites()
   const [busy, setBusy] = useState<string | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
+  // ошибка стоит под приглашением, на которое не удалось ответить
+  const [problem, setProblem] = useState<{ id: string; text: string } | null>(null)
 
   const answer = async (id: string, accept: boolean) => {
     setBusy(id)
@@ -19,7 +20,7 @@ export function InvitesDialog() {
     try {
       await answerInvite(id, accept)
     } catch (e) {
-      setProblem(errorText(e))
+      setProblem({ id, text: errorText(e) })
     } finally {
       setBusy(null)
     }
@@ -37,29 +38,31 @@ export function InvitesDialog() {
       ) : (
         <div className="proj-rows" aria-label="Приглашения в проекты">
           {list.map((i) => (
-            <div className="proj-row" key={i.id}>
-              <div className="set-text">
-                <div className="set-label">
-                  <Sq color={`var(--${i.project_color})`} />
-                  {i.project_name}
+            <Fragment key={i.id}>
+              <div className="proj-row">
+                <div className="set-text">
+                  <div className="set-label">
+                    <Sq color={`var(--${i.project_color})`} />
+                    {i.project_name}
+                  </div>
+                  <div className="set-desc">
+                    {i.invited_by_name ? `Пригласил(а) ${i.invited_by_name}` : 'Пригласили'} · {ROLE_LABELS[roleOf(i.role)]}
+                  </div>
                 </div>
-                <div className="set-desc">
-                  {i.invited_by_name ? `Пригласил(а) ${i.invited_by_name}` : 'Пригласили'} · {ROLE_LABELS[roleOf(i.role)]}
+                <div className="proj-actions">
+                  <Button variant="primary" disabled={busy === i.id} onClick={() => void answer(i.id, true)}>
+                    Принять
+                  </Button>
+                  <Button disabled={busy === i.id} onClick={() => void answer(i.id, false)}>
+                    Отклонить
+                  </Button>
                 </div>
               </div>
-              <div className="proj-actions">
-                <Button variant="primary" disabled={busy === i.id} onClick={() => void answer(i.id, true)}>
-                  Принять
-                </Button>
-                <Button disabled={busy === i.id} onClick={() => void answer(i.id, false)}>
-                  Отклонить
-                </Button>
-              </div>
-            </div>
+              {problem?.id === i.id && <RowProblem>{problem.text}</RowProblem>}
+            </Fragment>
           ))}
         </div>
       )}
-      {problem && <Problem>{problem}</Problem>}
     </DialogFrame>
   )
 }

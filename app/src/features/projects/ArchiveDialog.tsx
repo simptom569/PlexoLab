@@ -1,16 +1,17 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Button, Sq } from '../../components'
 import { useArchivedProjects } from '../../lib/api/queries'
 import { useUi } from '../../lib/ui-store'
 import { errorText, setArchived } from './api'
-import { DialogFrame, Problem } from './parts'
+import { DialogFrame, Problem, RowProblem } from './parts'
 
 /** «Архив проектов»: проекты, которые я убрал из списка. «Вернуть» возвращает проект в боковое меню. */
 export function ArchiveDialog() {
   const close = useUi((s) => s.closeProjectDialog)
   const archived = useArchivedProjects()
   const [busy, setBusy] = useState<string | null>(null)
-  const [problem, setProblem] = useState<string | null>(null)
+  // ошибка стоит под проектом, который не удалось вернуть
+  const [problem, setProblem] = useState<{ id: string; text: string } | null>(null)
 
   const restore = async (id: string) => {
     setBusy(id)
@@ -18,7 +19,7 @@ export function ArchiveDialog() {
     try {
       await setArchived(id, false)
     } catch (e) {
-      setProblem(errorText(e))
+      setProblem({ id, text: errorText(e) })
     } finally {
       setBusy(null)
     }
@@ -36,19 +37,21 @@ export function ArchiveDialog() {
       ) : (
         <div className="proj-rows" aria-label="Архивные проекты">
           {list.map((p) => (
-            <div className="proj-row" key={p.id}>
-              <div className="set-label">
-                <Sq color={`var(--${p.color})`} />
-                {p.name}
+            <Fragment key={p.id}>
+              <div className="proj-row">
+                <div className="set-label">
+                  <Sq color={`var(--${p.color})`} />
+                  {p.name}
+                </div>
+                <Button disabled={busy === p.id} onClick={() => void restore(p.id)}>
+                  Вернуть
+                </Button>
               </div>
-              <Button disabled={busy === p.id} onClick={() => void restore(p.id)}>
-                Вернуть
-              </Button>
-            </div>
+              {problem?.id === p.id && <RowProblem>{problem.text}</RowProblem>}
+            </Fragment>
           ))}
         </div>
       )}
-      {problem && <Problem>{problem}</Problem>}
     </DialogFrame>
   )
 }

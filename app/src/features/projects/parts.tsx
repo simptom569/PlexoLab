@@ -104,6 +104,13 @@ export const Problem = ({ children }: { children: ReactNode }) => (
   </span>
 )
 
+/** Ошибка под строкой списка, к которой она относится; список длинный, и внизу окна её не видно */
+export const RowProblem = ({ children }: { children: ReactNode }) => (
+  <div className="proj-problem">
+    <Problem>{children}</Problem>
+  </div>
+)
+
 /**
  * Кнопка с подтверждением вторым нажатием («Убрать» → «Точно убрать?»), как «Удалить» у модулей и релизов. Одно
  * подтверждение на весь экран: второе нажатие в другом месте первое снимает.
