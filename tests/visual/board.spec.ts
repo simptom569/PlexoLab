@@ -112,3 +112,52 @@ for (const theme of ['light', 'dark'] as const) {
     })
   }
 }
+
+// Доска-канбан прокручивается до краёв рабочей области (app/src/styles/board.css): обёртка колонок вылезает за боковой
+// отступ .main и возвращает его внутрь. В покое колонки стоят как в макете, в конце прокрутки справа тот же отступ.
+test.describe('доска прокручивается до краёв рабочей области', () => {
+  const geometry = (page: Page) =>
+    page.evaluate(() => {
+      const main = document.querySelector('main.main')!
+      const scroller = main.querySelector<HTMLElement>('.kanban-scroll')!
+      const columns = [...scroller.querySelectorAll('section.col, .col-new')].map((c) => c.getBoundingClientRect())
+      const box = scroller.getBoundingClientRect()
+      const area = main.getBoundingClientRect()
+      return {
+        pad: parseFloat(getComputedStyle(main).paddingLeft),
+        mainLeft: area.left,
+        mainRight: area.right,
+        left: box.left,
+        right: box.right,
+        firstColumnLeft: columns[0].left,
+        lastColumnRight: columns[columns.length - 1].right,
+        scrollable: scroller.scrollWidth - scroller.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      }
+    })
+  const near = (actual: number, expected: number) => expect(Math.abs(actual - expected), `${actual} против ${expected}`).toBeLessThanOrEqual(1)
+
+  for (const width of [1440, 1100]) {
+    test(`окно ${width} px: обёртка до краёв, в покое отступ слева, в конце прокрутки отступ справа`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await openApp(page)
+
+      const rest = await geometry(page)
+      expect(rest.scrollable, 'колонки не помещаются, прокрутка есть').toBeGreaterThan(0)
+      near(rest.left, rest.mainLeft)
+      near(rest.right, rest.mainRight)
+      near(rest.firstColumnLeft, rest.mainLeft + rest.pad)
+      expect(rest.pageOverflow, 'у всей страницы прокрутки по горизонтали нет').toBeLessThanOrEqual(0)
+
+      await page.locator('.kanban-scroll').evaluate((el) => (el.scrollLeft = el.scrollWidth))
+      const end = await geometry(page)
+      near(end.lastColumnRight, end.mainRight - end.pad)
+      expect(end.pageOverflow).toBeLessThanOrEqual(0)
+    })
+  }
+
+  test('в списке обёртки нет: другие виды не затронуты', async ({ page }) => {
+    await openApp(page, { settings: { view: 'list' } })
+    await expect(page.locator('.kanban-scroll')).toHaveCount(0)
+  })
+})
