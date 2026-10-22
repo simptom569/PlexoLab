@@ -299,7 +299,7 @@ export function KanbanView() {
   const phEndCol = !!dk && drag.overSlot === END && dkNext !== END
 
   return (
-    <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
+    <div className="kanban-scroll" style={{ overflowX: 'auto', paddingBottom: 8 }}>
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', minWidth: 'min-content' }}>
         {m.columns.map((column) => (
           <Fragment key={column.id}>
