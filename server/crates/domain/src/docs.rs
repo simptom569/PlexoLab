@@ -21,7 +21,7 @@ pub const NEW_NOTE: Note = Note { x: 40.0, y: 36.0, w: 440.0 };
 pub const MAX_OBJECTS: usize = 500;
 pub const MAX_LINKS: usize = 2_000;
 pub const MAX_OBJECT_TEXT_LEN: usize = 1_000;
-/// Расстояние от левого верхнего угла холста: в макете объект нельзя утащить в минус, дальше 100 000 пикселей не нужно
+/// Расстояние от начала координат холста в любую сторону: холст бесконечный, но дальше 100 000 пикселей не нужно
 pub const MAX_COORD: f32 = 100_000.0;
 /// Ширина и высота объекта
 pub const MAX_SIZE: f32 = 5_000.0;
@@ -180,10 +180,10 @@ pub struct Link {
 }
 
 fn coord(name: &str, v: f32) -> Result<(), String> {
-    if v.is_finite() && (0.0..=MAX_COORD).contains(&v) {
+    if v.is_finite() && (-MAX_COORD..=MAX_COORD).contains(&v) {
         Ok(())
     } else {
-        Err(format!("{name}: число от 0 до {MAX_COORD}"))
+        Err(format!("{name}: число от -{MAX_COORD} до {MAX_COORD}"))
     }
 }
 
@@ -361,8 +361,10 @@ mod tests {
     }
 
     #[test]
-    fn note_must_stay_on_the_canvas() {
-        assert!(check_canvas(&Note { x: -1.0, ..NOTE }, &[], &[]).is_err());
+    fn note_may_lie_left_and_above_the_origin_but_not_beyond_the_limit() {
+        assert!(check_canvas(&Note { x: -1.0, y: -MAX_COORD, ..NOTE }, &[], &[]).is_ok());
+        assert!(check_canvas(&Note { x: -MAX_COORD - 1.0, ..NOTE }, &[], &[]).is_err());
+        assert!(check_canvas(&Note { y: MAX_COORD + 1.0, ..NOTE }, &[], &[]).is_err());
         assert!(check_canvas(&Note { y: f32::NAN, ..NOTE }, &[], &[]).is_err());
         assert!(check_canvas(&Note { w: 299.0, ..NOTE }, &[], &[]).is_err());
         assert!(check_canvas(&Note { w: MAX_SIZE + 1.0, ..NOTE }, &[], &[]).is_err());
@@ -376,7 +378,10 @@ mod tests {
             check_canvas(&NOTE, &[o], &[]).is_err()
         };
         assert!(bad(|o| o.kind = "circle".into()));
-        assert!(bad(|o| o.x = -0.5));
+        assert!(!bad(|o| o.x = -0.5));
+        assert!(!bad(|o| o.y = -MAX_COORD));
+        assert!(bad(|o| o.x = -MAX_COORD - 1.0));
+        assert!(bad(|o| o.y = MAX_COORD + 1.0));
         assert!(bad(|o| o.y = f32::INFINITY));
         assert!(bad(|o| o.w = 0.0));
         assert!(bad(|o| o.h = MAX_SIZE + 1.0));

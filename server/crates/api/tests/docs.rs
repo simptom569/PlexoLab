@@ -636,7 +636,9 @@ async fn the_canvas_is_checked_and_a_refused_one_changes_nothing(pool: PgPool) {
     };
     let bad = [
         ("неизвестный тип", with(&|v| v["objects"][0]["type"] = json!("circle"))),
-        ("минус по x", with(&|v| v["objects"][0]["x"] = json!(-1))),
+        ("дальше предела по x", with(&|v| v["objects"][0]["x"] = json!(-100_001))),
+        ("дальше предела по y", with(&|v| v["objects"][0]["y"] = json!(100_001))),
+        ("карточка дальше предела", with(&|v| v["note"]["x"] = json!(-100_001))),
         ("цвета 8 нет", with(&|v| v["objects"][0]["color"] = json!(8))),
         ("нулевая ширина", with(&|v| v["objects"][0]["w"] = json!(0))),
         ("длинный текст", with(&|v| v["objects"][0]["text"] = json!("я".repeat(1001)))),
@@ -661,6 +663,22 @@ async fn the_canvas_is_checked_and_a_refused_one_changes_nothing(pool: PgPool) {
 
     let missing = format!("/api/v1/docs/{}/canvas", Uuid::new_v4());
     assert_eq!(c.put_json(&missing, good).await.status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn objects_and_the_note_may_lie_left_and_above_the_origin(pool: PgPool) {
+    let c = ctx(pool).await;
+    let doc = c.doc("Бесконечный", "edge").await;
+    let a = Uuid::new_v4();
+    let mut body = canvas(&[obj(a, "rect", -300.0, -50.5, "А")], &[]);
+    body["note"]["x"] = json!(-120);
+    let r = c.put_json(&canvas_uri(&doc), body).await;
+    c.ok(r, StatusCode::OK).await;
+
+    let open = c.open(&doc).await;
+    assert_eq!(open["objects"][0]["x"], -300.0);
+    assert_eq!(open["objects"][0]["y"], -50.5);
+    assert_eq!(open["note"]["x"], -120.0);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
