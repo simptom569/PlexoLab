@@ -137,6 +137,67 @@ test.describe('меню проекта по правой кнопке', () => {
     expect((await projectsOf(page, 'artem@example.com')).map((p) => p.name)).toEqual(['Web-приложение', 'Инфраструктура'])
   })
 
+  // Боковое меню лежит выше прозрачной подложки, поэтому нажатия в нём подложка не ловит: меню закрывается само.
+  test('левая кнопка в боковом меню закрывает меню проекта, а нажатие доходит до цели', async ({ page }) => {
+    await openApp(page)
+    const menu = page.getByRole('menu', { name: 'Проект «Мобильный API»' })
+
+    // на другом проекте: меню закрылось, проект открылся с первого нажатия
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await expect(menu).toBeVisible()
+    // меню открыто у курсора и перекрывает правую часть строк ниже, поэтому жмём в левую
+    await projectButton(page, 'Инфраструктура').click({ position: { x: 10, y: 10 } })
+    await expect(menu).toHaveCount(0)
+    await expect(projectButton(page, 'Инфраструктура')).toHaveClass(/cur/)
+
+    // на разделе
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await expect(menu).toBeVisible()
+    await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Бэклог' }).click()
+    await expect(menu).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Бэклог' })).toHaveAttribute('aria-current', 'page')
+
+    // на пустом месте панели и на заголовке «Проекты»: ничего не открывается, меню уходит
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await expect(menu).toBeVisible()
+    await page.locator('.side').click({ position: { x: 100, y: 700 } })
+    await expect(menu).toHaveCount(0)
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await page.locator('.proj-head').click({ position: { x: 20, y: 8 } })
+    await expect(menu).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  test('левая кнопка на содержимом закрывает меню и ничего там не нажимает; правая на другом проекте открывает его меню', async ({ page }) => {
+    await openApp(page)
+    const menu = page.getByRole('menu', { name: 'Проект «Мобильный API»' })
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await expect(menu).toBeVisible()
+    await page.mouse.click(900, 450)
+    await expect(menu).toHaveCount(0)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await projectButton(page, 'Web-приложение').click({ button: 'right' })
+    await expect(menu).toHaveCount(0)
+    await expect(page.getByRole('menu', { name: 'Проект «Web-приложение»' })).toBeVisible()
+  })
+
+  test('закрытое без выбора меню не помнит вопрос «Точно выйти?»', async ({ page }) => {
+    await openApp(page)
+    const menu = page.getByRole('menu', { name: 'Проект «Мобильный API»' })
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await menu.getByRole('menuitem', { name: 'Выйти из проекта' }).click()
+    await expect(menu.getByRole('menuitem', { name: 'Точно выйти?' })).toBeVisible()
+    // нажатие внутри меню его не закрывает; снаружи закрывает
+    await menu.click({ position: { x: 4, y: 4 } })
+    await expect(menu).toBeVisible()
+    await page.locator('.side').click({ position: { x: 100, y: 700 } })
+    await expect(menu).toHaveCount(0)
+    await projectButton(page, 'Мобильный API').click({ button: 'right' })
+    await expect(menu.getByRole('menuitem', { name: 'Выйти из проекта' })).toBeVisible()
+  })
+
   test('единственный администратор не выходит: плашка с объяснением, проект остаётся', async ({ page }) => {
     await openApp(page)
     await createProjectInUi(page, 'Личный')
