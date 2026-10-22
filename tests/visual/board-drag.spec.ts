@@ -150,3 +150,46 @@ test.describe('бросок меняет данные на сервере', () =
     expect(requests).toEqual([])
   })
 })
+
+// Пока доска прокручивается сама (мышь у правого края), цель определяется по тому, где мышь на самом деле, а не со
+// сдвигом на величину прокрутки: у dnd-kit `delta` включает прокрутку контейнера, и точка уезжала вправо.
+test.describe('автопрокрутка доски при переносе', () => {
+  /** Берёт элемент, подводит мышь к правому краю окна и ждёт, пока доска прокрутится до конца; мышь остаётся там */
+  async function dragToEndOfBoard(page: Page, from: { x: number; y: number }) {
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(from.x + 8, from.y + 8, { steps: 3 })
+    await page.mouse.move(1430, from.y + 8, { steps: 12 })
+    await expect
+      .poll(() => page.locator('.kanban-scroll').evaluate((el) => el.scrollWidth - el.clientWidth - el.scrollLeft), { message: 'доска прокручена до конца' })
+      .toBeLessThanOrEqual(1)
+  }
+
+  /** Плавно уводит мышь от края к точке и отпускает */
+  async function dropAt(page: Page, to: { x: number; y: number }) {
+    await page.mouse.move(to.x, to.y, { steps: 12 })
+    await page.waitForTimeout(100)
+    await page.mouse.up()
+  }
+
+  test('карточка падает в ту колонку, над которой мышь, хотя доска уехала', async ({ page }) => {
+    await openApp(page)
+    const from = await center(page, '[data-card-id]:has-text("WEB-151")')
+    await dragToEndOfBoard(page, from)
+    // у карточки WEB-130 колонки «Готово» берём верхнюю половину: заглушка встаёт перед ней
+    const target = await center(page, '[data-card-id]:has-text("WEB-130")')
+    await dropAt(page, { x: target.x, y: target.box.y + 20 })
+    await expect(page.locator('[data-col-id]:has(h2:text-is("Готово")) [data-card-id]')).toHaveText([/WEB-133/, /WEB-151/, /WEB-130/, /WEB-128/, /WEB-126/])
+    await expect(page.locator('[data-col-id]:has(h2:text-is("К выполнению")) .count')).toHaveText('2')
+  })
+
+  test('колонка встаёт перед той, над которой мышь, хотя доска уехала', async ({ page }) => {
+    await openApp(page)
+    const grip = await center(page, '[data-col-id]:has(h2:text-is("К выполнению")) .col-head .grip')
+    await dragToEndOfBoard(page, grip)
+    // левая половина «На ревью»: колонка встаёт прямо перед ней, то есть после «В работе»
+    const target = await center(page, '[data-col-id]:has(h2:text-is("На ревью"))')
+    await dropAt(page, { x: target.box.x + 40, y: target.box.y + 30 })
+    await expect(page.locator('.col h2')).toHaveText(['В работе', 'К выполнению', 'На ревью', 'Готово'])
+  })
+})
