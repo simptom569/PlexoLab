@@ -11,7 +11,7 @@ create type priority   as enum ('high', 'med', 'low');
 create type work_status as enum ('plan', 'progress', 'done');       -- модули и релизы
 create type obj_type   as enum ('sticky', 'rect', 'ellipse', 'text');
 create type doc_mode   as enum ('page', 'edge');
-create type act_kind   as enum ('move', 'create', 'delete', 'comment', 'code', 'doc', 'release', 'file', 'module');   -- 'module' добавлена на этапе 4 (фильтр «Модули» в ленте)
+create type act_kind   as enum ('move', 'create', 'delete', 'comment', 'code', 'doc', 'release', 'file', 'module', 'wiki');   -- 'module' добавлена на этапе 4 (фильтр «Модули» в ленте), 'wiki' на проектном уровне (миграция 0015)
 
 create table users (
   id uuid primary key default gen_random_uuid(),
@@ -263,8 +263,8 @@ create index on tasks (project_id, column_id, position);
 | `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
 | `GET /projects/{id}/docs?q=&starred=`, `POST /projects/{id}/docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы проекта (этап П5): список и создание по проекту, остальное по документу, проект и права находятся по нему (чужой проект и бывший участник получают 404). Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке своего проекта, `null` — в конец; документ другого проекта в `before_id` даёт 400) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
 | `PUT /docs/{id}/canvas` | сохранить сразу карточку с текстом, объекты и стрелки холста (тело — полный список, идентификаторы объектов выдаёт клиент); в одной транзакции, ответ с новой `canvas_rev` |
-| `GET /projects/{id}/activity/actors` | кто есть в ленте проекта: идентификаторы людей, у которых есть события в ленте (проекта и общие), независимо от фильтров; из них и из участников проекта клиент собирает список «Участник» |
-| `GET /projects/{id}/activity?actor=&kind=&before=` | лента проекта (этап П5): его события и события без проекта (вики, файлы библиотеки), постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc`, `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
+| `GET /projects/{id}/activity/actors` | кто есть в ленте проекта: идентификаторы людей, у которых есть собственные события проекта (авторов общих событий вики и файлов здесь нет), независимо от фильтров; из них и из участников проекта клиент собирает список «Участник» |
+| `GET /projects/{id}/activity?actor=&kind=&before=` | лента проекта (этап П5): его события и события без проекта (вики, файлы библиотеки), постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc` (документы проекта), `wiki` (страницы вики), `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
 | `GET/POST /projects/{id}/link-groups`, `PATCH/DELETE /link-groups/{id}` | группы ссылок проекта (список сразу со ссылками), переименование, удаление вместе со ссылками; адреса с `{id}` группы ищут проект по ней |
 | `POST /link-groups/{id}/links`, `DELETE /links/{id}` | добавить ссылку в конец группы (`https://` добавляется, если нет схемы), удалить. Правки ссылки нет: в макете её нельзя править |
 | `GET /healthz` | проверка живости (без токена) |
