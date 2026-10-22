@@ -88,6 +88,7 @@ test('лента проекта: его события и события вик�
   await pickProject(page, 'Мобильный API')
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page).first()).toContainText('Страница «Архитектура» обновлена')
+  await expect(rows(page).first().locator('.tag')).toHaveText('Вики')
 
   // действие в «Мобильном API» попадает в его ленту и не попадает в ленту «Web-приложения»
   const api = await projectByName(page, 'Мобильный API')
@@ -265,12 +266,15 @@ test.describe('люди из проекта: ответственный моду
   test('фильтр «Участник» в ленте: участники проекта и те, у кого в ленте есть события', async ({ page }) => {
     const project = await newProject(page)
     await openApp(page, { settings: { page: 'activity', project: project.id } })
-    // в новом проекте только Лена, плюс автор страницы вики (Артём): её событие видно в ленте любого проекта
-    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Артём К.'])
+    // в новом проекте только Лена. Артём написал страницу вики, и её событие видно в ленте любого проекта, но в этом
+    // проекте его нет и своих событий у него здесь нет, поэтому в списке его тоже нет
+    await expect(rows(page)).toHaveCount(1)
+    await expect(rows(page).first()).toContainText('Артём К.')
+    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.'])
 
     // Даниил вошёл в проект: он участник, хоть событий у него нет
     await join(page, project.id, 'daniil@example.com')
-    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Артём К.', 'Даниил С.'])
+    await expect.poll(() => chips(page).allTextContents()).toEqual(['Все', 'Лена М.', 'Даниил С.'])
 
     // а в демо-проекте, где все пятеро участники, видны все
     await pickProject(page, 'Web-приложение')

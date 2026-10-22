@@ -351,6 +351,42 @@ test.describe('участники и приглашения', () => {
     await expect(dialog.getByRole('alert')).toHaveText('Уже приглашён')
   })
 
+  test('ошибка приглашения стоит рядом с кнопкой и видна, даже когда окно низкое и страницу пришлось прокрутить', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 520 })
+    await openApp(page)
+    const dialog = await settingsOf(page, 'Web-приложение')
+    await dialog.getByRole('tab', { name: 'Участники' }).click()
+    const invite = dialog.getByRole('button', { name: 'Пригласить' })
+    await dialog.getByLabel('E-mail').fill('nobody@example.com')
+    // кнопка у нижнего края окна: всё, что ниже неё, пришлось бы прокручивать
+    await invite.evaluate((el) => el.scrollIntoView({ block: 'end' }))
+    await invite.click()
+    const alert = dialog.getByRole('alert')
+    await expect(alert).toHaveText('Аккаунта с таким адресом нет')
+    await expect(alert).toBeInViewport({ ratio: 1 })
+  })
+
+  test('ошибка метки стоит под её строкой, а название возвращается прежним', async ({ page }) => {
+    await openApp(page)
+    const dialog = await settingsOf(page, 'Web-приложение')
+    await dialog.getByRole('tab', { name: 'Метки' }).click()
+    const names = dialog.getByRole('textbox', { name: /^Название метки/ })
+    const first = names.nth(0)
+    const second = names.nth(1)
+    const was = await first.inputValue()
+    await first.fill(await second.inputValue())
+    await first.press('Enter')
+
+    const alert = dialog.getByRole('alert')
+    await expect(alert).toHaveText('В проекте уже есть метка с таким названием')
+    await expect(first).toHaveValue(was)
+    const own = (await first.locator(ROW).boundingBox())!
+    const next = (await second.locator(ROW).boundingBox())!
+    const box = (await alert.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(own.y + own.height - 1)
+    expect(box.y + box.height).toBeLessThanOrEqual(next.y + 1)
+  })
+
   test('роль и исключение: администратор повышает участника и убирает его, проект у того пропадает сам', async ({ page, browser }) => {
     await openApp(page)
     const igor = await secondClient(browser, 'igor@example.com')

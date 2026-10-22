@@ -59,7 +59,7 @@ test('события собраны по дням, у каждого участ�
     'С WEB-128 Ошибка 500 при пустом профиле перемещена в «Готово» Соня В. · 1 час назад Задача',
     'Л WEB-141 Тёмная тема для страницы настроек перемещена в «На ревью» Лена М. · 3 часа назад Задача',
     'И WEB-137 Неверные часовые пояса в календаре новый комментарий Игорь П. · вчера, 18:20 Комментарий',
-    'А Страница «Архитектура» обновлена Артём К. · вчера, 15:02 Документ',
+    'А Страница «Архитектура» обновлена Артём К. · вчера, 15:02 Вики',
     'Д Релиз 2.8.0 отмечен шаг «Проверить миграции БД» Даниил С. · вчера, 12:10 Релиз',
     'С WEB-146 Не загружается аватар в Safari создана Соня В. · 15 окт, 11:40 Задача',
     'А WEB-144 Вход через SSO добавлен PR #321 Артём К. · 15 окт, 10:05 Код',
@@ -71,7 +71,7 @@ test('события собраны по дням, у каждого участ�
   await expect(page.locator('main section').nth(2).locator('.act-row')).toHaveCount(2)
 })
 
-test('в фильтре участников все пятеро и «Все», типов восемь', async ({ page }) => {
+test('в фильтре участников все пятеро и «Все», типов девять', async ({ page }) => {
   await openActivity(page)
   await expect(page.getByRole('group', { name: 'Участник' }).getByRole('button')).toHaveText(['Все', 'Лена М.', 'Артём К.', 'Даниил С.', 'Соня В.', 'Игорь П.'])
   await expect(page.getByRole('group', { name: 'Тип события' }).getByRole('button')).toHaveText([
@@ -80,6 +80,7 @@ test('в фильтре участников все пятеро и «Все», 
     'Комментарии',
     'Код',
     'Документы',
+    'Вики',
     'Релизы',
     'Файлы',
     'Модули',
@@ -157,15 +158,25 @@ test('участник и тип работают вместе; когда ни�
   await expect(page.getByText('Под такие фильтры событий нет')).toHaveCount(0)
 })
 
+test('вики — отдельный тип: в «Документах» её страниц нет, в «Вики» они есть', async ({ page }) => {
+  await openActivity(page)
+  await kind(page, 'Документы').click()
+  await expect(rows(page)).toHaveCount(0)
+  await kind(page, 'Вики').click()
+  await expect(rows(page)).toHaveCount(1)
+  await expect(rows(page).first()).toContainText('Страница «Архитектура» обновлена')
+  await expect(rows(page).first().locator('.tag')).toHaveText('Вики')
+})
+
 test('фильтры помнятся после перезапуска приложения', async ({ page }) => {
   await openActivity(page)
   await who(page, 'Артём К.').click()
-  await kind(page, 'Документы').click()
+  await kind(page, 'Вики').click()
   await expect(rows(page)).toHaveCount(1)
 
   await page.reload()
   await expect(who(page, 'Артём К.')).toHaveAttribute('aria-pressed', 'true')
-  await expect(kind(page, 'Документы')).toHaveAttribute('aria-pressed', 'true')
+  await expect(kind(page, 'Вики')).toHaveAttribute('aria-pressed', 'true')
   await expect(rows(page)).toHaveCount(1)
   await expect(rows(page).first()).toContainText('Страница «Архитектура» обновлена')
 })
