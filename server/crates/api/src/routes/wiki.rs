@@ -119,7 +119,7 @@ async fn create_page(
         check_parent(&mut tx, parent).await?;
     }
     let page = db::wiki::insert(&mut tx, req.parent_id, &title, &md, auth.id).await?;
-    db::activity::insert(&mut tx, auth.id, None, "doc", &wiki::target(&page.title), "создана").await?;
+    db::activity::insert(&mut tx, auth.id, None, "wiki", &wiki::target(&page.title), "создана").await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(page.into())))
 }
@@ -241,7 +241,7 @@ async fn delete_page(
     } else {
         "удалена".to_owned()
     };
-    db::activity::insert(&mut tx, auth.id, None, "doc", &wiki::target(&page.title), &text).await?;
+    db::activity::insert(&mut tx, auth.id, None, "wiki", &wiki::target(&page.title), &text).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

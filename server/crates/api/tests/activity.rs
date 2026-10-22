@@ -78,20 +78,20 @@ async fn events_come_newest_first_with_their_fields(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    event(&pool, c.user.id, "doc", "Страница «Архитектура»", "обновлена", "2026-10-18 09:00:00+00").await;
+    event(&pool, c.user.id, "wiki", "Страница «Архитектура»", "обновлена", "2026-10-18 09:00:00+00").await;
     event(&pool, c.user.id, "code", "WEB-1 Задача", "добавлен PR #1", "2026-10-16 09:00:00+00").await;
 
     let page = feed(&c, "").await;
     assert_eq!(targets(&page), ["Страница «Архитектура»", "WEB-1 Задача", "WEB-1 Задача"]);
     assert_eq!(page["next"], Value::Null);
 
-    let doc = &page["items"][0];
-    assert_eq!(doc["category"], "doc");
-    assert_eq!(doc["text"], "обновлена");
-    assert_eq!(doc["actor_id"], c.user.id.to_string());
-    assert_eq!(doc["project_id"], Value::Null, "у страницы вики проекта нет, но в ленте проекта она есть");
-    assert_eq!(doc["created_at"], "2026-10-18T09:00:00Z");
-    assert!(Uuid::parse_str(str_field(doc, "id")).is_ok());
+    let wiki = &page["items"][0];
+    assert_eq!(wiki["category"], "wiki");
+    assert_eq!(wiki["text"], "обновлена");
+    assert_eq!(wiki["actor_id"], c.user.id.to_string());
+    assert_eq!(wiki["project_id"], Value::Null, "у страницы вики проекта нет, но в ленте проекта она есть");
+    assert_eq!(wiki["created_at"], "2026-10-18T09:00:00Z");
+    assert!(Uuid::parse_str(str_field(wiki, "id")).is_ok());
 
     let moved = &page["items"][1];
     assert_eq!(moved["category"], "tasks", "перенос задачи — категория «Задача»");
@@ -100,11 +100,31 @@ async fn events_come_newest_first_with_their_fields(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
+async fn wiki_events_are_their_own_category_and_not_documents(pool: PgPool) {
+    let c = ctx(pool.clone()).await;
+    let project = project_of(&pool).await;
+    event(&pool, c.user.id, "wiki", "Страница «Архитектура»", "обновлена", "2026-10-18 09:00:00+00").await;
+    db::sqlx::query("insert into activity (actor_id, project_id, kind, target, text, created_at) values ($1, $2, 'doc', 'Документ «Схема»', 'создан', '2026-10-18 10:00:00+00')")
+        .bind(c.user.id)
+        .bind(project)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(targets(&feed(&c, "?kind=wiki").await), ["Страница «Архитектура»"]);
+    assert_eq!(targets(&feed(&c, "?kind=doc").await), ["Документ «Схема»"], "вики в «Документах» нет");
+    assert_eq!(targets(&feed(&c, "").await), ["Документ «Схема»", "Страница «Архитектура»"]);
+    let all = feed(&c, "").await;
+    assert_eq!(all["items"][0]["category"], "doc");
+    assert_eq!(all["items"][1]["category"], "wiki");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
 async fn every_event_type_has_a_category(pool: PgPool) {
     let c = ctx(pool.clone()).await;
     let kinds: Vec<String> =
         db::sqlx::query_scalar("select unnest(enum_range(null::act_kind))::text").fetch_all(&pool).await.unwrap();
-    assert!(kinds.len() >= 9, "типы событий: {kinds:?}");
+    assert!(kinds.len() >= 10, "типы событий: {kinds:?}");
     for (i, kind) in kinds.iter().enumerate() {
         event(&pool, c.user.id, kind, &format!("цель {i}"), "тест", &format!("2026-10-18 10:{i:02}:00+00")).await;
     }
@@ -353,7 +373,7 @@ async fn a_stranger_gets_no_feed_of_a_project_and_a_missing_project_is_the_same_
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn the_feed_names_everyone_who_has_events_in_it(pool: PgPool) {
+async fn the_feed_names_everyone_who_has_events_of_the_project_but_not_the_authors_of_common_ones(pool: PgPool) {
     let c = ctx(pool.clone()).await;
     let mine = project_of(&pool).await;
     let other_project = make_project(&pool, "API", "Мобильный API", "warn").await;
@@ -362,7 +382,7 @@ async fn the_feed_names_everyone_who_has_events_in_it(pool: PgPool) {
     let wiki = make_user(&pool, "wiki@example.com", "Вики В.", "password-123").await;
     let quiet = make_user(&pool, "quiet@example.com", "Тихий Т.", "password-123").await;
     for (who, project, kind) in
-        [(here.id, Some(mine), "code"), (there.id, Some(other_project), "code"), (wiki.id, None, "doc")]
+        [(here.id, Some(mine), "code"), (there.id, Some(other_project), "code"), (wiki.id, None, "wiki")]
     {
         db::sqlx::query(
             "insert into activity (actor_id, project_id, kind, target, text) values ($1, $2, $3::act_kind, 'цель', 'тест')",
@@ -379,8 +399,9 @@ async fn the_feed_names_everyone_who_has_events_in_it(pool: PgPool) {
     let found = c.ok(c.get(&uri).await, StatusCode::OK).await;
     let ids: std::collections::BTreeSet<String> =
         found.as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_owned()).collect();
-    let expected: std::collections::BTreeSet<String> = [here.id, wiki.id].iter().map(|u| u.to_string()).collect();
-    assert_eq!(ids, expected, "свои и автор общего события, автора чужого проекта нет");
+    let expected: std::collections::BTreeSet<String> = [here.id].iter().map(|u| u.to_string()).collect();
+    assert_eq!(ids, expected, "только авторы событий этого проекта");
+    assert!(!ids.contains(&wiki.id.to_string()), "автор страницы вики в проекте не бывал: в списке его нет");
     assert!(!ids.contains(&quiet.id.to_string()), "у кого событий нет, того нет");
     assert!(!ids.contains(&there.id.to_string()));
 

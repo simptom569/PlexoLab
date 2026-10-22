@@ -6,7 +6,7 @@ use uuid::Uuid;
 pub const PAGE_SIZE: i64 = 50;
 
 /// Категории фильтра «Тип события» в том виде, как их называет клиент (`kindOf` в макете)
-pub const CATEGORIES: [&str; 7] = ["tasks", "comment", "code", "doc", "release", "file", "module"];
+pub const CATEGORIES: [&str; 8] = ["tasks", "comment", "code", "doc", "wiki", "release", "file", "module"];
 
 /// Типы событий (`act_kind`), из которых состоит категория; `None`, если такой категории нет
 pub fn kinds_of(category: &str) -> Option<&'static [&'static str]> {
@@ -15,6 +15,7 @@ pub fn kinds_of(category: &str) -> Option<&'static [&'static str]> {
         "comment" => &["comment"],
         "code" => &["code"],
         "doc" => &["doc"],
+        "wiki" => &["wiki"],
         "release" => &["release"],
         "file" => &["file"],
         "module" => &["module"],
@@ -28,6 +29,7 @@ pub fn category_of(kind: &str) -> &'static str {
         "comment" => "comment",
         "code" => "code",
         "doc" => "doc",
+        "wiki" => "wiki",
         "release" => "release",
         "file" => "file",
         "module" => "module",

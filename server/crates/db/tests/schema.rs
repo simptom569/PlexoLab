@@ -72,7 +72,7 @@ async fn enums_have_values_from_data_model(pool: PgPool) {
     assert_eq!(values("doc_mode").await, ["page", "edge"]);
     assert_eq!(
         values("act_kind").await,
-        ["move", "create", "delete", "comment", "code", "doc", "release", "file", "module"]
+        ["move", "create", "delete", "comment", "code", "doc", "release", "file", "module", "wiki"]
     );
 }
 

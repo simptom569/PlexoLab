@@ -73,7 +73,7 @@ async fn new_page_is_empty_at_revision_one_and_goes_to_the_feed(pool: PgPool) {
     assert_eq!(named["title"], "Архитектура", "пробелы по краям убираются");
     assert_eq!(
         c.feed().await,
-        [ev("doc", "Новая страница вики", "создана"), ev("doc", "Страница «Архитектура»", "создана")]
+        [ev("wiki", "Новая страница вики", "создана"), ev("wiki", "Страница «Архитектура»", "создана")]
     );
 }
 
@@ -147,7 +147,7 @@ async fn saving_changes_text_and_title_and_raises_the_revision(pool: PgPool) {
     assert_eq!(c.titles().await, ["Новое название"]);
 
     // правки текста в ленту не пишутся, только создание
-    assert_eq!(c.feed().await, [ev("doc", "Новая страница вики", "создана")]);
+    assert_eq!(c.feed().await, [ev("wiki", "Новая страница вики", "создана")]);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -456,7 +456,7 @@ async fn deleting_a_page_takes_nested_pages_and_keeps_their_files(pool: PgPool) 
     assert_eq!(c.dir.stored().len(), 1, "содержимое файла на диске осталось");
 
     let last = c.feed().await.pop().unwrap();
-    assert_eq!(last, ev("doc", "Страница «Родитель»", "удалена вместе с вложенными (1)"));
+    assert_eq!(last, ev("wiki", "Страница «Родитель»", "удалена вместе с вложенными (1)"));
     assert_eq!(c.delete(&format!("/api/v1/wiki/{}", id_of(&a))).await.status, StatusCode::NOT_FOUND);
 }
 
@@ -465,5 +465,5 @@ async fn deleting_a_single_page_is_logged_plainly(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let untitled = c.page(None, "").await;
     c.delete(&format!("/api/v1/wiki/{}", id_of(&untitled))).await;
-    assert_eq!(c.feed().await.pop().unwrap(), ev("doc", "Новая страница вики", "удалена"));
+    assert_eq!(c.feed().await.pop().unwrap(), ev("wiki", "Новая страница вики", "удалена"));
 }

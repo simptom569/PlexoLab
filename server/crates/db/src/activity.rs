@@ -9,14 +9,14 @@ pub struct Event {
     pub id: Uuid,
     pub actor_id: Uuid,
     pub project_id: Option<Uuid>,
-    /// move | create | delete | comment | code | doc | release | file | module
+    /// move | create | delete | comment | code | doc | wiki | release | file | module
     pub kind: String,
     pub target: String,
     pub text: String,
     pub created_at: OffsetDateTime,
 }
 
-/// Тип события: move | create | delete | comment | code | doc | release | file | module
+/// Тип события: move | create | delete | comment | code | doc | wiki | release | file | module
 pub async fn insert(
     conn: &mut PgConnection,
     actor_id: Uuid,
@@ -38,10 +38,11 @@ pub async fn insert(
     Ok(())
 }
 
-/// Все, у кого есть события в ленте проекта (его собственные и общие), независимо от фильтров: из них собирается
-/// список «Участник». Порядок не задан.
+/// Все, у кого есть собственные события проекта, независимо от фильтров: из них и из участников собирается список
+/// «Участник». Авторы общих событий без проекта (вики, файлы библиотеки) сюда не входят: иначе автор страницы вики
+/// попал бы в список любого проекта, где его нет. Порядок не задан.
 pub async fn actors<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
-    sqlx::query_scalar("select distinct actor_id from activity where project_id = $1 or project_id is null")
+    sqlx::query_scalar("select distinct actor_id from activity where project_id = $1")
         .bind(project_id)
         .fetch_all(ex)
         .await

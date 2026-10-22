@@ -28,7 +28,7 @@ pub struct ActivityDto {
     pub actor_id: Uuid,
     /// Проект события; у вики и файлов библиотеки проекта нет, они видны в ленте любого проекта
     pub project_id: Option<Uuid>,
-    /// Категория для цветной метки: tasks | comment | code | doc | release | file | module
+    /// Категория для цветной метки: tasks | comment | code | doc | wiki | release | file | module
     #[schema(example = "tasks")]
     pub category: String,
     /// Объект действия: «WEB-141 Тёмная тема для страницы настроек»
@@ -65,7 +65,7 @@ pub struct ActivityPageDto {
 pub struct ListActivityQuery {
     /// Только события этого участника
     pub actor: Option<Uuid>,
-    /// Только события этой категории: tasks | comment | code | doc | release | file | module
+    /// Только события этой категории: tasks | comment | code | doc | wiki | release | file | module
     pub kind: Option<String>,
     /// Курсор из `next` предыдущего ответа: вернуть события старше того места
     pub before: Option<String>,
@@ -104,7 +104,7 @@ async fn list_activity(
     let kinds = match query.kind.as_deref() {
         None => None,
         Some(category) => Some(activity::kinds_of(category).ok_or_else(|| {
-            ApiError::BadRequest("Тип события: tasks, comment, code, doc, release, file или module".into())
+            ApiError::BadRequest("Тип события: tasks, comment, code, doc, wiki, release, file или module".into())
         })?),
     };
     let after = match query.before.as_deref() {
@@ -128,8 +128,9 @@ async fn list_activity(
 
 /// Кто есть в ленте проекта
 ///
-/// Все, у кого есть события в ленте (проекта и общие), независимо от фильтров. Клиент собирает из них и из участников
-/// проекта список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события.
+/// Все, у кого есть собственные события проекта, независимо от фильтров. Клиент собирает из них и из участников проекта
+/// список «Участник»: вышедший из проекта остаётся, пока в ленте есть его события. Авторы общих событий (вики, файлы
+/// библиотеки) сюда не входят: человек, которого нет в проекте, в списке не нужен.
 #[utoipa::path(
     get,
     path = "/projects/{id}/activity/actors",
@@ -137,7 +138,7 @@ async fn list_activity(
     security(("bearer" = [])),
     params(("id" = Uuid, Path, description = "Проект")),
     responses(
-        (status = 200, description = "Идентификаторы людей, у которых есть события в ленте", body = [Uuid]),
+        (status = 200, description = "Идентификаторы людей, у которых есть собственные события проекта", body = [Uuid]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 404, description = "Нет такого проекта", body = ErrorBody),
     )

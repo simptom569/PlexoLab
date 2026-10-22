@@ -482,7 +482,7 @@ pub const ACTIVITY: &[ActivityRow] = &[
         Some("web"),
         When::YesterdayAt(18, 20),
     ),
-    ("А", "Страница «Архитектура»", "обновлена", "doc", None, When::YesterdayAt(15, 2)),
+    ("А", "Страница «Архитектура»", "обновлена", "wiki", None, When::YesterdayAt(15, 2)),
     ("Д", "Релиз 2.8.0", "отмечен шаг «Проверить миграции БД»", "release", Some("web"), When::YesterdayAt(12, 10)),
     ("С", "WEB-146 Не загружается аватар в Safari", "создана", "create", Some("web"), When::DaysAgoAt(3, 11, 40)),
     ("А", "WEB-144 Вход через SSO", "добавлен PR #321", "code", Some("web"), When::DaysAgoAt(3, 10, 5)),
