@@ -4,7 +4,10 @@ use db::PgPool;
 use domain::files::DEFAULT_MAX_UPLOAD_BYTES;
 use tokio::sync::{Semaphore, watch};
 
-use crate::events::{DEFAULT_CAPACITY, Events};
+use crate::{
+    events::{DEFAULT_CAPACITY, Events},
+    presence::Presence,
+};
 
 /// Настройки живых обновлений (WebSocket). Значения по умолчанию рассчитаны на команду из нескольких человек; тестам
 /// нужны короткие паузы.
@@ -18,6 +21,8 @@ pub struct Realtime {
     pub idle_timeout: Duration,
     /// Сколько соединений держать одновременно: больше не принимаются (503)
     pub max_connections: usize,
+    /// Сколько метка «человек в этом блоке» живёт без подтверждения от клиента (клиент подтверждает её раз в 15 секунд)
+    pub presence_ttl: Duration,
 }
 
 impl Default for Realtime {
@@ -27,6 +32,7 @@ impl Default for Realtime {
             heartbeat: Duration::from_secs(25),
             idle_timeout: Duration::from_secs(70),
             max_connections: 100,
+            presence_ttl: Duration::from_secs(45),
         }
     }
 }
@@ -45,6 +51,8 @@ pub struct AppState {
     /// События для живых обновлений: сюда пишет слой над ручками, отсюда читают WebSocket-соединения
     pub events: Events,
     pub realtime: Realtime,
+    /// Кто в каком блоке страницы или документа сейчас (только в памяти)
+    pub presence: Presence,
     /// Свободные места под соединения WebSocket
     pub connections: Arc<Semaphore>,
     /// `true`, когда сервер останавливается: соединения закрываются сами, иначе остановка ждала бы их вечно
@@ -61,6 +69,7 @@ impl AppState {
             data_dir: PathBuf::from("./data"),
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
             events: Events::new(DEFAULT_CAPACITY),
+            presence: Presence::default(),
             connections: Arc::new(Semaphore::new(realtime.max_connections)),
             realtime,
             shutdown: Arc::new(watch::channel(false).0),

@@ -7,7 +7,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use api::{AppState, Event, Realtime, router};
 use axum::{body::Body, http::Request};
-use common::{SECRET, id_of, login_ok, make_project, make_user, str_field};
+use common::{SECRET, id_of, join, login_ok, make_project, make_project_with, make_user, str_field};
 use db::{PgPool, users::User};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -17,6 +17,7 @@ use tokio_tungstenite::{
     tungstenite::{Error as WsError, Message},
 };
 use tower::ServiceExt;
+use uuid::Uuid;
 
 type Client = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -30,6 +31,7 @@ enum Incoming {
 
 /// Сервер на свободном порту вместе с пользователем и его токеном
 struct Rt {
+    pool: PgPool,
     state: AppState,
     addr: SocketAddr,
     user: User,
@@ -44,12 +46,13 @@ fn quick() -> Realtime {
         heartbeat: Duration::from_millis(100),
         idle_timeout: Duration::from_millis(800),
         max_connections: 100,
+        presence_ttl: Duration::from_millis(400),
     }
 }
 
 async fn start(pool: PgPool, configure: impl FnOnce(AppState) -> AppState) -> Rt {
     let user = make_user(&pool, "tester@example.com", "Тестер Т.", "test-password").await;
-    let state = configure(AppState::new(pool, SECRET));
+    let state = configure(AppState::new(pool.clone(), SECRET));
     let app = router(state.clone());
     let token = {
         let tokens = login_ok(&app, "tester@example.com", "test-password").await;
@@ -60,7 +63,7 @@ async fn start(pool: PgPool, configure: impl FnOnce(AppState) -> AppState) -> Rt
     let server = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    Rt { state, addr, user, token, _server: server }
+    Rt { pool, state, addr, user, token, _server: server }
 }
 
 impl Rt {
@@ -365,4 +368,291 @@ async fn connections_over_the_limit_get_503_and_places_are_freed(pool: PgPool) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert!(again.is_some(), "после ухода клиента место должно освободиться");
+}
+
+// ===== Присутствие: кто в каком блоке =====
+
+impl Rt {
+    /// Второй человек: пользователь и его токен
+    async fn person(&self, email: &str, name: &str) -> (User, String) {
+        let user = make_user(&self.pool, email, name, "test-password").await;
+        let tokens = login_ok(&router(self.state.clone()), email, "test-password").await;
+        (user, str_field(&tokens, "access_token").to_owned())
+    }
+
+    /// Подключение под этим токеном, вход сделан, пришёл `ready`
+    async fn ready_as(&self, token: &str) -> Client {
+        let mut ws = self.connect().await;
+        send(&mut ws, json!({ "type": "auth", "token": token })).await;
+        assert_eq!(next_json(&mut ws).await, json!({ "type": "ready" }));
+        ws
+    }
+}
+
+const PAGE: Uuid = Uuid::from_u128(0x1111);
+
+fn focus(kind: &str, id: Uuid, rev: i64, start: u32, end: u32) -> Value {
+    json!({ "type": "focus", "kind": kind, "id": id.to_string(), "rev": rev, "start": start, "end": end })
+}
+
+/// Читает всё, что приходит за `wait`, и отвечает на `ping`, чтобы соединение не сочли мёртвым. Вернёт остальное.
+async fn pump(ws: &mut Client, wait: Duration) -> Vec<Value> {
+    let end = tokio::time::Instant::now() + wait;
+    let mut out = Vec::new();
+    loop {
+        let left = end.saturating_duration_since(tokio::time::Instant::now());
+        match recv(ws, left).await {
+            None => return out,
+            Some(Incoming::Json(m)) if m["type"] == "ping" => send(ws, json!({ "type": "pong" })).await,
+            Some(Incoming::Json(m)) => out.push(m),
+            Some(Incoming::Closed(code)) => panic!("соединение закрыто: {code:?}"),
+        }
+    }
+}
+
+fn kinds(messages: &[Value]) -> Vec<&str> {
+    messages.iter().map(|m| m["type"].as_str().unwrap()).collect()
+}
+
+async fn send_text(ws: &mut Client, text: &str) {
+    ws.send(Message::Text(text.to_owned().into())).await.unwrap();
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_block_opened_by_one_person_is_seen_by_another_and_blur_removes_it(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+
+    send(&mut a, focus("wiki", PAGE, 3, 2, 4)).await;
+    let set = next_json(&mut b).await;
+    assert_eq!(set["type"], "presence.set");
+    let mark = &set["mark"];
+    assert_eq!(mark["user_id"], rt.user.id.to_string());
+    assert_eq!(
+        (&mark["kind"], &mark["id"], &mark["rev"], &mark["start"], &mark["end"]),
+        (&json!("wiki"), &json!(PAGE.to_string()), &json!(3), &json!(2), &json!(4))
+    );
+    assert!(mark.get("project_id").is_none(), "проект наружу не уходит");
+    let client = mark["client"].as_str().unwrap().to_owned();
+    quiet(&mut a, Duration::from_millis(100)).await; // свою метку человек не получает
+
+    send(&mut a, json!({ "type": "blur" })).await;
+    assert_eq!(next_json(&mut b).await, json!({ "type": "presence.gone", "client": client }));
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn confirming_the_same_position_is_silent_and_a_move_is_announced(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+
+    send(&mut a, focus("wiki", PAGE, 3, 2, 4)).await;
+    let first = next_json(&mut b).await;
+    send(&mut a, focus("wiki", PAGE, 3, 2, 4)).await;
+    quiet(&mut b, Duration::from_millis(150)).await; // то же место: остальным сообщать нечего
+
+    send(&mut a, focus("wiki", PAGE, 3, 6, 7)).await;
+    let moved = next_json(&mut b).await;
+    assert_eq!(moved["type"], "presence.set");
+    assert_eq!((&moved["mark"]["start"], &moved["mark"]["end"]), (&json!(6), &json!(7)));
+    assert_eq!(moved["mark"]["client"], first["mark"]["client"], "это то же подключение: у получателя метка переедет");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_newcomer_gets_the_list_right_after_ready(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    send(&mut a, focus("wiki", PAGE, 1, 0, 1)).await;
+    // подождём, пока сервер примет сообщение: у подключения Бориса его ещё нет, он пока не слушает
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut b = rt.ready_as(&token_b).await;
+    let list = next_json(&mut b).await;
+    assert_eq!(list["type"], "presence");
+    let marks = list["marks"].as_array().unwrap();
+    assert_eq!(marks.len(), 1);
+    assert_eq!(
+        (&marks[0]["user_id"], &marks[0]["kind"], &marks[0]["id"]),
+        (&json!(rt.user.id.to_string()), &json!("wiki"), &json!(PAGE.to_string()))
+    );
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_person_does_not_see_their_own_marks_from_another_connection(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let mut first = rt.ready().await;
+    send(&mut first, focus("wiki", PAGE, 1, 0, 1)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut second = rt.ready().await; // тот же человек: списка нет
+    quiet(&mut second, Duration::from_millis(150)).await;
+    send(&mut second, focus("wiki", PAGE, 1, 5, 6)).await;
+    quiet(&mut first, Duration::from_millis(150)).await;
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn closing_the_connection_removes_the_mark(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+    send(&mut a, focus("wiki", PAGE, 1, 0, 1)).await;
+    let client = next_json(&mut b).await["mark"]["client"].as_str().unwrap().to_owned();
+
+    drop(a);
+    assert_eq!(next_json(&mut b).await, json!({ "type": "presence.gone", "client": client }));
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_silent_client_loses_the_mark_after_the_ttl_and_confirming_keeps_it(pool: PgPool) {
+    let rt = start(pool, |s| s.with_realtime(quick())).await; // срок метки 400 мс, пульс 100 мс
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+    send(&mut a, focus("wiki", PAGE, 1, 0, 1)).await;
+    let client = next_json(&mut b).await["mark"]["client"].as_str().unwrap().to_owned();
+
+    // подтверждает: метка живёт втрое дольше срока
+    for _ in 0..12 {
+        send(&mut a, focus("wiki", PAGE, 1, 0, 1)).await;
+        let seen = pump(&mut b, Duration::from_millis(100)).await;
+        assert!(seen.is_empty(), "пока подтверждают, ничего не меняется: {seen:?}");
+    }
+
+    // перестал подтверждать, но соединение держит (отвечает на ping): метка снимается по сроку
+    let mut gone = false;
+    for _ in 0..30 {
+        pump(&mut a, Duration::from_millis(20)).await;
+        let seen = pump(&mut b, Duration::from_millis(80)).await;
+        if seen.contains(&json!({ "type": "presence.gone", "client": client })) {
+            gone = true;
+            break;
+        }
+    }
+    assert!(gone, "метку без подтверждения должны снять");
+
+    // и соединение при этом живо: новое сообщение снова ставит метку
+    send(&mut a, focus("wiki", PAGE, 1, 3, 4)).await;
+    assert_eq!(kinds(&pump(&mut b, Duration::from_millis(300)).await), ["presence.set"]);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn nonsense_position_messages_are_ignored(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+
+    let long = json!({ "type": "focus", "kind": "wiki", "id": PAGE.to_string(), "rev": 1, "start": 0, "end": 1, "pad": "x".repeat(600) });
+    for message in [
+        focus("wiki", PAGE, 1, 4, 4),                   // пустой блок
+        focus("wiki", PAGE, 1, 5, 2),                   // конец раньше начала
+        focus("wiki", PAGE, -1, 0, 1),                  // версия не бывает отрицательной
+        focus("wiki", PAGE, 1, 0, 9_000_000),           // номер строки с потолка
+        focus("canvas", PAGE, 1, 0, 1),                 // такого места нет
+        focus("doc", Uuid::from_u128(0x2222), 1, 0, 1), // документа нет
+        json!({ "type": "focus", "kind": "wiki", "id": "не-uuid", "rev": 1, "start": 0, "end": 1 }),
+        json!({ "type": "focus", "kind": "wiki" }),
+        json!({ "type": "focus", "kind": "wiki", "id": PAGE.to_string(), "rev": 1, "start": -1, "end": 1 }),
+        long,
+    ] {
+        send(&mut a, message.clone()).await;
+        assert!(pump(&mut b, Duration::from_millis(40)).await.is_empty(), "не должно было пройти: {message}");
+    }
+    send_text(&mut a, "это не json").await;
+
+    // соединение при этом живо, и настоящее сообщение проходит
+    send(&mut a, focus("wiki", PAGE, 1, 0, 1)).await;
+    assert_eq!(kinds(&pump(&mut b, Duration::from_millis(300)).await), ["presence.set"]);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_flood_of_positions_is_limited(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, token_b) = rt.person("b@example.com", "Борис Б.").await;
+    let mut a = rt.ready().await;
+    let mut b = rt.ready_as(&token_b).await;
+
+    for i in 0..40 {
+        send(&mut a, focus("wiki", PAGE, 1, i, i + 1)).await;
+    }
+    let seen = pump(&mut b, Duration::from_millis(400)).await;
+    let sets = seen.iter().filter(|m| m["type"] == "presence.set").count();
+    // в одну секунду проходит не больше десяти; если пачка пересекла границу секунды, то не больше двадцати
+    assert!((1..=20).contains(&sets), "прошло {sets} из 40");
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn document_marks_reach_only_members_of_its_project(pool: PgPool) {
+    let rt = start(pool.clone(), |s| s).await;
+    let project = make_project_with(&pool, "WEB", "Web-приложение", "accent").await;
+    join(&pool, project, rt.user.id, "admin").await;
+    let (_, outsider_token) = rt.person("out@example.com", "Посторонний П.").await;
+    let (member, member_token) = rt.person("in@example.com", "Участник У.").await;
+    join(&pool, project, member.id, "member").await;
+    let doc =
+        rest(&rt, "c", "POST", &format!("/api/v1/projects/{project}/docs"), json!({ "title": "Док", "mode": "page" }))
+            .await;
+    let doc = id_of(&doc);
+
+    let mut a = rt.ready().await;
+    let mut outside = rt.ready_as(&outsider_token).await;
+    let mut inside = rt.ready_as(&member_token).await;
+
+    send(&mut a, focus("doc", doc, 1, 0, 1)).await;
+    let set = next_json(&mut inside).await;
+    assert_eq!(
+        (&set["type"], &set["mark"]["kind"], &set["mark"]["id"]),
+        (&json!("presence.set"), &json!("doc"), &json!(doc.to_string()))
+    );
+    quiet(&mut outside, Duration::from_millis(150)).await; // документ чужого проекта посторонний не видит
+
+    // и сам посторонний своим положением ничего не покажет: ему этот документ не открыт
+    send(&mut outside, focus("doc", doc, 1, 0, 1)).await;
+    quiet(&mut a, Duration::from_millis(150)).await;
+    quiet(&mut inside, Duration::from_millis(50)).await;
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_mark_that_moves_to_a_hidden_document_is_withdrawn(pool: PgPool) {
+    let rt = start(pool.clone(), |s| s).await;
+    let open = make_project_with(&pool, "WEB", "Web-приложение", "accent").await;
+    let closed = make_project_with(&pool, "OPS", "Операции", "accent").await;
+    join(&pool, open, rt.user.id, "admin").await;
+    join(&pool, closed, rt.user.id, "admin").await;
+    let (watcher, token) = rt.person("w@example.com", "Наблюдатель Н.").await;
+    join(&pool, open, watcher.id, "member").await; // про закрытый проект он не знает
+    let doc_in = |project: Uuid, title: &'static str| {
+        let rt = &rt;
+        async move {
+            id_of(
+                &rest(
+                    rt,
+                    "c",
+                    "POST",
+                    &format!("/api/v1/projects/{project}/docs"),
+                    json!({ "title": title, "mode": "page" }),
+                )
+                .await,
+            )
+        }
+    };
+    let in_open = doc_in(open, "Открытый").await;
+    let in_closed = doc_in(closed, "Закрытый").await;
+
+    let mut a = rt.ready().await;
+    let mut w = rt.ready_as(&token).await;
+    send(&mut a, focus("doc", in_open, 1, 0, 1)).await;
+    let client = next_json(&mut w).await["mark"]["client"].as_str().unwrap().to_owned();
+
+    send(&mut a, focus("doc", in_closed, 1, 0, 1)).await;
+    assert_eq!(
+        next_json(&mut w).await,
+        json!({ "type": "presence.gone", "client": client }),
+        "прежняя метка у наблюдателя не должна зависнуть"
+    );
 }

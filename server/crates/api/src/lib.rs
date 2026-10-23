@@ -19,6 +19,7 @@ pub mod error;
 pub mod events;
 pub mod extract;
 mod openapi;
+pub mod presence;
 pub mod routes;
 pub mod serde_helpers;
 pub mod state;

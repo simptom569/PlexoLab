@@ -115,6 +115,11 @@ pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid, user: Uuid) -> Result<Op
     sqlx::query_as(select_doc!("where d.id = $2")).bind(user).bind(id).fetch_optional(ex).await
 }
 
+/// Проект, в котором лежит документ (без текста и холста: нужен только для проверки доступа)
+pub async fn project_of<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("select project_id from docs where id = $1").bind(id).fetch_optional(ex).await
+}
+
 /// Документ с блокировкой строки до конца транзакции: так проверка `rev` и запись не разойдутся
 pub async fn get_for_update(conn: &mut PgConnection, id: Uuid, user: Uuid) -> Result<Option<Doc>, sqlx::Error> {
     sqlx::query_as(select_doc!("where d.id = $2 for update of d")).bind(user).bind(id).fetch_optional(conn).await

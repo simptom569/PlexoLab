@@ -12,7 +12,13 @@
 //! 4. сервер каждые `heartbeat` шлёт `{"type":"ping"}`, клиент отвечает `{"type":"pong"}`. Кто молчит дольше
 //!    `idle_timeout`, считается отключившимся. Клиент так же следит за сервером: связь, оборванная без закрытия
 //!    (сон ноутбука, смена сети), иначе осталась бы «живой» до таймаута TCP;
-//! 5. когда токен истекает, сервер закрывает соединение с кодом 4401, и клиент входит заново с новым токеном.
+//! 5. когда токен истекает, сервер закрывает соединение с кодом 4401, и клиент входит заново с новым токеном;
+//! 6. присутствие (`presence`): клиент сообщает, в каком блоке страницы или документа он сейчас, сообщением
+//!    `{"type":"focus","kind":"wiki"|"doc","id":…,"rev":…,"start":…,"end":…}` (его же повторяет, пока человек в блоке) и
+//!    `{"type":"blur"}`, когда ушёл. Остальные получают `{"type":"presence.set","mark":{…}}` и
+//!    `{"type":"presence.gone","client":…}`, а сразу после `ready` (и после отставания) полный список
+//!    `{"type":"presence","marks":[…]}`. Свои метки человек не получает, чужие документы из закрытых проектов тоже.
+//!    Текста в этих сообщениях нет (см. `presence`).
 
 use std::{
     collections::HashSet,
@@ -27,7 +33,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::{
     sync::broadcast::error::RecvError,
     time::{Instant, interval, sleep, timeout},
@@ -37,6 +43,7 @@ use uuid::Uuid;
 
 use crate::{
     events::{Audience, Event},
+    presence::{Attached, Focus, Kind, MAX_MESSAGE_BYTES, MAX_PER_SECOND, Mark, Presence, Update},
     state::AppState,
 };
 
@@ -58,6 +65,8 @@ const UNAUTHORIZED: &str = r#"{"type":"error","code":"unauthorized"}"#;
 enum ClientMessage {
     Auth { token: String },
     Pong,
+    Focus(Focus),
+    Blur,
 }
 
 /// Подключение. Мест ограниченное число: когда они кончились, сервер отвечает 503, и клиент повторит позже.
@@ -129,12 +138,23 @@ async fn session(mut socket: WebSocket, state: AppState) {
 
     // 2. подписка раньше, чем «ready»: ни одно событие после «ready» не потеряется
     let mut events = state.events.subscribe();
+    let mut presence_updates = state.presence.subscribe();
+    let me = state.presence.attach();
     // проекты, события которых получает этот человек; обновляется, когда меняется состав участников
     let mut visible = HashSet::new();
     refresh(&mut visible, &state, user_id).await;
     if !send_text(&mut socket, READY).await {
         return;
     }
+    // кто где сейчас: клиент без этого узнал бы только о тех, кто сдвинется после его подключения
+    // метки, о которых этот клиент уже знает: снимать ему нужно только их
+    let mut shown: HashSet<String> = HashSet::new();
+    if !send_presence_snapshot(&mut socket, &state.presence, user_id, &visible, &mut shown, false).await {
+        return;
+    }
+    let mut limiter = Limiter::new();
+    // страница, с которой работает этот человек, и проект её документа: чтобы не спрашивать базу на каждое сообщение
+    let mut target: Option<(Uuid, Option<Uuid>)> = None;
 
     // 3. работа
     let mut last_seen = Instant::now();
@@ -165,12 +185,30 @@ async fn session(mut socket: WebSocket, state: AppState) {
                     return;
                 }
             }
+            update = presence_updates.recv() => {
+                let sent = match update {
+                    Ok(update) => send_presence_update(&mut socket, &update, user_id, &visible, &mut shown).await,
+                    // отстали: часть обновлений потеряна, присылаем всё заново
+                    Err(RecvError::Lagged(_)) => {
+                        send_presence_snapshot(&mut socket, &state.presence, user_id, &visible, &mut shown, true).await
+                    }
+                    Err(RecvError::Closed) => return,
+                };
+                if !sent {
+                    return;
+                }
+            }
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => return,
+                Some(Ok(Message::Text(text))) => {
+                    last_seen = Instant::now();
+                    on_client_message(&text, &me, user_id, &visible, &state, &mut limiter, &mut target).await;
+                }
                 // «pong» и любое другое сообщение значит, что клиент жив
                 Some(Ok(_)) => last_seen = Instant::now(),
             },
             _ = beat.tick() => {
+                me.expire(realtime.presence_ttl);
                 if last_seen.elapsed() > realtime.idle_timeout {
                     close(&mut socket, CLOSE_TIMEOUT, "нет ответа").await;
                     return;
@@ -216,5 +254,139 @@ async fn send_event(socket: &mut WebSocket, event: &Event) -> bool {
     match serde_json::to_string(event) {
         Ok(json) => send_text(socket, &json).await,
         Err(_) => true, // событие не собрать: пропускаем его, а соединение не рвём
+    }
+}
+
+// ===== Присутствие =====
+
+/// Что сервер шлёт о присутствии
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum PresenceMessage<'a> {
+    /// Полный список: клиент заменяет им всё, что знал
+    #[serde(rename = "presence")]
+    All { marks: &'a [Mark] },
+    #[serde(rename = "presence.set")]
+    Set { mark: &'a Mark },
+    #[serde(rename = "presence.gone")]
+    Gone { client: &'a str },
+}
+
+async fn send_presence(socket: &mut WebSocket, message: &PresenceMessage<'_>) -> bool {
+    match serde_json::to_string(message) {
+        Ok(json) => send_text(socket, &json).await,
+        Err(_) => true,
+    }
+}
+
+/// Видна ли метка этому человеку: не его собственная, а документ из проекта, который ему открыт (страницы вики общие)
+fn shown_to(mark: &Mark, user_id: Uuid, visible: &HashSet<Uuid>) -> bool {
+    mark.user_id != user_id && mark.project_id.is_none_or(|project| visible.contains(&project))
+}
+
+/// Все метки сейчас. Пустой список без просьбы не шлётся: клиент и так начинает с пустого.
+async fn send_presence_snapshot(
+    socket: &mut WebSocket,
+    presence: &Presence,
+    user_id: Uuid,
+    visible: &HashSet<Uuid>,
+    shown: &mut HashSet<String>,
+    always: bool,
+) -> bool {
+    let marks: Vec<Mark> = presence.snapshot().into_iter().filter(|m| shown_to(m, user_id, visible)).collect();
+    // список заменяет всё, что клиент знал
+    *shown = marks.iter().map(|m| m.client.clone()).collect();
+    if marks.is_empty() && !always {
+        return true;
+    }
+    send_presence(socket, &PresenceMessage::All { marks: &marks }).await
+}
+
+async fn send_presence_update(
+    socket: &mut WebSocket,
+    update: &Update,
+    user_id: Uuid,
+    visible: &HashSet<Uuid>,
+    shown: &mut HashSet<String>,
+) -> bool {
+    match update {
+        Update::Set(mark) if mark.user_id == user_id => true,
+        Update::Set(mark) if shown_to(mark, user_id, visible) => {
+            shown.insert(mark.client.clone());
+            send_presence(socket, &PresenceMessage::Set { mark }).await
+        }
+        // метка перешла туда, куда этому человеку нельзя: если он видел прежнюю, она ему больше не нужна
+        Update::Set(mark) if shown.remove(&mark.client) => {
+            send_presence(socket, &PresenceMessage::Gone { client: &mark.client }).await
+        }
+        Update::Gone { client, .. } if shown.remove(client) => {
+            send_presence(socket, &PresenceMessage::Gone { client }).await
+        }
+        // чужие дела: человеку не сообщали, значит и снимать нечего
+        Update::Set(_) | Update::Gone { .. } => true,
+    }
+}
+
+/// Не больше `MAX_PER_SECOND` сообщений о положении в секунду от одного подключения: поддельный клиент не должен
+/// заваливать остальных
+struct Limiter {
+    since: Instant,
+    count: u32,
+}
+
+impl Limiter {
+    fn new() -> Self {
+        Limiter { since: Instant::now(), count: 0 }
+    }
+
+    fn allow(&mut self) -> bool {
+        if self.since.elapsed() >= Duration::from_secs(1) {
+            self.since = Instant::now();
+            self.count = 0;
+        }
+        self.count += 1;
+        self.count <= MAX_PER_SECOND
+    }
+}
+
+/// Сообщение клиента после входа. Главное, что оно значит «клиент жив» (это уже учтено); сверх того разбираются
+/// `focus` и `blur`, всё остальное (в том числе мусор) игнорируется.
+async fn on_client_message(
+    text: &str,
+    me: &Attached,
+    user_id: Uuid,
+    visible: &HashSet<Uuid>,
+    state: &AppState,
+    limiter: &mut Limiter,
+    target: &mut Option<(Uuid, Option<Uuid>)>,
+) {
+    if text.len() > MAX_MESSAGE_BYTES {
+        return;
+    }
+    match serde_json::from_str::<ClientMessage>(text) {
+        Ok(ClientMessage::Focus(focus)) => {
+            if !limiter.allow() || !focus.plausible() {
+                return;
+            }
+            let project = match focus.kind {
+                Kind::Wiki => None,
+                Kind::Doc => match *target {
+                    Some((id, project)) if id == focus.id => project,
+                    _ => {
+                        let Ok(project) = db::docs::project_of(&state.pool, focus.id).await else { return };
+                        *target = Some((focus.id, project));
+                        project
+                    }
+                },
+            };
+            // документа нет или он в проекте, который этому человеку не открыт: метки у него быть не может
+            if focus.kind == Kind::Doc && !project.is_some_and(|p| visible.contains(&p)) {
+                me.clear();
+                return;
+            }
+            me.set(user_id, project, &focus);
+        }
+        Ok(ClientMessage::Blur) => me.clear(),
+        _ => {}
     }
 }
