@@ -223,6 +223,79 @@ test.describe('чужая версия пришла вживую: мой отк�
   })
 })
 
+// Пустой блок, который человек только что вставил между абзацами (Enter в конце блока), лежит в общем тексте как три пустые
+// строки. Выход соседа из своего блока раньше чистил весь текст и стирал их: у владельца пустого блока редактор закрывался,
+// и всё, что он печатал дальше, уходило в пустоту. Теперь очистка идёт только вокруг блока, из которого вышли.
+test.describe('пустой блок между абзацами переживает выход соседа из своего блока', () => {
+  const WITH_EMPTY = 'Первый абзац (Лена)\n\n\n\nВторой абзац\n\nТретий абзац'
+  const AFTER = 'Первый абзац (Лена)\n\nВставка\n\nВторой абзац\n\nТретий абзац'
+
+  /** Лена дописывает первый абзац и жмёт Enter в его конце: между первым и вторым появляется её пустой блок */
+  async function openEmptyBlock(page: Page) {
+    await blocks(page).nth(0).click()
+    await page.keyboard.type(' (Лена)')
+    await page.keyboard.press('Enter')
+    await expect(editor(page)).toBeFocused()
+    await expect(editor(page)).toHaveValue('')
+  }
+
+  test('вики', async ({ page, browser }) => {
+    const id = await makePage(page, 'Пустой блок', THREE)
+    await openPageById(page, id)
+    const other = await liveSecond(browser, { page: 'wiki', wikiPage: id }, 'Название страницы')
+    try {
+      await openEmptyBlock(page)
+      await expectSaved(page, id, WITH_EMPTY)
+      // у Артёма чужая версия уже на экране: значит, он знает и про пустые строки
+      await expect(blocks(other.page)).toHaveText(['Первый абзац (Лена)', 'Второй абзац', 'Третий абзац'])
+
+      await blocks(other.page).nth(2).click()
+      await expect(editor(other.page)).toHaveValue('Третий абзац')
+      await other.page.keyboard.press('Escape')
+      await expect(editor(other.page)).toHaveCount(0)
+
+      // у Артёма нечего чистить, и сохранять тоже нечего: текст на сервере прежний, а у Лены блок открыт и курсор в нём
+      await other.page.waitForTimeout(1500)
+      expect((await wikiPage(page, id)).md).toBe(WITH_EMPTY)
+      await expect(editor(page)).toBeFocused()
+      await expect(editor(page)).toHaveValue('')
+
+      await page.keyboard.type('Вставка')
+      await page.keyboard.press('Escape')
+      await expectSaved(page, id, AFTER)
+    } finally {
+      await other.close()
+    }
+  })
+
+  test('документ', async ({ page, browser }) => {
+    const id = await makeDoc(page, 'Пустой блок', 'page', THREE)
+    await openDoc(page, id)
+    const other = await liveSecond(browser, { page: 'docs', docOpen: id }, 'Название документа')
+    try {
+      await openEmptyBlock(page)
+      await expect.poll(async () => (await docFull(page, id)).md, { timeout: 6000 }).toBe(WITH_EMPTY)
+      await expect(blocks(other.page)).toHaveText(['Первый абзац (Лена)', 'Второй абзац', 'Третий абзац'])
+
+      await blocks(other.page).nth(2).click()
+      await expect(editor(other.page)).toHaveValue('Третий абзац')
+      await other.page.keyboard.press('Escape')
+      await expect(editor(other.page)).toHaveCount(0)
+
+      await other.page.waitForTimeout(1500)
+      expect((await docFull(page, id)).md).toBe(WITH_EMPTY)
+      await expect(editor(page)).toBeFocused()
+      await expect(editor(page)).toHaveValue('')
+
+      await page.keyboard.type('Вставка')
+      await page.keyboard.press('Escape')
+      await expect.poll(async () => (await docFull(page, id)).md, { timeout: 6000 }).toBe(AFTER)
+    } finally {
+      await other.close()
+    }
+  })
+})
+
 test.describe('документы', () => {
   test('двое одновременно пишут в новой строке: остаются оба текста, баннера нет, фокус у обоих на месте', async ({ page, browser }) => {
     const id = await makeDoc(page, 'Две новые строки', 'page', THREE)
