@@ -159,6 +159,21 @@ test.describe('связь с сервером', () => {
     await expect.poll(async () => (await stored(page)).live).toBe(true)
   })
 
+  test('«Показывать, где правят другие»: включено по умолчанию, выключается и запоминается, без живых обновлений недоступно', async ({ page }) => {
+    await openApp(page)
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Связь с сервером')
+    const presence = dialog.getByRole('switch', { name: 'Показывать, где правят другие' })
+    await expect(presence).toHaveAttribute('aria-checked', 'true')
+    await expect(presence).toBeEnabled()
+    await presence.click()
+    await expect(presence).toHaveAttribute('aria-checked', 'false')
+    await expect.poll(async () => (await stored(page)).presence).toBe(false)
+    // без живых обновлений метки невозможны, поэтому тумблер недоступен
+    await dialog.getByRole('switch', { name: 'Обновлять вживую' }).click()
+    await expect(presence).toBeDisabled()
+  })
+
   test('«Сменить сервер» открывает шаг с адресом и закрывает окно', async ({ page }) => {
     await openApp(page)
     const dialog = await openSettings(page)
