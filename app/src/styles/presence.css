@@ -1,0 +1,39 @@
+/* Метки присутствия: кто сейчас в блоке текста (вики и документы). В макете их нет; всё из его переменных: у каждого
+   человека пара цветов его аватара (--a-bg…--e-fg), поэтому обе темы работают сами. Размеры взяты из соседних
+   элементов: полоска 3px, как у цитаты (.mt.quote), закругление 8px, как у .mv и .md-ta, пунктир, как у .link-add. */
+.pm-a{--pm-bg:var(--a-bg);--pm-fg:var(--a-fg)}
+.pm-b{--pm-bg:var(--b-bg);--pm-fg:var(--b-fg)}
+.pm-c{--pm-bg:var(--c-bg);--pm-fg:var(--c-fg)}
+.pm-d{--pm-bg:var(--d-bg);--pm-fg:var(--d-fg)}
+.pm-e{--pm-bg:var(--e-bg);--pm-fg:var(--e-fg)}
+
+/* блок, в котором сейчас кто-то есть: лёгкая заливка цветом человека (последнего пришедшего) и полоска слева */
+.mv.pm{position:relative;background:color-mix(in srgb,var(--pm-bg) 45%,transparent)}
+.mv.pm:hover{background:color-mix(in srgb,var(--pm-bg) 45%,transparent)}
+.pm-bar{position:absolute;left:0;top:5px;bottom:5px;width:3px;border-radius:3px;background:var(--pm-fg);pointer-events:none}
+
+/* ярлыки: сначала с именем, через несколько секунд остаётся кружок с буквой, при наведении имя возвращается */
+.pm-chips{position:absolute;top:4px;right:8px;z-index:2;display:flex}
+.pm-chip{display:inline-flex;align-items:center;height:20px;padding:0 3px 0 2px;border-radius:999px;background:var(--pm-bg);color:var(--pm-fg);font-size:11px;font-weight:700;box-shadow:0 0 0 2px var(--bg);white-space:nowrap}
+.pm-chip+.pm-chip{margin-left:-4px}
+.pm-dot{width:16px;height:16px;border-radius:50%;background:var(--pm-fg);color:var(--pm-bg);display:inline-flex;align-items:center;justify-content:center;font-size:10px;flex:none}
+.pm-name{display:inline-block;max-width:160px;overflow:hidden;margin:0 6px 0 5px;transition:max-width .18s ease,margin .18s ease,opacity .18s ease}
+.pm-chip.fold .pm-name{max-width:0;margin:0;opacity:0}
+.pm-chip.fold:hover .pm-name{max-width:160px;margin:0 6px 0 5px;opacity:1}
+
+/* человек вставил блок между абзацами и ещё ничего не написал */
+.pm-slot{position:relative;display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:30px;margin:2px -8px;padding:0 8px;border:1px dashed var(--pm-fg);border-radius:8px;background:color-mix(in srgb,var(--pm-bg) 35%,transparent);color:var(--muted);font-size:13px}
+.pm-slot .pm-chip{box-shadow:none}
+.pm-slot .pm-chip+.pm-chip{margin-left:-4px}
+
+/* мой открытый блок, и в нём же ещё кто-то: ярлык «тоже здесь» лежит на верхней рамке поля, полоска снаружи слева */
+.pm-mine{position:relative}
+.pm-mine .pm-bar{left:-7px;top:3px;bottom:3px}
+.pm-mine .pm-chips{top:-11px;right:10px}
+
+/* скрытая подпись для скринридера не должна попадать в текст, который человек выделил и скопировал */
+.mv.pm .sr,.pm-mine .sr{user-select:none}
+
+@media (prefers-reduced-motion:reduce){
+  .pm-name{transition:none}
+}

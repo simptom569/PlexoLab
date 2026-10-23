@@ -11,6 +11,7 @@ import { useOpenWikiLink } from '../wiki/actions'
 import { lowerTitles } from '../wiki/logic'
 import { OBJECT_TOOLS, addObject, canvasBounds, canvasLines, moveNote, newObject, patchObject, removeObject, toggleLink } from './canvas'
 import { MAX_ZOOM, MIN_ZOOM, clampCoord, edgeVelocity, gridStyle, panBy, revealCamera, tidy, toWorld, visibleRect, type Camera, type Point } from './camera'
+import { usePagePresence } from '../wiki/presence'
 import { useCanvasDraft, useDocDraft } from './drafts'
 import { starLabel } from './logic'
 import { useDeleteDoc, useSetDocMode, useStarDoc } from './mutations'
@@ -47,6 +48,7 @@ const HINT_CONNECT = 'Режим стрелок: нажми два объект�
 /** Загруженный документ: сверху «Все документы», режим, звёздочка, «Удалить»; ниже страница или холст */
 function LoadedDoc({ doc }: { doc: Doc }) {
   const { draft, state } = useDocDraft(doc)
+  const presence = usePagePresence('doc', doc.id, draft, state)
   const { draft: cv, state: canvas } = useCanvasDraft(doc)
   const pages = useWiki().data ?? []
   const openLink = useOpenWikiLink()
@@ -339,6 +341,8 @@ function LoadedDoc({ doc }: { doc: Doc }) {
                 onFinish={() => void draft.flush()}
                 restore={state.restore}
                 registerProbe={draft.setActiveProbe}
+                marks={presence.marks}
+                onActiveChange={presence.onActiveChange}
               />
             </div>
           </div>

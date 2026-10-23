@@ -21,6 +21,8 @@ export type Versioned = { id: string; title: string; md: string; rev: number }
 export const SAVE_DELAY_MS = 600
 /** Через сколько повторять сохранение, если сервер не ответил */
 export const RETRY_MS = 5_000
+/** Сколько последних версий сервера помнить (по ним пересчитываются чужие метки присутствия) */
+export const HISTORY_SIZE = 12
 /** Сколько раз подряд пробуем слить правки, прежде чем отдать выбор человеку: иначе двое, быстро печатающих рядом, зациклились бы */
 export const MAX_MERGES = 3
 
@@ -33,6 +35,10 @@ export type DraftState<P extends Versioned = WikiPage> = {
   resetKey: number
   /** После слияния: какой блок открыть в новом редакторе и где поставить курсор, чтобы человек продолжил печатать */
   restore: ActiveBlock | null
+  /** Версия сервера, на которую опирается сохранённый текст */
+  rev: number
+  /** Текст совпадает с сохранённым: номера его строк верны для версии `rev`, о них можно сообщать другим людям */
+  mdClean: boolean
 }
 
 export type DraftDeps<P extends Versioned = WikiPage> = {
@@ -60,6 +66,8 @@ export class PageDraft<P extends Versioned = WikiPage> {
   private resetKey = 0
   private restore: ActiveBlock | null = null
   private merges = 0
+  /** Тексты последних версий сервера по номеру версии */
+  private readonly history = new Map<number, string>()
   private probe: (() => ActiveBlock | null) | null = null
   private inFlight = false
   private disposed = false
@@ -76,6 +84,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     this.saved = { title: page.title, md: page.md }
     this.title = page.title
     this.md = page.md
+    this.remember(page)
     this.snapshot = this.build()
   }
 
@@ -87,6 +96,9 @@ export class PageDraft<P extends Versioned = WikiPage> {
   }
 
   getState = (): DraftState<P> => this.snapshot
+
+  /** Текст версии сервера `rev`, если она ещё в запасе */
+  textAt = (rev: number): string | undefined => this.history.get(rev)
 
   /** Редактор сообщает, как узнать открытый блок и курсор; `null` — редактор закрыт */
   setActiveProbe = (probe: (() => ActiveBlock | null) | null) => {
@@ -171,7 +183,24 @@ export class PageDraft<P extends Versioned = WikiPage> {
   // ----- внутреннее -----
 
   private build(): DraftState<P> {
-    return { title: this.title, md: this.md, conflict: this.conflict, resetKey: this.resetKey, restore: this.restore }
+    return {
+      title: this.title,
+      md: this.md,
+      conflict: this.conflict,
+      resetKey: this.resetKey,
+      restore: this.restore,
+      rev: this.rev,
+      mdClean: this.md === this.saved.md,
+    }
+  }
+
+  private remember(page: P) {
+    this.history.delete(page.rev)
+    this.history.set(page.rev, page.md)
+    for (const rev of this.history.keys()) {
+      if (this.history.size <= HISTORY_SIZE) break
+      this.history.delete(rev)
+    }
   }
 
   private changed() {
@@ -190,6 +219,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     const textChanged = page.md !== this.md
     this.rev = page.rev
     this.saved = { title: page.title, md: page.md }
+    this.remember(page)
     this.title = page.title
     this.md = page.md
     this.merges = 0
@@ -220,6 +250,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     this.merges++
     this.rev = theirs.rev
     this.saved = { title: theirs.title, md: theirs.md }
+    this.remember(theirs)
     this.title = title
     this.md = merged.md
     if (textChanged) {
@@ -255,6 +286,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     } catch (e) {
       if (isConflict<P>(e)) {
         if (!this.merge(e.body.current)) {
+          this.remember(e.body.current)
           this.conflict = e.body.current
           this.changed()
         }
@@ -278,25 +310,22 @@ export class PageDraft<P extends Versioned = WikiPage> {
 
   private saveSucceeded(page: P, sent: { title?: string; md?: string }) {
     this.rev = page.rev
+    this.remember(page)
     this.merges = 0
-    let replaced = false
     // отправленное поле теперь известно как есть на сервере; не отправленное, если его не трогали, подтягивается с сервера
     if (sent.title !== undefined) this.saved.title = page.title
     else if (this.title.trim() === this.saved.title) {
-      replaced ||= page.title !== this.title
       this.saved.title = page.title
       this.title = page.title
     }
     if (sent.md !== undefined) this.saved.md = page.md
     else if (this.md === this.saved.md) {
-      if (page.md !== this.md) {
-        this.resetKey++
-        replaced = true
-      }
+      if (page.md !== this.md) this.resetKey++
       this.saved.md = page.md
       this.md = page.md
     }
-    if (replaced) this.changed()
+    // версия поменялась в любом случае: от неё зависят метки присутствия (`rev` и `mdClean` в снимке)
+    this.changed()
     this.deps.onSaved(page)
   }
 }

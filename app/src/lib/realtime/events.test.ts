@@ -36,6 +36,40 @@ describe('parseMessage', () => {
       expect(parseMessage(raw), raw).toBeNull()
     }
   })
+
+  describe('присутствие', () => {
+    const mark = { client: '3', user_id: 'u1', kind: 'wiki', id: 'w1', rev: 4, start: 2, end: 5 }
+
+    it('метка, снятие и полный список', () => {
+      expect(parseMessage(JSON.stringify({ type: 'presence.set', mark }))).toEqual({ kind: 'presence.set', mark })
+      expect(parseMessage('{"type":"presence.gone","client":"3"}')).toEqual({ kind: 'presence.gone', client: '3' })
+      expect(parseMessage(JSON.stringify({ type: 'presence', marks: [mark, { ...mark, client: '4', kind: 'doc' }] }))).toEqual({
+        kind: 'presence',
+        marks: [mark, { ...mark, client: '4', kind: 'doc' }],
+      })
+    })
+
+    it('в полном списке негодные метки пропускаются, а список без поля пуст', () => {
+      expect(parseMessage(JSON.stringify({ type: 'presence', marks: [mark, { client: 'x' }, 5, null] }))).toEqual({ kind: 'presence', marks: [mark] })
+      expect(parseMessage('{"type":"presence"}')).toEqual({ kind: 'presence', marks: [] })
+    })
+
+    it('негодная метка и снятие без подключения игнорируются', () => {
+      const bad = [
+        { ...mark, kind: 'canvas' },
+        { ...mark, end: mark.start },
+        { ...mark, start: -1 },
+        { ...mark, rev: 1.5 },
+        { ...mark, client: '' },
+        { ...mark, id: 7 },
+        'строка',
+      ]
+      for (const m of bad) expect(parseMessage(JSON.stringify({ type: 'presence.set', mark: m })), JSON.stringify(m)).toBeNull()
+      expect(parseMessage('{"type":"presence.set"}')).toBeNull()
+      expect(parseMessage('{"type":"presence.gone"}')).toBeNull()
+      expect(parseMessage('{"type":"presence.gone","client":""}')).toBeNull()
+    })
+  })
 })
 
 describe('queryKeysFor', () => {

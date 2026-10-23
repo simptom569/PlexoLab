@@ -63,6 +63,8 @@ export const settingsSchema = z.object({
   weekStart: z.enum(WEEK_STARTS).catch('mon'),
   /** Чужие изменения приходят по WebSocket; выключено — данные обновляются только при открытии экранов */
   live: z.boolean().catch(true),
+  /** Показывать, в каком блоке сейчас другие люди, и сообщать о своём (только при включённых живых обновлениях) */
+  presence: z.boolean().catch(true),
   page: z.enum(PAGE_IDS).catch('board'),
   project: z.string().nullable().catch(null),
   view: z.enum(VIEWS).catch('board'),

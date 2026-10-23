@@ -96,6 +96,26 @@ describe('RealtimeConnection', () => {
     vi.useRealTimers()
   })
 
+  it('send: сообщения уходят только когда связь открыта, иначе не копятся', () => {
+    expect(conn.send({ type: 'blur' })).toBe(false) // не запущено
+    conn.start()
+    last().open()
+    expect(conn.send({ type: 'blur' })).toBe(false) // вошли не до конца: «ready» ещё нет
+    last().say({ type: 'ready' })
+    expect(conn.send({ type: 'blur' })).toBe(true)
+    expect(last().sent).toEqual([{ type: 'auth', token: 'tok1' }, { type: 'blur' }])
+    last().serverCloses(1006)
+    expect(conn.send({ type: 'blur' })).toBe(false)
+    expect(last().sent).toHaveLength(2)
+  })
+
+  it('метки присутствия доходят до слушателя как есть', () => {
+    conn.start()
+    login()
+    last().say({ type: 'presence.gone', client: '7' })
+    expect(messages).toEqual([{ kind: 'presence.gone', client: '7' }])
+  })
+
   it('подключается и первым сообщением присылает токен; пока не ответили «ready», связь не «открыта»', () => {
     conn.start()
     expect(statuses).toEqual(['connecting'])

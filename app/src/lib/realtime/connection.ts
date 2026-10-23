@@ -110,6 +110,13 @@ export class RealtimeConnection {
     this.setStatus('offline')
   }
 
+  /** Отправить сообщение серверу; `false`, если связи сейчас нет: сообщение не уходит и не копится */
+  send(message: unknown): boolean {
+    if (this.status !== 'open' || !this.socket) return false
+    this.socket.send(JSON.stringify(message))
+    return true
+  }
+
   // ----- внутреннее -----
 
   private setStatus(status: ConnectionStatus) {

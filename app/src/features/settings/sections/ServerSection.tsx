@@ -20,6 +20,8 @@ export function ServerSection({ connection }: { connection: ConnectionStatus }) 
   const changeServer = useSession((s) => s.changeServer)
   const live = useUi((s) => s.live)
   const setLive = useUi((s) => s.setLive)
+  const presence = useUi((s) => s.presence)
+  const setPresence = useUi((s) => s.setPresence)
   const [check, setCheck] = useState<Check | null>(null)
   const { color, label } = live ? CONNECTION_VIEW[connection] : LIVE_OFF
 
@@ -60,6 +62,12 @@ export function ServerSection({ connection }: { connection: ConnectionStatus }) 
       </SettingRow>
       <SettingRow label="Обновлять вживую" description="Чужие изменения появляются сразу, без перезагрузки экрана.">
         <Switch label="Обновлять вживую" checked={live} onChange={setLive} />
+      </SettingRow>
+      <SettingRow
+        label="Показывать, где правят другие"
+        description="Полоска и имя у блока текста, в котором сейчас другой человек, и твой блок виден остальным. Работает при включённом «Обновлять вживую»."
+      >
+        <Switch label="Показывать, где правят другие" checked={presence} onChange={setPresence} disabled={!live} />
       </SettingRow>
     </SettingGroup>
   )

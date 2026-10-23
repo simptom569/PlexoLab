@@ -13,6 +13,7 @@ describe('parseSettings', () => {
       scrollbars: 'visible',
       weekStart: 'mon',
       live: true,
+      presence: true,
       page: 'board',
       project: null,
       view: 'board',
@@ -35,6 +36,12 @@ describe('parseSettings', () => {
   it('мусор в этих настройках заменяется значением по умолчанию', () => {
     const s = parseSettings({ theme: 'auto', scrollbars: 'thin', weekStart: 'tue', live: 'yes' })
     expect(s).toMatchObject({ theme: 'light', scrollbars: 'visible', weekStart: 'mon', live: true })
+  })
+
+  it('«Показывать, где правят другие» по умолчанию включено, выключенное хранится, мусор заменяется на «включено»', () => {
+    expect(parseSettings({}).presence).toBe(true)
+    expect(parseSettings({ presence: false }).presence).toBe(false)
+    expect(parseSettings({ presence: 'нет' }).presence).toBe(true)
   })
 
   it('вид холста по документам хранится; мусор не ломает остальные записи', () => {

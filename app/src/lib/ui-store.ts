@@ -21,8 +21,8 @@ import { resolveDark } from './theme'
 
 export type { Theme }
 
-type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'page' | 'project' | 'view' | 'filters' | 'display'>
-const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'page', 'project', 'view', 'filters', 'display']
+type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'presence' | 'page' | 'project' | 'view' | 'filters' | 'display'>
+const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'presence', 'page', 'project', 'view', 'filters', 'display']
 
 // Локальное состояние интерфейса. Часть сохраняется на диск (см. PERSISTED_KEYS), остальное живёт, пока открыто окно.
 type UiState = Persisted & {
@@ -53,6 +53,7 @@ type UiState = Persisted & {
   setScrollbars: (mode: ScrollbarMode) => void
   setWeekStart: (start: WeekStart) => void
   setLive: (live: boolean) => void
+  setPresence: (presence: boolean) => void
   toggleMenu: (menu: string) => void
   closeMenus: () => void
   openSettings: (tab?: SettingsTab) => void
@@ -85,6 +86,7 @@ export const useUi = create<UiState>()((set) => ({
   scrollbars: DEFAULT_SETTINGS.scrollbars,
   weekStart: DEFAULT_SETTINGS.weekStart,
   live: DEFAULT_SETTINGS.live,
+  presence: DEFAULT_SETTINGS.presence,
   page: DEFAULT_SETTINGS.page,
   project: DEFAULT_SETTINGS.project,
   view: DEFAULT_SETTINGS.view,
@@ -108,6 +110,7 @@ export const useUi = create<UiState>()((set) => ({
   setScrollbars: (scrollbars) => set({ scrollbars }),
   setWeekStart: (weekStart) => set({ weekStart }),
   setLive: (live) => set({ live }),
+  setPresence: (presence) => set({ presence }),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
   openSettings: (tab = 'account') => set({ settingsTab: tab, projectDialog: null, menu: null }),
@@ -146,6 +149,7 @@ export function hydrateUi(settings: Settings): void {
     scrollbars: settings.scrollbars,
     weekStart: settings.weekStart,
     live: settings.live,
+    presence: settings.presence,
     page: settings.page,
     project: settings.project,
     view: settings.view,

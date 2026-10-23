@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   TOOLS,
   append,
@@ -21,6 +21,9 @@ import {
   type Step,
 } from '../lib/markdown'
 import { cx } from '../lib/cx'
+import { assignMarks, type PlacedMark } from '../lib/realtime/presence'
+import { presenceClass } from '../lib/tones'
+import { BlockMarks, PresenceSlot } from './PresenceMarks'
 import { Tick } from './Tick'
 
 type MarkdownEditorProps = {
@@ -45,6 +48,10 @@ type MarkdownEditorProps = {
   restore?: ActiveBlock | null
   /** Владелец просит рассказать, какой блок открыт и где курсор: нужно в момент слияния. `null` — редактор закрыт. */
   registerProbe?: (probe: (() => ActiveBlock | null) | null) => void
+  /** Где сейчас другие люди (строки показанного текста): рисуются полоской и ярлыком у блока. Нет в макете. */
+  marks?: PlacedMark[]
+  /** Какой блок открыт на правку сейчас (`null` — никакой): так остальным сообщается, где человек */
+  onActiveChange?: (block: { start: number; end: number } | null) => void
 }
 
 /** Открытый блок: строки `[start, end)` и позиция курсора в его тексте */
@@ -60,7 +67,7 @@ type State = {
 }
 
 /** Редактор markdown в стиле Obsidian (vEditor, mdView и md* в макете). Логика клавиш и вставок лежит в `lib/markdown`. */
-export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl, autoEdit, onFinish, restore, registerProbe }: MarkdownEditorProps) {
+export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl, autoEdit, onFinish, restore, registerProbe, marks, onActiveChange }: MarkdownEditorProps) {
   const [state, setState] = useState<State>(() =>
     restore
       ? { edit: { start: restore.start, end: restore.end, t: 1 }, caret: { pos: restore.caret } }
@@ -127,6 +134,20 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
   // если активный блок вышел за пределы текста, `segments` его отбросил
   const edit = ed ? state.edit : null
 
+  // Остальным сообщается, в каком блоке человек; закрыли редактор (ушли со страницы, текст заменили) — «ни в каком»
+  const activeRef = useRef(onActiveChange)
+  useLayoutEffect(() => {
+    activeRef.current = onActiveChange
+  })
+  const activeStart = edit ? edit.start : -1
+  const activeEnd = edit ? edit.end : -1
+  useEffect(() => {
+    activeRef.current?.(activeStart < 0 ? null : { start: activeStart, end: activeEnd })
+  }, [activeStart, activeEnd])
+  useEffect(() => () => activeRef.current?.(null), [])
+
+  const { inBlock, inGap } = assignMarks(marks ?? [], segs)
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const cur = editRef.current
     if (!cur) return
@@ -169,11 +190,16 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
       </div>
       <div className="md">
         {segs.map((seg, i) => {
+          const gap = inGap[i]!
+          const here = inBlock[i]!
+          const tone = here.length ? presenceClass(here[here.length - 1]!.tone) : undefined
+          let block: ReactNode
           if (seg.kind === 'edit') {
             if (!edit) return null
             const text = lines.slice(seg.start, seg.end).join('\n')
-            return (
-              <div key={i}>
+            block = (
+              <div className={cx(here.length > 0 && 'pm-mine', tone) || undefined}>
+                {here.length > 0 && <BlockMarks marks={here} mine />}
                 <textarea
                   ref={taRef}
                   className="md-ta"
@@ -188,34 +214,43 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
                 />
               </div>
             )
-          }
-          return (
-            <div key={i}>
-              <div
-                className="mv"
-                tabIndex={0}
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  start(seg)
-                }}
-                onKeyDown={(e) => {
-                  // Enter на самой плитке блока, а не на кнопке-галочке или ссылке внутри
-                  if (e.key === 'Enter' && e.target === e.currentTarget) {
+          } else {
+            block = (
+              <div>
+                <div
+                  className={cx('mv', here.length > 0 && 'pm', tone)}
+                  tabIndex={0}
+                  onMouseDown={(e) => {
                     e.preventDefault()
                     start(seg)
-                  }
-                }}
-              >
-                <View
-                  view={describeBlock(lines, seg, wikiTitles)}
-                  onToggle={(line) => apply({ md: toggleCheck(mdRef.current, line), edit: editRef.current })}
-                  onOpenWiki={onOpenWiki}
-                  onOpenUrl={onOpenUrl}
-                />
+                  }}
+                  onKeyDown={(e) => {
+                    // Enter на самой плитке блока, а не на кнопке-галочке или ссылке внутри
+                    if (e.key === 'Enter' && e.target === e.currentTarget) {
+                      e.preventDefault()
+                      start(seg)
+                    }
+                  }}
+                >
+                  {here.length > 0 && <BlockMarks marks={here} />}
+                  <View
+                    view={describeBlock(lines, seg, wikiTitles)}
+                    onToggle={(line) => apply({ md: toggleCheck(mdRef.current, line), edit: editRef.current })}
+                    onOpenWiki={onOpenWiki}
+                    onOpenUrl={onOpenUrl}
+                  />
+                </div>
               </div>
-            </div>
+            )
+          }
+          return (
+            <Fragment key={i}>
+              {gap.length > 0 && <PresenceSlot marks={gap} />}
+              {block}
+            </Fragment>
           )
         })}
+        {inGap[segs.length]!.length > 0 && <PresenceSlot marks={inGap[segs.length]!} />}
         <div
           className={cx('md-add', isEmpty && 'empty')}
           role="button"

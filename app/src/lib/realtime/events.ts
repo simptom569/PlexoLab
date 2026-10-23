@@ -13,14 +13,45 @@ export type ServerEvent = {
   origin: string | null
 }
 
+/** Блок, в котором сейчас человек (присутствие): строки `[start, end)` текста версии `rev` у того, кто его открыл */
+export type PresenceMark = {
+  /** Подключение: у одного человека их может быть несколько (приложение запущено дважды, два компьютера) */
+  client: string
+  user_id: string
+  kind: 'wiki' | 'doc'
+  id: string
+  rev: number
+  start: number
+  end: number
+}
+
 export type Message =
   | { kind: 'ready' }
   | { kind: 'ping' }
   | { kind: 'resync' }
   | { kind: 'error'; code: string }
   | { kind: 'event'; event: ServerEvent }
+  /** Все метки сейчас: заменяют то, что клиент знал */
+  | { kind: 'presence'; marks: PresenceMark[] }
+  | { kind: 'presence.set'; mark: PresenceMark }
+  | { kind: 'presence.gone'; client: string }
 
 const text = (v: unknown): string | null => (typeof v === 'string' ? v : null)
+
+/** Метка присутствия; `null`, если в ней чего-то не хватает или она нелепая */
+export function parseMark(raw: unknown): PresenceMark | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const o = raw as Record<string, unknown>
+  const client = text(o.client)
+  const user_id = text(o.user_id)
+  const id = text(o.id)
+  const { kind, rev, start, end } = o
+  if (!client || !user_id || !id) return null
+  if (kind !== 'wiki' && kind !== 'doc') return null
+  const whole = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0
+  if (!whole(rev) || !whole(start) || !whole(end) || end <= start) return null
+  return { client, user_id, kind, id, rev, start, end }
+}
 
 /** Разбирает сообщение сервера; `null`, если это не JSON-объект с полем `type` */
 export function parseMessage(raw: string): Message | null {
@@ -41,6 +72,18 @@ export function parseMessage(raw: string): Message | null {
       return { kind: type }
     case 'error':
       return { kind: 'error', code: text(o.code) ?? 'error' }
+    case 'presence': {
+      const list = Array.isArray(o.marks) ? o.marks : []
+      return { kind: 'presence', marks: list.map(parseMark).filter((m): m is PresenceMark => m !== null) }
+    }
+    case 'presence.set': {
+      const mark = parseMark(o.mark)
+      return mark && { kind: 'presence.set', mark }
+    }
+    case 'presence.gone': {
+      const client = text(o.client)
+      return client ? { kind: 'presence.gone', client } : null
+    }
     default:
       return { kind: 'event', event: { type, id: text(o.id), project_id: text(o.project_id), origin: text(o.origin) } }
   }

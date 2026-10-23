@@ -15,3 +15,7 @@ export const toneAt = (index: number) => TONES[((index % TONES.length) + TONES.l
 
 // users.tone 0..4 → .av-a … .av-e
 export const AVATAR_CLASSES = ['av-a', 'av-b', 'av-c', 'av-d', 'av-e'] as const
+
+// users.tone 0..4 → .pm-a … .pm-e (метки присутствия в редакторе: цвета те же, что у аватара)
+const PRESENCE_CLASSES = ['pm-a', 'pm-b', 'pm-c', 'pm-d', 'pm-e'] as const
+export const presenceClass = (tone: number): string => PRESENCE_CLASSES[((tone % PRESENCE_CLASSES.length) + PRESENCE_CLASSES.length) % PRESENCE_CLASSES.length]!

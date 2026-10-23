@@ -12,6 +12,7 @@ import { FileName, FileTile } from './FileBits'
 import { fileDate, kindOf, lowerTitles, pathTo } from './logic'
 import { useDeleteFile, useDeletePage, useUploadFiles } from './mutations'
 import { usePageDraft } from './drafts'
+import { usePagePresence } from './presence'
 import { useWikiStore } from './store'
 
 function PageFiles({ page }: { page: WikiNode }) {
@@ -71,6 +72,7 @@ function LoadedPage({ page }: { page: WikiPage }) {
   const qc = useQueryClient()
   const pages = useWiki().data ?? []
   const { draft, state } = usePageDraft(page)
+  const presence = usePagePresence('wiki', page.id, draft, state)
   const openPage = useWikiStore((s) => s.openPage)
   const autoEdit = useWikiStore((s) => s.editNew === page.id)
   const editStarted = useWikiStore((s) => s.editStarted)
@@ -126,6 +128,8 @@ function LoadedPage({ page }: { page: WikiPage }) {
         onFinish={() => void draft.flush()}
         restore={state.restore}
         registerProbe={draft.setActiveProbe}
+        marks={presence.marks}
+        onActiveChange={presence.onActiveChange}
       />
       <PageFiles page={node} />
     </>
