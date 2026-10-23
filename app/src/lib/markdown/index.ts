@@ -1,4 +1,4 @@
-export { LIST_RE, mdBlocks, mdInline, mdKindOf, mdTidy, rowsFor } from './engine'
+export { LIST_RE, mdBlocks, mdInline, mdKindOf, mdTidy, mdTidyBlock, rowsFor } from './engine'
 export type { Block, BlockKind, Inline } from './engine'
 export { highlightCode } from './highlight'
 export type { CodeNode } from './highlight'

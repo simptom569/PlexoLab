@@ -87,8 +87,19 @@ describe('wrap и toggleCheck', () => {
 })
 
 describe('finish', () => {
-  it('чистит текст и закрывает редактирование', () => {
-    expect(finish('Текст\n\n-\n\n\n\n')).toEqual({ md: 'Текст', edit: null })
+  it('чистит текст вокруг блока и закрывает редактирование', () => {
+    expect(finish('Текст\n\n-\n\n\n\n', { start: 2, end: 3 })).toEqual({ md: 'Текст', edit: null })
+  })
+
+  it('чужой пустой блок рядом с выходящим не стирается: Esc и Ctrl+Enter', () => {
+    const md = 'А\n\n\n\nБ'
+    expect(finish(md, { start: 0, end: 1 })).toEqual({ md, edit: null })
+    expect(press(md, { start: 0, end: 1 }, 'Escape')!.step).toEqual({ md, edit: null })
+    expect(press(md, { start: 4, end: 5 }, 'Enter', { mod: true })!.step).toEqual({ md, edit: null })
+  })
+
+  it('без активного блока ничего не чистит', () => {
+    expect(finish('А\n\n\n\nБ', null)).toEqual({ md: 'А\n\n\n\nБ', edit: null })
   })
 })
 

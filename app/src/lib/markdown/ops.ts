@@ -1,7 +1,7 @@
 // Правки текста редактора как чистые функции. Порт методов `md*` макета: вся логика клавиш и вставки блоков здесь,
 // компоненту остаются фокус, выделение и события браузера.
 
-import { LIST_RE, mdBlocks, mdKindOf, mdTidy, type Block } from './engine'
+import { LIST_RE, mdBlocks, mdKindOf, mdTidyBlock, type Block } from './engine'
 
 /** Активный блок: строки [start, end) показаны исходником */
 export type Edit = { start: number; end: number }
@@ -34,9 +34,12 @@ function contentEnd(lines: string[]) {
   return e
 }
 
-/** Выход из редактирования: очистка текста (`mdFinish`) */
-export function finish(md: string): Step {
-  return { md: mdTidy(md), edit: null }
+/**
+ * Выход из редактирования блока `ed`: очистка текста (`mdFinish`). В макете она идёт по всему тексту; здесь только
+ * вокруг этого блока, иначе она стирала бы у другого человека его только что вставленный пустой блок (см. `mdTidyBlock`).
+ */
+export function finish(md: string, ed: Edit | null): Step {
+  return { md: ed ? mdTidyBlock(md, ed.start, ed.end) : md, edit: null }
 }
 
 /** Заменяет текст активного блока (`mdPut`); вызывается на каждый символ */
@@ -126,7 +129,7 @@ export function keyAction(md: string, ed: Edit, k: KeyInput): KeyResult | null {
   const handled = (step: Step): KeyResult => ({ prevent: true, step })
   const go = (b: Block, caret: number | null): Step => ({ md, edit: range(b), caret })
 
-  if (key === 'Escape' || (mod && key === 'Enter')) return handled(finish(md))
+  if (key === 'Escape' || (mod && key === 'Enter')) return handled(finish(md, ed))
   const wrapWith = (a: string, b: string) => {
     const w = wrap(val, k.selStart, k.selEnd, a, b)
     return handled(put(md, ed, w.text, w.caret))

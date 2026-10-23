@@ -309,6 +309,23 @@ type Doc = string[] // абзацы
 
 const text = (paragraphs: Doc) => paragraphs.join('\n\n')
 
+// Новый пустой блок между абзацами (Enter в конце блока) оставляет в тексте три пустые строки, сам блок — средняя
+describe('trackBlock: мой пустой блок между абзацами', () => {
+  const saved = 'А\n\n\n\nБ'
+
+  it('чужой абзац выше сдвигает его вниз вместе с остальным', () => {
+    expect(trackBlock(saved, `Новый\n\n${saved}`, 2, 3)).toEqual({ start: 4, end: 5 })
+  })
+
+  it('чужая правка соседей не мешает', () => {
+    expect(trackBlock(saved, 'А1\n\n\n\nБ1', 2, 3)).toEqual({ start: 2, end: 3 })
+  })
+
+  it('если чужая очистка стёрла пустые строки, блока больше нет: поэтому очистка идёт только вокруг своего блока', () => {
+    expect(trackBlock(saved, 'А\n\nБ', 2, 3)).toBeNull()
+  })
+})
+
 describe('случайные правки', () => {
   const base = (n: number): Doc => Array.from({ length: n }, (_, i) => `p${i}`)
 

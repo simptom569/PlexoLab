@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mdBlocks, mdInline, mdKindOf, mdTidy, rowsFor } from './engine'
+import { mdBlocks, mdInline, mdKindOf, mdTidy, mdTidyBlock, rowsFor } from './engine'
 
 const blocks = (md: string) => mdBlocks(md.split('\n'), 0).map((b) => [b.kind, b.start, b.end])
 
@@ -117,6 +117,72 @@ describe('mdTidy', () => {
   it('пустой текст остаётся пустым', () => {
     expect(mdTidy('')).toBe('')
     expect(mdTidy('\n\n  \n')).toBe('')
+  })
+})
+
+// Очистка при выходе из блока идёт только вокруг него: чужой пустой блок или свежий маркер, которые другой человек только
+// что вставил (они лежат в общем тексте), не должны пропадать, иначе у него закрывается редактор и слетает фокус.
+describe('mdTidyBlock', () => {
+  it('убирает пустой маркер в своём блоке и схлопывает пустоту вокруг', () => {
+    expect(mdTidyBlock('Текст\n\n-\n\nДругой', 2, 3)).toBe('Текст\n\nДругой')
+    expect(mdTidyBlock('А\n\n\n\nБ', 2, 3)).toBe('А\n\nБ')
+  })
+
+  it('чужой пустой блок рядом не трогается, с какой стороны ни выходить', () => {
+    const md = 'А\n\n\n\nБ'
+    expect(mdTidyBlock(md, 0, 1)).toBe(md)
+    expect(mdTidyBlock(md, 4, 5)).toBe(md)
+  })
+
+  it('чужой свежий маркер рядом не стирается', () => {
+    expect(mdTidyBlock('А\n\n-\n\nБ', 0, 1)).toBe('А\n\n-\n\nБ')
+    expect(mdTidyBlock('А\n\n## \n\nБ', 4, 5)).toBe('А\n\n## \n\nБ')
+  })
+
+  it('пробелы в конце строк убираются только в своём блоке', () => {
+    expect(mdTidyBlock('А   \n\nБ   ', 2, 3)).toBe('А   \n\nБ')
+  })
+
+  it('блок без пустоты по краям ничего вокруг себя не меняет', () => {
+    expect(mdTidyBlock('А\n\nБ\n\nВ', 2, 3)).toBe('А\n\nБ\n\nВ')
+  })
+
+  it('лишний Enter в конце блока схлопывается', () => {
+    expect(mdTidyBlock('А\n\nБ\n\n\nВ', 2, 4)).toBe('А\n\nБ\n\nВ')
+  })
+
+  it('пустой блок в конце и в начале текста уходит совсем', () => {
+    expect(mdTidyBlock('А\n\n\n', 2, 3)).toBe('А')
+    expect(mdTidyBlock('\n\nА', 0, 1)).toBe('А')
+    expect(mdTidyBlock('\n\n', 0, 1)).toBe('')
+  })
+
+  it('одна пустая строка в конце или начале текста — остаток после удаления соседнего блока, она убирается', () => {
+    expect(mdTidyBlock('Раз\n', 0, 1)).toBe('Раз')
+    expect(mdTidyBlock('\nДва', 1, 2)).toBe('Два')
+  })
+
+  it('две пустые строки в конце — чужой пустой блок, он остаётся', () => {
+    expect(mdTidyBlock('Текст\n\n', 0, 1)).toBe('Текст\n\n')
+  })
+
+  it('блок за пределами текста ничего не меняет', () => {
+    expect(mdTidyBlock('А\n\n', 5, 6)).toBe('А\n\n')
+  })
+
+  it('блок на весь текст даёт то же, что mdTidy на любых строках', () => {
+    // случайные тексты из строк, на которых mdTidy что-то делает: пустые, маркеры, пробелы, обычный текст
+    const alphabet = ['а', '', '', '-', '#', '>', '1.', '  ', '- [ ]', '- б', 'в  ']
+    let seed = 7
+    const rand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 4294967296
+    }
+    for (let n = 0; n < 500; n++) {
+      const lines = Array.from({ length: Math.floor(rand() * 10) }, () => alphabet[Math.floor(rand() * alphabet.length)])
+      const md = lines.join('\n')
+      expect(mdTidyBlock(md, 0, lines.length), JSON.stringify(md)).toBe(mdTidy(md))
+    }
   })
 })
 

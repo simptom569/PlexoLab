@@ -205,6 +205,12 @@ describe('правки совпадают с методами md* макета',
             if (!mine) {
               expect(prevented, label).toBe(false)
               expect(expected, label).toEqual({ md, edit: ed, caret: undefined })
+            } else if (k.key === 'Escape' || (k.ctrlKey && k.key === 'Enter')) {
+              // Единственное намеренное отличие от макета: выход из блока чистит текст только вокруг блока (`mdTidyBlock`),
+              // а не весь документ, иначе у другого человека пропал бы его пустой блок. Проверяем, что мы не сделали ничего
+              // лишнего: добавив к нашему результату остаток очистки макета, получаем в точности результат макета.
+              expect(prevented, label).toBe(true)
+              expect({ md: mdTidy(mine.step.md), edit: mine.step.edit, caret: mine.step.caret }, label).toEqual(expected)
             } else {
               expect(prevented, label).toBe(true)
               expect({ md: mine.step.md, edit: mine.step.edit, caret: mine.step.caret }, label).toEqual(expected)

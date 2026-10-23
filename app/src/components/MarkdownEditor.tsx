@@ -120,7 +120,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
   /** Потеря фокуса завершает редактирование, но только если активным по-прежнему тот же блок (защита жетоном) */
   const blur = (token: number) => {
     const cur = editRef.current
-    if (cur && cur.t === token) apply(finish(mdRef.current))
+    if (cur && cur.t === token) apply(finish(mdRef.current, cur))
   }
 
   const { segs, ed, lines } = segments(md, state.edit)

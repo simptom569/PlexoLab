@@ -73,6 +73,41 @@ export const mdTidy = (md: string) =>
     .replace(/^\n+/, '')
     .replace(/\n+$/, '')
 
+const EMPTY_MARKER = /^(?:#{1,3}|[-*+]|\d+[.)]|>|[-*+]\s\[[ xX]\])[ \t]*$/
+
+/**
+ * То же, что `mdTidy`, но только вокруг блока строк `[start, end)`, из которого человек вышел. Чужой пустой блок или
+ * свежий маркер `-`, который другой человек только что вставил, лежат в общем тексте, и очистка всего документа стирала
+ * их у него из-под рук. Пустые строки вокруг блока трогаются, только если блок сам начинается или кончается пустой
+ * строкой (пустой новый блок, лишний Enter): тогда схлопывается вся примыкающая пустота, как в `mdTidy`.
+ * Одна пустая строка в самом начале или конце текста — остаток после удаления соседнего блока (Backspace на пустом):
+ * она убирается. Чужой пустой блок там занимает минимум две пустые строки, его это не касается.
+ */
+export function mdTidyBlock(md: string, start: number, end: number): string {
+  const lines = md.split('\n')
+  let a = Math.min(Math.max(start, 0), lines.length)
+  let b = Math.min(Math.max(end, a), lines.length)
+  for (let i = a; i < b; i++) lines[i] = EMPTY_MARKER.test(lines[i]) ? '' : lines[i].replace(/[ \t]+$/, '')
+  if (a === b) return lines.join('\n')
+
+  const blank = (i: number) => lines[i].trim() === ''
+  if (blank(a)) while (a > 0 && blank(a - 1)) a--
+  if (blank(b - 1)) while (b < lines.length && blank(b)) b++
+
+  // подряд идущие пустые строки внутри куска становятся одной; в самом начале и конце текста пустота исчезает совсем
+  const kept: string[] = []
+  for (let i = a; i < b; i++) {
+    if (!blank(i)) kept.push(lines[i])
+    else if (kept.length === 0 ? a > 0 : kept[kept.length - 1] !== '') kept.push('')
+  }
+  if (b === lines.length && kept[kept.length - 1] === '') kept.pop()
+  let head = lines.slice(0, a)
+  let tail = lines.slice(b)
+  if (head.length === 1 && blank(0)) head = []
+  if (tail.length === 1 && blank(b)) tail = []
+  return [...head, ...kept, ...tail].join('\n')
+}
+
 /** Кусок строки: обычный текст (`cls` пустой), жирный `b`, курсив `i`, зачёркнутый `s`, код `c`, страница вики `wl`, ссылка `lk`, тег `tg` */
 export type Inline = { t: string; cls: '' | 'b' | 'i' | 's' | 'c' | 'wl' | 'lk' | 'tg'; wiki?: string; url?: string }
 
