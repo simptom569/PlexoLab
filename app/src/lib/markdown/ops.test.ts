@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { append, finish, insertBlock, keyAction, put, segments, split, toggleCheck, wrap, type Edit, type KeyInput } from './ops'
+import { addBlock, append, finish, insertBlock, keyAction, put, segments, split, toggleCheck, wrap, type Edit, type KeyInput } from './ops'
 
 /** Нажатие клавиши в блоке `ed`; курсор по умолчанию в конце текста блока */
 const press = (md: string, ed: Edit, key: string, o: Partial<KeyInput> = {}) => {
@@ -29,6 +29,50 @@ describe('put и split', () => {
     expect(split('А\n\nБ', { start: 0, end: 1 }, 'А', 'В').md).toBe('А\n\nВ\n\nБ')
     // пустой новый блок получает свои пустые строки вокруг
     expect(split('А\n\nБ', { start: 0, end: 1 }, 'А', '').md).toBe('А\n\n\n\nБ')
+  })
+})
+
+describe('addBlock: «+» между блоками', () => {
+  it('между блоками: пустой блок на месте разделителя, тот же текст, что у Enter в конце блока', () => {
+    const step = addBlock('А\n\nБ', 1)
+    expect(step).toEqual({ md: 'А\n\n\n\nБ', edit: { start: 2, end: 3 }, caret: 0 })
+    expect(step.md).toBe(split('А\n\nБ', { start: 0, end: 1 }, 'А', '').md)
+  })
+
+  it('выше первого блока: пустой блок в самом начале', () => {
+    expect(addBlock('А\n\nБ', null)).toEqual({ md: '\n\n\nА\n\nБ', edit: { start: 1, end: 2 }, caret: 0 })
+  })
+
+  it('под последним блоком: пустой блок в конце', () => {
+    expect(addBlock('А\n\nБ', 3)).toEqual({ md: 'А\n\nБ\n\n', edit: { start: 4, end: 5 }, caret: 0 })
+  })
+
+  it('если промежуток шире (чужой пустой блок), новый блок встаёт сразу под верхним', () => {
+    expect(addBlock('А\n\n\n\nБ', 1)).toEqual({ md: 'А\n\n\n\n\nБ', edit: { start: 2, end: 3 }, caret: 0 })
+  })
+
+  it('оставили пустым: после выхода текст такой же, как был', () => {
+    for (const prevEnd of [null, 1, 3]) {
+      const step = addBlock('А\n\nБ', prevEnd)
+      expect(finish(step.md, step.edit).md, String(prevEnd)).toBe('А\n\nБ')
+    }
+  })
+
+  it('написали текст: блок встал на своё место, лишних пустых строк нет', () => {
+    const typed = (prevEnd: number | null, text: string) => {
+      const step = addBlock('А\n\nБ', prevEnd)
+      const put1 = put(step.md, step.edit!, text)
+      return finish(put1.md, put1.edit).md
+    }
+    expect(typed(null, 'Новый')).toBe('Новый\n\nА\n\nБ')
+    expect(typed(1, 'Новый')).toBe('А\n\nНовый\n\nБ')
+    expect(typed(3, 'Новый')).toBe('А\n\nБ\n\nНовый')
+  })
+
+  it('открытый блок и промежуток рядом с ним: новый блок встаёт в промежуток, текст открытого не теряется', () => {
+    const step = addBlock('А\n\nБ\n\nВ', 3)
+    expect(step.md).toBe('А\n\nБ\n\n\n\nВ')
+    expect(step.edit).toEqual({ start: 4, end: 5 })
   })
 })
 

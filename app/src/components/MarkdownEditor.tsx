@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import {
   TOOLS,
+  addBlock,
   append,
   describeBlock,
   finish,
@@ -178,6 +179,21 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
     apply(put(mdRef.current, cur, w.text, w.caret))
   }
 
+  // «+» между блоками (в макете его нет): новый пустой блок в промежутке, который виден при наведении
+  const addAt = (prevEnd: number | null) => apply(addBlock(mdRef.current, prevEnd))
+  const gapAdd = (i: number) => (
+    <span
+      className="md-gap"
+      aria-hidden="true"
+      onMouseDown={(e) => {
+        e.preventDefault()
+        addAt(i === 0 ? null : segs[i - 1]!.end)
+      }}
+    >
+      <span className="md-gap-plus">+</span>
+    </span>
+  )
+
   const isEmpty = !md.trim() && !edit
   const keepFocus = (e: MouseEvent) => e.preventDefault()
 
@@ -199,6 +215,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
             const text = lines.slice(seg.start, seg.end).join('\n')
             block = (
               <div className={cx(here.length > 0 && 'pm-mine', tone) || undefined}>
+                {gapAdd(i)}
                 {here.length > 0 && <BlockMarks marks={here} mine />}
                 <textarea
                   ref={taRef}
@@ -217,6 +234,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
           } else {
             block = (
               <div>
+                {gapAdd(i)}
                 <div
                   className={cx('mv', here.length > 0 && 'pm', tone)}
                   tabIndex={0}
