@@ -1,7 +1,7 @@
 // Связь с сервером и режим «только просмотр» (docs/OFFLINE-NOTIFY-SEARCH.md, раздел 1).
 //
-// Связи нет, как только запрос не дошёл до сервера, прокси ответил 502–504, закрылось живое соединение или система
-// сообщила, что сети нет. Связь вернулась, когда сервер ответил на любой запрос или на проверку `/healthz`. Пока связи
+// Связи нет, как только запрос не дошёл до сервера, прокси ответил 502–504 или система сообщила, что сети нет. Закрытие
+// живого соединения (WebSocket) только повод проверить сервер (`checkLink`): сокет мог закрыться сам, пока запросы идут. Связь вернулась, когда сервер ответил на любой запрос или на проверку `/healthz`. Пока связи
 // нет, она проверяется сама: через секунду, потом каждые четыре.
 //
 // Режим «только просмотр» включается, когда связи нет `READ_ONLY_AFTER_MS` подряд: короткий сбой Wi-Fi не должен
@@ -54,6 +54,7 @@ export function onLinkRestored(listener: () => void): () => void {
 let readOnlyTimer: ReturnType<typeof setTimeout> | undefined
 let probeTimer: ReturnType<typeof setTimeout> | undefined
 let probing = false
+let checking = false
 
 /** Связи нет. Повторные вызовы ничего не меняют. */
 export function linkLost(): void {
@@ -73,6 +74,21 @@ export function linkRestored(): void {
   for (const listener of [...restoredListeners]) listener()
 }
 
+/**
+ * Есть подозрение, что связи нет, но уверенности нет (закрылось живое соединение: оно могло закрыться само, а обычные
+ * запросы идут). Сервер спрашивается один раз, и только если он не ответил, связь считается потерянной.
+ */
+export function checkLink(): void {
+  if (useLink.getState().down || checking) return
+  checking = true
+  probe()
+    .catch(() => false)
+    .then((ok) => {
+      checking = false
+      if (!ok) linkLost()
+    })
+}
+
 /** Проверить связь сейчас, не дожидаясь паузы: сеть вернулась или окно снова на виду */
 export function probeLinkNow(): void {
   if (!useLink.getState().down) return
@@ -85,6 +101,7 @@ export function resetLink(): void {
   clearTimeout(readOnlyTimer)
   clearTimeout(probeTimer)
   probing = false
+  checking = false
   useLink.setState({ down: false, readOnly: false })
 }
 

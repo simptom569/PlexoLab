@@ -4,7 +4,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { create } from 'zustand'
 import { isBusy } from '../busy'
-import { linkLost, linkRestored } from '../link'
+import { checkLink, linkRestored } from '../link'
 import { useSession } from '../session'
 import { useUi } from '../ui-store'
 import { CLIENT_ID } from './clientId'
@@ -30,9 +30,9 @@ export function startRealtime(client: QueryClient): () => void {
     refreshToken: () => useSession.getState().refreshAccessToken(),
     onStatus: (status) => {
       useConnection.setState({ status })
-      // живое соединение — тоже свидетель: открылось, значит, сервер на связи; закрылось, значит, проверим (lib/link.ts)
+      // живое соединение — тоже свидетель: открылось, значит, сервер на связи; закрылось, значит, проверим сервер (lib/link.ts)
       if (status === 'open') linkRestored()
-      else if (status === 'offline' && !stopped) linkLost()
+      else if (status === 'offline' && !stopped) checkLink()
       // связи нет: сервер уже снял нашу метку, а чужие могли поменяться без нас; новый список придёт после «ready»
       if (status !== 'open') {
         usePresence.getState().clear()

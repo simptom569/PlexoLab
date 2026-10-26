@@ -3,6 +3,7 @@ import {
   FIRST_PROBE_MS,
   PROBE_EVERY_MS,
   READ_ONLY_AFTER_MS,
+  checkLink,
   linkLost,
   linkRestored,
   onLinkRestored,
@@ -110,6 +111,52 @@ describe('проверка связи', () => {
 
   it('без потери связи проверять нечего', () => {
     probeLinkNow()
+    expect(probe).not.toHaveBeenCalled()
+  })
+})
+
+describe('подозрение на потерю связи', () => {
+  it('сервер ответил на проверку: связь не объявляется потерянной и ничего не перечитывается', async () => {
+    probe.mockResolvedValue(true)
+    const listener = vi.fn()
+    const off = onLinkRestored(listener)
+    checkLink()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(state()).toEqual({ down: false, readOnly: false })
+    await vi.advanceTimersByTimeAsync(READ_ONLY_AFTER_MS * 2)
+    expect(state().readOnly).toBe(false)
+    expect(listener).not.toHaveBeenCalled()
+    off()
+  })
+
+  it('сервер не ответил: связи нет, дальше всё как при потере', async () => {
+    probe.mockResolvedValue(false)
+    checkLink()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state().down).toBe(true)
+    await vi.advanceTimersByTimeAsync(READ_ONLY_AFTER_MS)
+    expect(state().readOnly).toBe(true)
+  })
+
+  it('ошибка проверки тоже значит «связи нет»', async () => {
+    probe.mockRejectedValue(new Error('boom'))
+    checkLink()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(state().down).toBe(true)
+  })
+
+  it('пока проверка идёт или связи уже нет, вторая не запускается', async () => {
+    let finish: (ok: boolean) => void = () => undefined
+    probe.mockImplementation(() => new Promise<boolean>((resolve) => (finish = resolve)))
+    checkLink()
+    checkLink()
+    expect(probe).toHaveBeenCalledTimes(1)
+    finish(true)
+    await vi.advanceTimersByTimeAsync(0)
+    linkLost()
+    probe.mockClear()
+    checkLink()
     expect(probe).not.toHaveBeenCalled()
   })
 })
