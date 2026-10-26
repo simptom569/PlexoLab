@@ -88,6 +88,28 @@ test.describe('вход в поиск', () => {
   })
 })
 
+// ===== Рамка фокуса =====
+
+test('у полей поиска одна рамка фокуса: плашка цвета акцента, а вокруг самого input второй рамки нет', async ({ page }) => {
+  await openApp(page)
+  await expect(card(page, 'WEB-141')).toBeVisible()
+  // поле поиска доски (то же правило, что и у окна «Поиск»)
+  const board = page.getByPlaceholder('Поиск по задачам')
+  await board.focus()
+  await expect(board).toHaveCSS('outline-style', 'none')
+  await expect(board.locator('xpath=..')).toHaveCSS('border-top-color', 'rgb(51, 85, 224)') // --accent светлой темы
+
+  await openSearch(page)
+  await expect(box(page)).toBeFocused()
+  await expect(box(page)).toHaveCSS('outline-style', 'none')
+  await expect(dialog(page).locator('label.search')).toHaveCSS('border-top-color', 'rgb(51, 85, 224)')
+  // а у остальных полей приложения рамка фокуса прежняя
+  await page.keyboard.press('Escape')
+  await card(page, 'WEB-141').locator('.card-title').click()
+  await drawer(page).getByLabel('Комментарий').focus()
+  await expect(drawer(page).getByLabel('Комментарий')).toHaveCSS('outline-style', 'solid')
+})
+
 // ===== Что находит =====
 
 test.describe('результаты', () => {
