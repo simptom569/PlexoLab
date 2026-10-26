@@ -3,6 +3,7 @@ import { Button, ConfirmDelete, EmptyState, Icon, IconButton, Input, TitleInput 
 import { useLinkGroups } from '../../lib/api/queries'
 import type { LinkGroup, LinkItem } from '../../lib/api/types'
 import { openExternal } from '../../lib/platform/opener'
+import { failed } from '../../lib/query'
 import { useDraftField } from '../../lib/useDraft'
 import { hostOf, normalizeUrl } from './logic'
 import { useLinkMutations, type LinkMutations } from './mutations'
@@ -127,7 +128,7 @@ export function LinksPage({ projectId }: { projectId: string }) {
       </header>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
         {groups.data?.map((group) => <GroupSection key={group.id} group={group} mutations={mutations} />)}
-        {groups.isError && (
+        {failed(groups) && (
           <EmptyState>
             Не удалось загрузить ссылки
             <div style={{ marginTop: 12 }}>
@@ -135,7 +136,7 @@ export function LinksPage({ projectId }: { projectId: string }) {
             </div>
           </EmptyState>
         )}
-        {!groups.isError && !groups.data && <EmptyState>Загружаю ссылки…</EmptyState>}
+        {!failed(groups) && !groups.data && <EmptyState>Загружаю ссылки…</EmptyState>}
         {groups.data?.length === 0 && <EmptyState>Групп пока нет. Создай первую справа вверху</EmptyState>}
       </div>
     </>

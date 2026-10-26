@@ -8,7 +8,7 @@
 // свежее состояние сервера от запоздавшего ответа: принимается только более новая версия, и только пока своих
 // несохранённых правок нет.
 
-import { ApiError } from '../../lib/api/client'
+import { ApiError, isConnectionError } from '../../lib/api/client'
 import type { SavedCanvas } from '../../lib/api/types'
 import { sameCanvas, type CanvasState } from './canvas'
 
@@ -129,7 +129,8 @@ export class CanvasDraft {
         // документ удалил другой участник: сохранять некуда
         this.dispose()
       } else if (!this.disposed) {
-        this.deps.onError()
+        // связи нет: плашку не показываем (говорит полоска сверху), холст уйдёт, как только связь вернётся
+        if (!isConnectionError(e)) this.deps.onError()
         this.timer = setTimeout(() => void this.save(), CANVAS_RETRY_MS)
       }
     } finally {

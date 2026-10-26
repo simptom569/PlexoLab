@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { Button, Sq } from '../../components'
 import { useArchivedProjects } from '../../lib/api/queries'
+import { failed } from '../../lib/query'
 import { useUi } from '../../lib/ui-store'
 import { errorText, setArchived } from './api'
 import { DialogFrame, Problem, RowProblem } from './parts'
@@ -30,7 +31,7 @@ export function ArchiveDialog() {
     <DialogFrame title="Архив проектов" narrow onClose={close}>
       {archived.isPending ? (
         <div className="empty">Загружаю…</div>
-      ) : archived.isError ? (
+      ) : failed(archived) ? (
         <Problem>Не удалось загрузить архив</Problem>
       ) : list.length === 0 ? (
         <div className="empty">Архив пуст</div>

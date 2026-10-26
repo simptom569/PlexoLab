@@ -9,6 +9,7 @@ import type { Doc, SavedCanvas } from '../../lib/api/types'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
+import { trackUnsent, untrackUnsent } from '../../lib/unsent'
 import { PageDraft, type DraftDeps } from '../wiki/draft'
 import type { CanvasState } from './canvas'
 import { CanvasDraft, type CanvasDraftDeps } from './canvasDraft'
@@ -60,6 +61,7 @@ export function docDraftFor(doc: Doc): PageDraft<Doc> {
   if (!draft) {
     draft = new PageDraft(doc, docDeps)
     textDrafts.set(doc.id, draft)
+    trackUnsent(draft)
   }
   return draft
 }
@@ -69,6 +71,7 @@ export function canvasDraftFor(doc: Doc): CanvasDraft {
   if (!draft) {
     draft = new CanvasDraft(doc.id, doc, canvasDeps)
     canvasDrafts.set(doc.id, draft)
+    trackUnsent(draft)
   }
   return draft
 }
@@ -76,9 +79,12 @@ export function canvasDraftFor(doc: Doc): CanvasDraft {
 /** Документ удалён: его черновики больше не сохраняются */
 export function dropDocDrafts(ids: Iterable<string>): void {
   for (const id of ids) {
-    textDrafts.get(id)?.dispose()
+    for (const draft of [textDrafts.get(id), canvasDrafts.get(id)]) {
+      if (!draft) continue
+      draft.dispose()
+      untrackUnsent(draft)
+    }
     textDrafts.delete(id)
-    canvasDrafts.get(id)?.dispose()
     canvasDrafts.delete(id)
   }
 }

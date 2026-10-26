@@ -37,7 +37,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
   }
 
   if (members.isPending) return <div className="empty">Загружаю…</div>
-  if (members.isError || !members.data) return <Problem>Не удалось загрузить участников</Problem>
+  if (!members.data) return <Problem>Не удалось загрузить участников</Problem>
 
   return (
     <>

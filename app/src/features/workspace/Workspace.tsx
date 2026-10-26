@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { Sidebar, type SidebarProject } from '../../components/Sidebar'
+import { OfflineBar } from '../../components/OfflineBar'
 import { Toast } from '../../components/Toast'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/Surfaces'
@@ -11,6 +12,7 @@ import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
 import { useDark } from '../../lib/useDark'
+import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
@@ -63,6 +65,8 @@ export function Workspace() {
   const invites = useMyInvites()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient, live)
+  // сеть пропала или вернулась: узнаём сразу, а не по неудачному запросу
+  useLinkWatch()
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
 
@@ -121,6 +125,7 @@ export function Workspace() {
       dark={dark}
       menuOpen={menu !== null}
       onCloseMenus={closeMenus}
+      notice={<OfflineBar />}
       overlay={
         <>
           {projectId ? <TaskDrawer projectId={projectId} /> : null}

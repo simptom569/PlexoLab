@@ -9,7 +9,7 @@
 // сохранения, оно всё равно закончится, а вернувшись, человек увидит свой текст, а не старый.
 // Один и тот же класс держит и страницы вики (`WikiPage`), и документы (`Doc`): им нужны только id, название, текст и версия.
 
-import { ApiError } from '../../lib/api/client'
+import { ApiError, isConnectionError } from '../../lib/api/client'
 import type { WikiPage } from '../../lib/api/types'
 import { mapRange, mergeText, trackBlock } from '../../lib/merge'
 import type { ActiveBlock } from '../../components/MarkdownEditor'
@@ -293,11 +293,11 @@ export class PageDraft<P extends Versioned = WikiPage> {
       } else if (e instanceof ApiError && e.status === 404) {
         // страницу удалил другой участник: сохранять некуда, повторы и плашка с ошибкой были бы бесконечными
         this.dispose()
-      } else {
-        if (!this.disposed) {
-          this.deps.onError()
-          this.timer = setTimeout(() => void this.save(), RETRY_MS)
-        }
+      } else if (!this.disposed) {
+        // связи нет: плашку не показываем (говорит полоска сверху). Правки остаются в черновике и уходят, как только
+        // связь вернётся (lib/unsent.ts); повтор по таймеру страхует на случай, если о возвращении мы не узнали.
+        if (!isConnectionError(e)) this.deps.onError()
+        this.timer = setTimeout(() => void this.save(), RETRY_MS)
       }
     } finally {
       this.inFlight = false

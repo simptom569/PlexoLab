@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type 
 import { Button, ConfirmDelete, ConflictBanner, EmptyState, Icon, Input, MarkdownEditor, Segmented } from '../../components'
 import { useDoc, useWiki } from '../../lib/api/queries'
 import { ApiError } from '../../lib/api/client'
+import { useReadOnly } from '../../lib/link'
 import type { Doc, DocMode, ObjectKind } from '../../lib/api/types'
 import { cx } from '../../lib/cx'
 import { openExternal } from '../../lib/platform/opener'
@@ -47,6 +48,8 @@ const HINT_CONNECT = 'Режим стрелок: нажми два объект�
 
 /** Загруженный документ: сверху «Все документы», режим, звёздочка, «Удалить»; ниже страница или холст */
 function LoadedDoc({ doc }: { doc: Doc }) {
+  // пока нет связи, документ только читается: объекты не двигаются, инструменты и поля закрыты (lib/link.ts)
+  const readOnly = useReadOnly()
   const { draft, state } = useDocDraft(doc)
   const presence = usePagePresence('doc', doc.id, draft, state)
   const { draft: cv, state: canvas } = useCanvasDraft(doc)
@@ -125,6 +128,10 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   const itemDown = (id: string) => (e: PointerEvent<HTMLElement>) => {
     // средняя кнопка двигает холст (её ловит сам холст), правая ничего не тащит
     if (e.button !== 0) return
+    if (readOnly) {
+      if (sel !== id) setSel(id)
+      return
+    }
     if (connect) return link(id)
     const it = canvas.objects.find((o) => o.id === id)
     if (!it) return
@@ -140,7 +147,7 @@ function LoadedDoc({ doc }: { doc: Doc }) {
   }
 
   const noteDown = (e: PointerEvent<HTMLElement>) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || readOnly) return
     startGrab(e, 'note', doc.id, canvas.note.x, canvas.note.y)
     setSel(null)
     setFrom(null)
@@ -251,12 +258,13 @@ function LoadedDoc({ doc }: { doc: Doc }) {
           Все документы
         </Button>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Segmented label="Режим документа" options={MODES} value={doc.mode} onChange={pickMode} />
+          <Segmented write label="Режим документа" options={MODES} value={doc.mode} onChange={pickMode} />
           <button
             className={cx('icon-btn', 'dstar-inline', doc.starred && 'on')}
             type="button"
             aria-label={label}
             title={label}
+            disabled={readOnly}
             onClick={() => star.mutate({ id: doc.id, starred: !doc.starred })}
           >
             <Icon name="star" />
@@ -326,6 +334,7 @@ function LoadedDoc({ doc }: { doc: Doc }) {
                 placeholder="Без названия"
                 aria-label="Название документа"
                 value={state.title}
+                readOnly={readOnly}
                 onChange={(e) => draft.setTitle(e.target.value)}
               />
               {state.conflict && <ConflictBanner message="Документ изменил другой участник" onTheirs={() => draft.acceptTheirs()} onMine={() => draft.keepMine()} />}
@@ -364,11 +373,12 @@ function LoadedDoc({ doc }: { doc: Doc }) {
         {edge && (
           <div className="eg-tools" role="toolbar" aria-label="Инструменты холста">
             {OBJECT_TOOLS.map((t) => (
-              <Button key={t.kind} onClick={() => add(t.kind)}>
+              <Button write key={t.kind} onClick={() => add(t.kind)}>
                 + {t.label}
               </Button>
             ))}
             <Button
+              write
               on={connect}
               aria-pressed={connect}
               onClick={() => {
@@ -395,12 +405,14 @@ function LoadedDoc({ doc }: { doc: Doc }) {
                       className="sw-btn"
                       type="button"
                       aria-label="Цвет объекта"
+                      disabled={readOnly}
                       style={{ background: tone.fg }}
                       onClick={() => cv.change((s) => patchObject(s, selected.id, { color: i }))}
                     />
                   ))}
                 </div>
                 <Button
+                  write
                   danger
                   onClick={() => {
                     cv.change((s) => removeObject(s, selected.id))
@@ -435,7 +447,8 @@ export function DocView({ id, projectId }: { id: string; projectId: string }) {
   }, [gone, elsewhere, closeDoc])
 
   if (doc.isPending || gone || elsewhere) return <EmptyState>Загружаю документ…</EmptyState>
-  if (doc.isError) {
+  // обновить не вышло (нет связи), а документ уже загружен: он остаётся на экране; ошибка только если его нет совсем
+  if (doc.data === undefined) {
     return (
       <EmptyState>
         Не удалось загрузить документ

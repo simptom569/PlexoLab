@@ -3,6 +3,7 @@ import { Button, DateField, EmptyState, Icon, IconButton, Input, PageHead, Panel
 import { useReleases } from '../../lib/api/queries'
 import type { Milestone, Release, ReleaseItem, UpdateRelease } from '../../lib/api/types'
 import { addDays } from '../../lib/date'
+import { failed } from '../../lib/query'
 import { NEXT_STATUS, RELEASE_STATUS_LABELS, type WorkStatus } from '../../lib/domain'
 import { milestoneWhen, percent, tasksText } from '../../lib/progress'
 import { cx } from '../../lib/cx'
@@ -244,7 +245,7 @@ function Releases({ projectId }: { projectId: string }) {
         </h2>
         <NewRelease mutations={mutations} />
       </div>
-      {releases.isError && (
+      {failed(releases) && (
         <EmptyState>
           Не удалось загрузить релизы
           <div style={{ marginTop: 12 }}>
@@ -252,7 +253,7 @@ function Releases({ projectId }: { projectId: string }) {
           </div>
         </EmptyState>
       )}
-      {!releases.isError && !releases.data && <EmptyState>Загружаю релизы…</EmptyState>}
+      {!failed(releases) && !releases.data && <EmptyState>Загружаю релизы…</EmptyState>}
       {releases.data && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {releases.data.map((release) => (

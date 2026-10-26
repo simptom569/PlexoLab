@@ -116,7 +116,7 @@ export function DocsList({ projectId }: { projectId: string }) {
   const authors = new Map((users ?? []).map((u) => [u.id, u]))
 
   if (all.isPending) return <EmptyState>Загружаю документы…</EmptyState>
-  if (all.isError) {
+  if (all.data === undefined) {
     return (
       <EmptyState>
         Не удалось загрузить документы

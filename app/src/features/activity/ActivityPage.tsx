@@ -3,6 +3,7 @@ import { Avatar, Button, Chip, EmptyState, Tag } from '../../components'
 import { useActivity, useActivityActors, useMembers, useUsers } from '../../lib/api/queries'
 import type { ActivityEvent, User } from '../../lib/api/types'
 import { whenText } from '../../lib/date'
+import { failed } from '../../lib/query'
 import { effectiveWho, groupByDay, KIND_CHIPS, kindMeta, participantChoices } from './logic'
 import { useActivityStore } from './store'
 
@@ -117,7 +118,7 @@ export function ActivityPage({ projectId }: { projectId: string }) {
             </div>
           </section>
         ))}
-        {feed.isError && (
+        {failed(feed) && (
           <EmptyState>
             Не удалось загрузить ленту
             <div style={{ marginTop: 12 }}>
@@ -125,7 +126,7 @@ export function ActivityPage({ projectId }: { projectId: string }) {
             </div>
           </EmptyState>
         )}
-        {!feed.isError && (feed.isPending || !ready) && <EmptyState>Загружаю ленту…</EmptyState>}
+        {!failed(feed) && (feed.isPending || !ready) && <EmptyState>Загружаю ленту…</EmptyState>}
         {data && groups.length === 0 && <EmptyState>{filtered ? 'Под такие фильтры событий нет' : 'Событий пока нет'}</EmptyState>}
         {isFetchingNextPage && (
           <span className="sr" role="status">

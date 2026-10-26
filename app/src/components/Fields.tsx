@@ -1,5 +1,6 @@
 import type { ComponentProps, CSSProperties } from 'react'
 import { cx } from '../lib/cx'
+import { useReadOnly } from '../lib/link'
 import { Icon } from './Icon'
 
 type SearchFieldProps = {
@@ -21,16 +22,19 @@ export function SearchField({ label, placeholder, value, onChange, style }: Sear
   )
 }
 
-/** Обычное поле (.inp) */
-export function Input({ className, ...rest }: ComponentProps<'input'>) {
-  return <input className={cx('inp', className)} {...rest} />
+/** Обычное поле (.inp). Пока нет связи, поле только для чтения: набранное пропало бы при отправке. */
+export function Input({ className, readOnly, ...rest }: ComponentProps<'input'>) {
+  const locked = useReadOnly()
+  return <input className={cx('inp', className)} readOnly={readOnly || locked} {...rest} />
 }
 
 /** Поле-заголовок без рамки (.title-inp): название модуля, вехи, группы ссылок */
-export function TitleInput({ className, ...rest }: ComponentProps<'input'>) {
-  return <input className={cx('title-inp', className)} {...rest} />
+export function TitleInput({ className, readOnly, ...rest }: ComponentProps<'input'>) {
+  const locked = useReadOnly()
+  return <input className={cx('title-inp', className)} readOnly={readOnly || locked} {...rest} />
 }
 
-export function Textarea({ className, ...rest }: ComponentProps<'textarea'>) {
-  return <textarea className={cx('inp', className)} {...rest} />
+export function Textarea({ className, readOnly, ...rest }: ComponentProps<'textarea'>) {
+  const locked = useReadOnly()
+  return <textarea className={cx('inp', className)} readOnly={readOnly || locked} {...rest} />
 }

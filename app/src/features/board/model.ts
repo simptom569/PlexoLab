@@ -5,6 +5,7 @@ import { createContext, useContext, useMemo } from 'react'
 import { useBoard, useMembers, useUsers } from '../../lib/api/queries'
 import type { Board, Column, Module, Milestone, Tag, TaskCard, User } from '../../lib/api/types'
 import { useSession } from '../../lib/session'
+import { failed } from '../../lib/query'
 import { useUi } from '../../lib/ui-store'
 import { useToday } from '../../lib/useToday'
 import { assigneeChoices, doneColumnIds, isDone, isVisible, pickablePeople, splitTasks } from './logic'
@@ -93,7 +94,8 @@ export function useBoardModel(projectId: string): Loaded {
     [base, filters, query, today],
   )
 
-  if (board.isError || users.isError) return { status: 'error', retry: () => void Promise.all([board.refetch(), users.refetch()]) }
+  // ошибка только если показать нечего: загруженное остаётся на экране, пока нет связи (lib/link.ts)
+  if (failed(board) || failed(users)) return { status: 'error', retry: () => void Promise.all([board.refetch(), users.refetch()]) }
   if (!data || !userList || !me || !base) return { status: 'loading' }
 
   // пока список участников не пришёл, выбирать можно любого: как и раньше, без пустого списка

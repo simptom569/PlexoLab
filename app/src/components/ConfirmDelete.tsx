@@ -8,6 +8,7 @@ export function ConfirmDelete({ confirmKey, onConfirm, children }: { confirmKey:
   const setConfirm = useUi((s) => s.setConfirm)
   return (
     <Button
+      write
       variant="ghost"
       onClick={() => {
         if (confirm === confirmKey) {

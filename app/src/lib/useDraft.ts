@@ -1,4 +1,5 @@
 import { useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useReadOnly } from './link'
 
 export type DraftState = {
   /** Последнее значение с сервера, которое видел черновик */
@@ -40,6 +41,7 @@ type DraftFieldOptions = {
  */
 export function useDraftField(value: string, onCommit: (next: string) => void, { allowEmpty = false, trim = true }: DraftFieldOptions = {}) {
   const [draft, setDraft] = useDraft(value)
+  const readOnly = useReadOnly()
 
   const commit = () => {
     const next = trim ? draft.trim() : draft
@@ -54,6 +56,8 @@ export function useDraftField(value: string, onCommit: (next: string) => void, {
 
   return {
     value: draft,
+    // пока нет связи, поле не печатается: набранное пропало бы при отправке
+    readOnly,
     onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onBlur: commit,
     onKeyDown: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {

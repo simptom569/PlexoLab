@@ -1,6 +1,7 @@
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { setBusy } from '../../lib/busy'
+import { useReadOnly } from '../../lib/link'
 import { usePointer } from '../../lib/usePointer'
 import { DragContext, IDLE, targetAt, type DragData, type DragKind, type DragState } from './dnd'
 
@@ -15,7 +16,10 @@ interface ProviderProps {
 export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps) {
   const [state, setState] = useState<DragState>(IDLE)
   const ref = useRef<DragState>(IDLE)
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  // пока нет связи, переносить нельзя (lib/link.ts): без датчиков карточку не поднять
+  const locked = useReadOnly()
+  const sensors = useSensors(...(locked ? [] : [pointerSensor]))
   const pointer = usePointer()
 
   const set = useCallback((next: DragState) => {

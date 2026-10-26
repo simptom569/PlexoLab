@@ -7,6 +7,7 @@ import type { WikiNode, WikiPage } from '../../lib/api/types'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
+import { trackUnsent, untrackUnsent } from '../../lib/unsent'
 import { PageDraft, type DraftDeps } from './draft'
 
 export const SAVE_PAGE_FAILED = 'Не удалось сохранить страницу, попробуем ещё раз'
@@ -34,6 +35,7 @@ export function draftFor(page: WikiPage): PageDraft {
   if (!draft) {
     draft = new PageDraft(page, deps)
     drafts.set(page.id, draft)
+    trackUnsent(draft)
   }
   return draft
 }
@@ -41,7 +43,11 @@ export function draftFor(page: WikiPage): PageDraft {
 /** Страницы удалены: их черновики больше не сохраняются */
 export function dropDrafts(ids: Iterable<string>): void {
   for (const id of ids) {
-    drafts.get(id)?.dispose()
+    const draft = drafts.get(id)
+    if (draft) {
+      draft.dispose()
+      untrackUnsent(draft)
+    }
     drafts.delete(id)
   }
 }

@@ -22,6 +22,7 @@ import {
   type Step,
 } from '../lib/markdown'
 import { cx } from '../lib/cx'
+import { useReadOnly } from '../lib/link'
 import { assignMarks, type PlacedMark } from '../lib/realtime/presence'
 import { presenceClass } from '../lib/tones'
 import { BlockMarks, PresenceSlot } from './PresenceMarks'
@@ -74,6 +75,8 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
       ? { edit: { start: restore.start, end: restore.end, t: 1 }, caret: { pos: restore.caret } }
       : { edit: autoEdit ? { start: 0, end: 1, t: 1 } : null, caret: autoEdit ? { pos: 0 } : null },
   )
+  // Пока нет связи с сервером, текст только читается: блоки не открываются, «+», панель и галочки закрыты (lib/link.ts)
+  const readOnly = useReadOnly()
   const taRef = useRef<HTMLTextAreaElement>(null)
   // Актуальное значение «прямо сейчас»: обработчики событий иногда срабатывают раньше, чем React успеет отрисовать
   const mdRef = useRef(md)
@@ -123,7 +126,9 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
   }
 
   /** Блок стал активным по щелчку или клавише */
-  const start = (seg: Block) => apply({ md: mdRef.current, edit: { start: seg.start, end: seg.end }, caret: null })
+  const start = (seg: Block) => {
+    if (!readOnly) apply({ md: mdRef.current, edit: { start: seg.start, end: seg.end }, caret: null })
+  }
 
   /** Потеря фокуса завершает редактирование, но только если активным по-прежнему тот же блок (защита жетоном) */
   const blur = (token: number) => {
@@ -151,7 +156,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const cur = editRef.current
-    if (!cur) return
+    if (!cur || readOnly) return
     const el = e.currentTarget
     const result = keyAction(mdRef.current, cur, {
       key: e.key,
@@ -167,6 +172,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
   }
 
   const runTool = (index: number) => {
+    if (readOnly) return
     const tool = TOOLS[index]
     const cur = editRef.current
     if (tool.kind === 'insert') {
@@ -181,18 +187,19 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
 
   // «+» между блоками (в макете его нет): новый пустой блок в промежутке, который виден при наведении
   const addAt = (prevEnd: number | null) => apply(addBlock(mdRef.current, prevEnd))
-  const gapAdd = (i: number) => (
-    <span
-      className="md-gap"
-      aria-hidden="true"
-      onMouseDown={(e) => {
-        e.preventDefault()
-        addAt(i === 0 ? null : segs[i - 1]!.end)
-      }}
-    >
-      <span className="md-gap-plus">+</span>
-    </span>
-  )
+  const gapAdd = (i: number) =>
+    readOnly ? null : (
+      <span
+        className="md-gap"
+        aria-hidden="true"
+        onMouseDown={(e) => {
+          e.preventDefault()
+          addAt(i === 0 ? null : segs[i - 1]!.end)
+        }}
+      >
+        <span className="md-gap-plus">+</span>
+      </span>
+    )
 
   const isEmpty = !md.trim() && !edit
   const keepFocus = (e: MouseEvent) => e.preventDefault()
@@ -201,7 +208,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
     <>
       <div className="md-bar" role="toolbar" aria-label="Форматирование">
         {TOOLS.map((tool, i) => (
-          <ToolButton key={tool.label} index={i} onRun={runTool} onMouseDown={keepFocus} sep={!!tool.sep} />
+          <ToolButton key={tool.label} index={i} onRun={runTool} onMouseDown={keepFocus} sep={!!tool.sep} disabled={readOnly} />
         ))}
       </div>
       <div className="md">
@@ -225,6 +232,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
                   aria-label="Редактирование блока в markdown"
                   placeholder="Markdown: # заголовок, - список, - [ ] задача"
                   value={text}
+                  readOnly={readOnly}
                   onChange={(e) => apply(put(mdRef.current, edit, e.target.value))}
                   onKeyDown={onKeyDown}
                   onBlur={() => blur(edit.t)}
@@ -237,7 +245,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
                 {gapAdd(i)}
                 <div
                   className={cx('mv', here.length > 0 && 'pm', tone)}
-                  tabIndex={0}
+                  tabIndex={readOnly ? undefined : 0}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     start(seg)
@@ -253,7 +261,7 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
                   {here.length > 0 && <BlockMarks marks={here} />}
                   <View
                     view={describeBlock(lines, seg, wikiTitles)}
-                    onToggle={(line) => apply({ md: toggleCheck(mdRef.current, line), edit: editRef.current })}
+                    onToggle={(line) => !readOnly && apply({ md: toggleCheck(mdRef.current, line), edit: editRef.current })}
                     onOpenWiki={onOpenWiki}
                     onOpenUrl={onOpenUrl}
                   />
@@ -269,29 +277,31 @@ export function MarkdownEditor({ md, onChange, wikiTitles, onOpenWiki, onOpenUrl
           )
         })}
         {inGap[segs.length]!.length > 0 && <PresenceSlot marks={inGap[segs.length]!} />}
-        <div
-          className={cx('md-add', isEmpty && 'empty')}
-          role="button"
-          tabIndex={0}
-          onMouseDown={(e) => {
-            e.preventDefault()
-            apply(append(mdRef.current))
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+        {!readOnly && (
+          <div
+            className={cx('md-add', isEmpty && 'empty')}
+            role="button"
+            tabIndex={0}
+            onMouseDown={(e) => {
               e.preventDefault()
               apply(append(mdRef.current))
-            }
-          }}
-        >
-          {isEmpty ? 'Нажми, чтобы начать писать' : '+ Добавить блок'}
-        </div>
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                apply(append(mdRef.current))
+              }
+            }}
+          >
+            {isEmpty ? 'Нажми, чтобы начать писать' : '+ Добавить блок'}
+          </div>
+        )}
       </div>
     </>
   )
 }
 
-function ToolButton({ index, onRun, onMouseDown, sep }: { index: number; onRun: (index: number) => void; onMouseDown: (e: MouseEvent) => void; sep: boolean }) {
+function ToolButton({ index, onRun, onMouseDown, sep, disabled }: { index: number; onRun: (index: number) => void; onMouseDown: (e: MouseEvent) => void; sep: boolean; disabled: boolean }) {
   const tool = TOOLS[index]
   return (
     <>
@@ -300,6 +310,7 @@ function ToolButton({ index, onRun, onMouseDown, sep }: { index: number; onRun: 
         type="button"
         title={tool.title}
         aria-label={tool.title}
+        disabled={disabled}
         onMouseDown={onMouseDown}
         onClick={() => onRun(index)}
       >
@@ -394,6 +405,7 @@ function View({ view, onToggle, onOpenWiki, onOpenUrl }: ViewProps) {
             <div key={it.line} className="li" style={{ paddingLeft: it.pad }}>
               {it.isCheck ? (
                 <Tick
+                  write
                   done={it.done}
                   label="Отметить пункт"
                   onMouseDown={(e) => e.stopPropagation()}

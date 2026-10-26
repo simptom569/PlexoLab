@@ -1,0 +1,25 @@
+/*
+  Дополнение к макету: правки закрыты, пока нет связи с сервером (docs/OFFLINE-NOTIFY-SEARCH.md, раздел 1.2).
+  Закрытая кнопка выглядит так же, как неактивная в окне «Настройки» (settings.css): та же прозрачность и курсор.
+  Поля не гаснут: их текст читают и копируют, они просто не печатаются (readonly).
+*/
+.app .opt:disabled,
+.app .icon-btn:disabled,
+.app .tick:disabled,
+.app .menu-item:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+/* панель форматирования редактора: инструменты закрыты вместе с текстом */
+.app .md-tool:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+/* переключатели и цвета, которые записываются на сервер */
+.app .seg button:disabled,
+.app .sw-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}

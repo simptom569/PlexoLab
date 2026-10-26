@@ -22,14 +22,17 @@ type AppShellProps = {
   onCloseMenus: () => void
   /** Правая панель и подобное: в макете лежит рядом с <main>, а не внутри */
   overlay?: ReactNode
+  /** Полоска сверху рабочей области (нет связи) */
+  notice?: ReactNode
   children: ReactNode
 }
 
-export function AppShell({ dark, sidebar, menuOpen, onCloseMenus, overlay, children }: AppShellProps) {
+export function AppShell({ dark, sidebar, menuOpen, onCloseMenus, overlay, notice, children }: AppShellProps) {
   return (
     <div className={cx('app', dark && 'dark')} style={ROOT_STYLE}>
       {sidebar}
       <main className="main">
+        {notice}
         {menuOpen && <Backdrop onClick={onCloseMenus} />}
         {children}
       </main>

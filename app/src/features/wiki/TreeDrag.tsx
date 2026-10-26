@@ -5,6 +5,7 @@
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { WikiNode } from '../../lib/api/types'
+import { useReadOnly } from '../../lib/link'
 import { usePointer } from '../../lib/usePointer'
 import type { TreeRow } from './logic'
 import { IDLE, TreeDragContext, type DragData, type TreeDragState } from './treeDragState'
@@ -50,7 +51,10 @@ export function TreeDragProvider({ pages, rows, onMove, renderOverlay, children 
   useEffect(() => {
     latest.current = { pages, rows, onMove }
   })
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  // пока нет связи, переносить нельзя (lib/link.ts): без датчиков страницу не поднять
+  const locked = useReadOnly()
+  const sensors = useSensors(...(locked ? [] : [pointerSensor]))
   const pointer = usePointer()
 
   const set = useCallback((next: TreeDragState) => {

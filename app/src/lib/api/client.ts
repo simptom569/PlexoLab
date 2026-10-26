@@ -1,7 +1,8 @@
 // HTTP-клиент API. Токен доступа подставляется сам. Если сервер ответил 401, клиент один раз обновляет токен
 // и повторяет запрос. Если обновить не вышло, сессия считается потерянной и человек возвращается на экран входа.
 
-import { httpFetch } from '../platform/http'
+import { linkLost, linkRestored, OfflineError, useLink } from '../link'
+import { httpFetch, NetworkError } from '../platform/http'
 import { CLIENT_ID } from '../realtime/clientId'
 
 export class ApiError extends Error {
@@ -18,6 +19,18 @@ export class ApiError extends Error {
     this.code = code
     this.body = body
   }
+}
+
+/** Ответы, которыми прокси сообщает, что сервер за ним не отвечает: это «связи нет», а не отказ сервера */
+const GATEWAY_STATUSES = new Set([502, 503, 504])
+
+/**
+ * Не дошло до сервера: запрос оборвался, прокси не достучался до сервера или запись отклонена в режиме «только
+ * просмотр». Повторять такое бессмысленно, пока не вернётся связь; плашку об ошибке показывать не нужно, о связи
+ * говорит полоска сверху.
+ */
+export function isConnectionError(e: unknown): boolean {
+  return e instanceof NetworkError || e instanceof OfflineError || (e instanceof ApiError && GATEWAY_STATUSES.has(e.status))
 }
 
 /** Связь клиента с состоянием входа (реализует lib/session.ts) */
@@ -58,6 +71,8 @@ async function call(method: Method, path: string, payload: Payload, { accept = '
   const h = hooks
   const server = h.getServer()
   if (!server) throw new ApiError(0, 'no_server', 'Не задан адрес сервера')
+  // «только просмотр»: запись без связи не отправляется, экран откатится сразу (читать можно всегда)
+  if (method !== 'GET' && useLink.getState().readOnly) throw new OfflineError()
 
   const send = (token: string | null) =>
     httpFetch(`${server}/api/v1${path}`, {
@@ -74,17 +89,26 @@ async function call(method: Method, path: string, payload: Payload, { accept = '
       ...(timeoutMs ? { timeoutMs } : {}),
     })
 
-  let res = await send(h.getAccessToken())
-  if (res.status === 401) {
-    const token = await h.refreshAccessToken()
-    if (!token) {
-      h.onSessionLost()
-      throw await readError(res)
+  try {
+    let res = await send(h.getAccessToken())
+    if (res.status === 401) {
+      const token = await h.refreshAccessToken()
+      if (!token) {
+        h.onSessionLost()
+        throw await readError(res)
+      }
+      res = await send(token)
     }
-    res = await send(token)
+    // ответил сам сервер (даже отказом) — связь есть; прокси без сервера за ним — связи нет
+    if (GATEWAY_STATUSES.has(res.status)) linkLost()
+    else linkRestored()
+    if (!res.ok) throw await readError(res)
+    return res
+  } catch (e) {
+    // запрос не дошёл (и обновление токена тоже): связи нет
+    if (e instanceof NetworkError) linkLost()
+    throw e
   }
-  if (!res.ok) throw await readError(res)
-  return res
 }
 
 /** Запрос с JSON-телом; для 204 возвращается undefined. */

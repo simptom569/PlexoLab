@@ -24,7 +24,7 @@ export function WikiScreen() {
   }, [pages.data, cur, reveal])
 
   if (pages.isPending) return <EmptyState>Загружаю вики…</EmptyState>
-  if (pages.isError) {
+  if (pages.data === undefined) {
     return (
       <EmptyState>
         Не удалось загрузить вики

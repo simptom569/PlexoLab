@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Сеть подменяем: проверяем, что клиент делает с ответами сервера
 const httpFetch = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>()
@@ -7,7 +7,9 @@ vi.mock('../platform/http', () => ({
   NetworkError: class NetworkError extends Error {},
 }))
 
-import { api, ApiError, configureClient, request } from './client'
+import { linkLost, OfflineError, resetLink, useLink } from '../link'
+import { NetworkError } from '../platform/http'
+import { api, ApiError, configureClient, isConnectionError, request } from './client'
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -18,6 +20,7 @@ const lost = vi.fn()
 const refresh = vi.fn<() => Promise<string | null>>()
 
 beforeEach(() => {
+  resetLink()
   httpFetch.mockReset()
   refresh.mockReset()
   lost.mockReset()
@@ -183,5 +186,70 @@ describe('файлы', () => {
   it('download с 404 даёт ApiError', async () => {
     httpFetch.mockResolvedValue(json(404, { code: 'not_found', message: 'Не найдено' }))
     await expect(api.download('/files/x/download')).rejects.toMatchObject({ status: 404 })
+  })
+})
+
+describe('связь с сервером', () => {
+  afterEach(() => resetLink())
+
+  it('запись в режиме «только просмотр» отклоняется сразу, без сети', async () => {
+    useLink.setState({ down: true, readOnly: true })
+    for (const send of [() => api.post('/tags', {}), () => api.patch('/tasks/1', {}), () => api.put('/docs/1/star', {}), () => api.delete('/tags/1'), () => api.upload('/files', new FormData())]) {
+      await expect(send()).rejects.toBeInstanceOf(OfflineError)
+    }
+    expect(httpFetch).not.toHaveBeenCalled()
+  })
+
+  it('чтение в режиме «только просмотр» идёт как обычно', async () => {
+    useLink.setState({ down: true, readOnly: true })
+    httpFetch.mockResolvedValue(json(200, [1]))
+    expect(await api.get('/tags')).toEqual([1])
+    expect(httpFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('пока просмотр не включился (первые секунды без связи), запись пробует дойти', async () => {
+    useLink.setState({ down: true, readOnly: false })
+    httpFetch.mockResolvedValue(json(200, {}))
+    await api.post('/tags', {})
+    expect(httpFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('запрос, который не дошёл, сообщает: связи нет', async () => {
+    httpFetch.mockRejectedValue(new NetworkError('Нет связи с сервером'))
+    await expect(api.get('/tags')).rejects.toBeInstanceOf(NetworkError)
+    expect(useLink.getState().down).toBe(true)
+  })
+
+  it('не вышло и обновить токен из-за связи: тоже «связи нет», вход не теряется', async () => {
+    httpFetch.mockResolvedValue(json(401, { code: 'unauthorized', message: '' }))
+    refresh.mockRejectedValue(new NetworkError('Нет связи с сервером'))
+    await expect(api.get('/me')).rejects.toBeInstanceOf(NetworkError)
+    expect(useLink.getState().down).toBe(true)
+    expect(lost).not.toHaveBeenCalled()
+  })
+
+  it('прокси без сервера (502, 503, 504) — это «связи нет»', async () => {
+    for (const status of [502, 503, 504]) {
+      resetLink()
+      httpFetch.mockResolvedValue(new Response('Bad Gateway', { status }))
+      await expect(api.get('/tags')).rejects.toMatchObject({ status })
+      expect(useLink.getState().down).toBe(true)
+    }
+  })
+
+  it('любой ответ самого сервера, даже отказ, возвращает связь', async () => {
+    linkLost()
+    httpFetch.mockResolvedValue(json(404, { code: 'not_found', message: 'Не найдено' }))
+    await expect(api.get('/tasks/1')).rejects.toMatchObject({ status: 404 })
+    expect(useLink.getState().down).toBe(false)
+  })
+
+  it('isConnectionError: оборванный запрос, прокси и отказ записи — да, ответ сервера — нет', () => {
+    expect(isConnectionError(new NetworkError('x'))).toBe(true)
+    expect(isConnectionError(new OfflineError())).toBe(true)
+    expect(isConnectionError(new ApiError(502, 'error', 'x'))).toBe(true)
+    expect(isConnectionError(new ApiError(500, 'error', 'x'))).toBe(false)
+    expect(isConnectionError(new ApiError(409, 'conflict', 'x'))).toBe(false)
+    expect(isConnectionError(new Error('x'))).toBe(false)
   })
 })

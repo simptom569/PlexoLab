@@ -18,7 +18,7 @@ export function TagsTab({ projectId }: { projectId: string }) {
   const [label, setLabel] = useState('')
 
   if (board.isPending) return <div className="empty">Загружаю…</div>
-  if (board.isError || !board.data) return <Problem>Не удалось загрузить метки</Problem>
+  if (!board.data) return <Problem>Не удалось загрузить метки</Problem>
 
   const { tags, tasks } = board.data
   const usage = (id: string) => tasks.filter((t) => t.tag_ids.includes(id)).length

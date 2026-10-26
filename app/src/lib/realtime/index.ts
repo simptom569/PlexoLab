@@ -4,6 +4,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { create } from 'zustand'
 import { isBusy } from '../busy'
+import { linkLost, linkRestored } from '../link'
 import { useSession } from '../session'
 import { useUi } from '../ui-store'
 import { CLIENT_ID } from './clientId'
@@ -20,6 +21,8 @@ export function startRealtime(client: QueryClient): () => void {
   // «все запросы» — это пустой ключ
   const everything: [[]] = [[]]
   const invalidator = new Invalidator(client, () => client.isMutating() > 0 || isBusy())
+  // после остановки соединение само сообщает «связи нет»: это не потеря связи с сервером
+  let stopped = false
 
   const connection = new RealtimeConnection({
     url: () => socketUrl(useSession.getState().serverUrl),
@@ -27,6 +30,9 @@ export function startRealtime(client: QueryClient): () => void {
     refreshToken: () => useSession.getState().refreshAccessToken(),
     onStatus: (status) => {
       useConnection.setState({ status })
+      // живое соединение — тоже свидетель: открылось, значит, сервер на связи; закрылось, значит, проверим (lib/link.ts)
+      if (status === 'open') linkRestored()
+      else if (status === 'offline' && !stopped) linkLost()
       // связи нет: сервер уже снял нашу метку, а чужие могли поменяться без нас; новый список придёт после «ready»
       if (status !== 'open') {
         usePresence.getState().clear()
@@ -53,6 +59,7 @@ export function startRealtime(client: QueryClient): () => void {
   connection.start()
 
   return () => {
+    stopped = true
     stopWatchingSetting()
     announcer.detach()
     connection.stop()

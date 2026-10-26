@@ -5,7 +5,8 @@ import { create } from 'zustand'
 import * as authApi from './api/auth'
 import { api, ApiError, configureClient } from './api/client'
 import type { TokenResponse, UpdateProfile, User } from './api/types'
-import { NetworkError } from './platform/http'
+import { setLinkProbe } from './link'
+import { httpFetch, NetworkError } from './platform/http'
 import { deleteRefreshToken, getRefreshToken, setRefreshToken } from './platform/secrets'
 import { getSettings, saveSettings } from './settings'
 
@@ -105,6 +106,17 @@ export const useSession = create<SessionState>()((set, get) => {
     getAccessToken: () => get().accessToken,
     refreshAccessToken,
     onSessionLost: () => set({ phase: 'login', accessToken: null, user: null }),
+  })
+
+  // пока связи нет, она проверяется сама (lib/link.ts): отвечает ли сервер на /healthz
+  setLinkProbe(async () => {
+    const server = get().serverUrl
+    if (!server) return false
+    try {
+      return (await httpFetch(`${server}/healthz`, { timeoutMs: 5_000 })).ok
+    } catch {
+      return false
+    }
   })
 
   return {

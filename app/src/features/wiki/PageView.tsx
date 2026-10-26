@@ -140,7 +140,8 @@ function LoadedPage({ page }: { page: WikiPage }) {
 export function PageView({ pageId }: { pageId: string }) {
   const page = useWikiPage(pageId)
   if (page.isPending) return <EmptyState>Загружаю страницу…</EmptyState>
-  if (page.isError) {
+  // обновить не вышло (нет связи), а страница уже загружена: остаётся на экране
+  if (page.data === undefined) {
     return (
       <EmptyState>
         Не удалось загрузить страницу
