@@ -5,7 +5,9 @@
 // изменить другой участник, сервер отвечает 409 и отдаёт его версию. Тогда клиент пробует слить правки как в git
 // (lib/merge.ts): три версии есть, это то, что я видел последним (`saved`), мой текст и чужой. Правки в разных местах
 // склеиваются и сохраняются поверх чужой версии. Если правки пересеклись, слить нельзя: сохранение останавливается, и
-// человек выбирает: взять чужую версию или оставить свою. Черновик живёт вне компонента: если уйти со страницы, не дождавшись
+// человек выбирает: взять чужую версию или оставить свою. Если к этому времени человек уже ушёл со страницы (баннера он не увидит),
+// его правки не ждут возвращения, а сохраняются отдельной страницей рядом (`saveCopy`), а сама страница остаётся с чужой версией.
+// Черновик живёт вне компонента: если уйти со страницы, не дождавшись
 // сохранения, оно всё равно закончится, а вернувшись, человек увидит свой текст, а не старый.
 // Один и тот же класс держит и страницы вики (`WikiPage`), и документы (`Doc`): им нужны только id, название, текст и версия.
 
@@ -25,6 +27,8 @@ export const RETRY_MS = 5_000
 export const HISTORY_SIZE = 12
 /** Сколько раз подряд пробуем слить правки, прежде чем отдать выбор человеку: иначе двое, быстро печатающих рядом, зациклились бы */
 export const MAX_MERGES = 3
+/** Сколько ждать, прежде чем считать, что человек ушёл со страницы: экран мог просто пересоздаться */
+export const ORPHAN_GRACE_MS = 500
 
 export type DraftState<P extends Versioned = WikiPage> = {
   title: string
@@ -48,6 +52,13 @@ export type DraftDeps<P extends Versioned = WikiPage> = {
   onSaved: (page: P) => void
   /** Сохранить не вышло: сообщить человеку (повтор запланирован) */
   onError: () => void
+  /**
+   * Правки не удалось слить с чужими, а человек уже ушёл со страницы: сохранить их отдельной страницей рядом с оригиналом
+   * (`original` — чужая версия). Возвращает название копии. Не задано: конфликт ждёт человека, как раньше (баннер).
+   */
+  saveCopy?: (original: P, mine: { title: string; md: string }) => Promise<string>
+  /** Копия сохранена: сказать человеку, где она */
+  onCopySaved?: (title: string) => void
 }
 
 const isConflict = <P extends Versioned>(e: unknown): e is ApiError & { body: { current: P } } =>
@@ -73,6 +84,8 @@ export class PageDraft<P extends Versioned = WikiPage> {
   private disposed = false
   private again = false
   private timer: ReturnType<typeof setTimeout> | undefined
+  private orphanTimer: ReturnType<typeof setTimeout> | undefined
+  private settling = false
   private snapshot: DraftState<P>
   private readonly id: string
   private readonly deps: DraftDeps<P>
@@ -92,7 +105,11 @@ export class PageDraft<P extends Versioned = WikiPage> {
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener)
-    return () => void this.listeners.delete(listener)
+    clearTimeout(this.orphanTimer) // человек вернулся на страницу
+    return () => {
+      this.listeners.delete(listener)
+      if (this.listeners.size === 0) this.watchOrphan()
+    }
   }
 
   getState = (): DraftState<P> => this.snapshot
@@ -157,6 +174,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
   dispose() {
     this.disposed = true
     clearTimeout(this.timer)
+    clearTimeout(this.orphanTimer)
   }
 
   /** «Загрузить его версию»: свой текст отбрасывается */
@@ -239,6 +257,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
     let title: string
     if (mineTitle === this.saved.title) title = theirs.title
     else if (theirs.title === this.saved.title || theirs.title === mineTitle) title = this.title
+    else if (this.leftThePage()) title = theirs.title // человека нет на странице, выбирать некому: остаётся чужое название
     else return false
     const merged = mergeText(this.saved.md, this.md, theirs.md)
     if (!merged) return false
@@ -270,6 +289,46 @@ export class PageDraft<P extends Versioned = WikiPage> {
     return body.title === undefined && body.md === undefined ? null : body
   }
 
+  /** Человека нет на странице (экран закрыт) и есть кому сохранить копию: баннера он не увидит */
+  private leftThePage(): boolean {
+    return this.listeners.size === 0 && !!this.deps.saveCopy
+  }
+
+  /** Если конфликт есть, а человека на странице нет, через небольшую паузу правки уходят в копию */
+  private watchOrphan() {
+    if (!this.conflict || !this.leftThePage() || this.disposed) return
+    clearTimeout(this.orphanTimer)
+    this.orphanTimer = setTimeout(() => void this.settleOrphan(), ORPHAN_GRACE_MS)
+  }
+
+  /** Правки человека, не вошедшие в страницу, сохраняются отдельной страницей, а сама страница становится чужой версией */
+  private async settleOrphan() {
+    const theirs = this.conflict
+    if (!theirs || !this.leftThePage() || this.disposed || this.settling) return
+    this.settling = true
+    try {
+      const title = await this.deps.saveCopy!(theirs, { title: this.title, md: this.md })
+      // за время запроса человек мог вернуться и решить сам: тогда страницу не трогаем (копия останется лишней)
+      if (this.conflict === theirs) {
+        this.conflict = null
+        this.take(theirs)
+        this.deps.onSaved(theirs)
+      }
+      this.deps.onCopySaved?.(title)
+    } catch (e) {
+      if (isConnectionError(e)) {
+        // связи нет: правки остаются в черновике, повторим
+        clearTimeout(this.orphanTimer)
+        this.orphanTimer = setTimeout(() => void this.settleOrphan(), RETRY_MS)
+      } else {
+        // копию не удалось сохранить: правки остаются, а когда человек вернётся, его ждёт обычный баннер
+        this.deps.onError()
+      }
+    } finally {
+      this.settling = false
+    }
+  }
+
   private async save() {
     if (this.conflict || this.disposed) return
     if (this.inFlight) {
@@ -289,6 +348,7 @@ export class PageDraft<P extends Versioned = WikiPage> {
           this.remember(e.body.current)
           this.conflict = e.body.current
           this.changed()
+          this.watchOrphan()
         }
       } else if (e instanceof ApiError && e.status === 404) {
         // страницу удалил другой участник: сохранять некуда, повторы и плашка с ошибкой были бы бесконечными

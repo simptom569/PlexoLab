@@ -3,7 +3,7 @@ import { ApiError } from '../../lib/api/client'
 import { OfflineError } from '../../lib/link'
 import { NetworkError } from '../../lib/platform/http'
 import type { WikiPage } from '../../lib/api/types'
-import { MAX_MERGES, PageDraft, RETRY_MS, SAVE_DELAY_MS, type DraftDeps } from './draft'
+import { MAX_MERGES, ORPHAN_GRACE_MS, PageDraft, RETRY_MS, SAVE_DELAY_MS, type DraftDeps } from './draft'
 
 const page = (o: Partial<WikiPage> = {}): WikiPage => ({
   id: 'p1',
@@ -20,9 +20,12 @@ const page = (o: Partial<WikiPage> = {}): WikiPage => ({
 type Body = { rev: number; title?: string; md?: string }
 
 /** Сервер на минималках: версия растёт на каждое изменение, чужие правки добавляются в `server` */
-function setup(initial: WikiPage = page()) {
+function setup(initial: WikiPage = page(), { withCopy = false }: { withCopy?: boolean } = {}) {
   const server = { page: initial }
   const calls: Body[] = []
+  // копии, сохранённые для ушедшего человека (`withCopy`); `copyFail.next` — следующую копию сохранить не удастся
+  const copies: Array<{ original: WikiPage; mine: { title: string; md: string } }> = []
+  const copyFail = { next: null as unknown }
   let gate: Promise<void> | null = null
   const fail = { next: null as unknown }
   const deps: DraftDeps = {
@@ -43,12 +46,28 @@ function setup(initial: WikiPage = page()) {
     }),
     onSaved: vi.fn(),
     onError: vi.fn(),
+    ...(withCopy
+      ? {
+          saveCopy: vi.fn(async (original: WikiPage, mine: { title: string; md: string }) => {
+            if (copyFail.next) {
+              const e = copyFail.next
+              copyFail.next = null
+              throw e
+            }
+            copies.push({ original, mine })
+            return `${mine.title} (копия)`
+          }),
+          onCopySaved: vi.fn(),
+        }
+      : {}),
   }
   const draft = new PageDraft(initial, deps)
   return {
     draft,
     deps,
     calls,
+    copies,
+    copyFail,
     server,
     fail,
     /** Следующие ответы сервера ждут, пока не вызовут `open()` */
@@ -207,6 +226,133 @@ describe('конфликт версий', () => {
     expect(t.server.page).toMatchObject({ rev: 3, md: 'Мой текст', title: 'Название соседа' })
     expect(t.draft.getState().conflict).toBeNull()
     expect(t.draft.getState().title).toBe('Название соседа')
+  })
+})
+
+describe('человек ушёл со страницы, а правки не слились', () => {
+  /** Свой текст правит человек, чужой ушёл на сервер раньше: настоящий конфликт, на экране никого нет */
+  async function orphaned(subscribed = false) {
+    const t = setup(page(), { withCopy: true })
+    const off = subscribed ? t.draft.subscribe(() => undefined) : null
+    t.server.page = page({ rev: 2, md: 'Текст соседа', title: 'Название соседа' })
+    t.draft.setMd('Мой текст')
+    await t.draft.flush()
+    return { t, off }
+  }
+
+  it('правки сохраняются отдельной страницей, а сама страница становится чужой версией', async () => {
+    const { t } = await orphaned()
+    expect(t.copies).toHaveLength(0) // сначала короткая пауза: экран мог просто пересоздаться
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS)
+
+    expect(t.copies).toHaveLength(1)
+    expect(t.copies[0]!.original).toMatchObject({ rev: 2, md: 'Текст соседа' })
+    expect(t.copies[0]!.mine).toEqual({ title: 'Архитектура', md: 'Мой текст' })
+    expect(t.draft.getState()).toMatchObject({ conflict: null, md: 'Текст соседа', title: 'Название соседа', rev: 2 })
+    expect(t.draft.dirty).toBe(false)
+    expect(t.deps.onSaved).toHaveBeenCalledWith(expect.objectContaining({ rev: 2 }))
+    expect(t.deps.onCopySaved).toHaveBeenCalledWith('Архитектура (копия)')
+    expect(t.deps.onError).not.toHaveBeenCalled()
+    // после копии страница снова обычная: сохранение идёт с версией соседа
+    t.draft.setMd('Дальше')
+    await t.draft.flush()
+    expect(t.calls.at(-1)).toEqual({ rev: 2, md: 'Дальше' })
+    expect(t.copies).toHaveLength(1)
+  })
+
+  it('человек на странице: копии нет, остаётся баннер', async () => {
+    const { t, off } = await orphaned(true)
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS * 10)
+    expect(t.copies).toHaveLength(0)
+    expect(t.draft.getState().conflict).toMatchObject({ rev: 2 })
+    expect(t.draft.getState().md).toBe('Мой текст')
+    off?.()
+  })
+
+  it('человек ушёл, не выбрав на баннере: правки тоже уходят в копию', async () => {
+    const { t, off } = await orphaned(true)
+    expect(t.draft.getState().conflict).not.toBeNull()
+    off!() // закрыл страницу с баннером
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS)
+    expect(t.copies).toHaveLength(1)
+    expect(t.draft.getState()).toMatchObject({ conflict: null, md: 'Текст соседа' })
+  })
+
+  it('вернулся в течение паузы: копии нет, баннер ждёт', async () => {
+    const { t } = await orphaned()
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS - 100)
+    const off = t.draft.subscribe(() => undefined)
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS * 5)
+    expect(t.copies).toHaveLength(0)
+    expect(t.draft.getState().conflict).not.toBeNull()
+    off()
+  })
+
+  it('разошлись только названия, текст слился: копия не нужна, остаётся чужое название', async () => {
+    const t = setup(page({ md: 'Первый\n\nВторой' }), { withCopy: true })
+    t.server.page = page({ rev: 2, md: 'Первый\n\nВторой', title: 'Название соседа' })
+    t.draft.setTitle('Моё название')
+    t.draft.setMd('Первый\n\nВторой (я)')
+    await t.draft.flush()
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS)
+
+    expect(t.copies).toHaveLength(0)
+    expect(t.draft.getState()).toMatchObject({ conflict: null, title: 'Название соседа', md: 'Первый\n\nВторой (я)' })
+    expect(t.server.page.md).toBe('Первый\n\nВторой (я)')
+    expect(t.server.page.title).toBe('Название соседа')
+  })
+
+  it('человек на странице и названия разошлись: прежний баннер', async () => {
+    const t = setup(page(), { withCopy: true })
+    const off = t.draft.subscribe(() => undefined)
+    t.server.page = page({ rev: 2, title: 'Название соседа' })
+    t.draft.setTitle('Моё название')
+    await t.draft.flush()
+    expect(t.draft.getState().conflict).toMatchObject({ rev: 2 })
+    off()
+  })
+
+  it('связи нет: правки остаются, копия сохраняется повтором, и только одна', async () => {
+    const { t } = await orphaned()
+    t.copyFail.next = new NetworkError('Нет связи с сервером')
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS)
+    expect(t.copies).toHaveLength(0)
+    expect(t.draft.getState().conflict).not.toBeNull()
+    expect(t.deps.onError).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(RETRY_MS)
+    expect(t.copies).toHaveLength(1)
+    expect(t.draft.getState().conflict).toBeNull()
+    await vi.advanceTimersByTimeAsync(RETRY_MS * 3)
+    expect(t.copies).toHaveLength(1)
+  })
+
+  it('сервер отказал в копии: плашка об ошибке, правки остаются, ждёт баннер без повторов', async () => {
+    const { t } = await orphaned()
+    t.copyFail.next = new ApiError(400, 'bad_request', 'Название: слишком длинное')
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS)
+    expect(t.deps.onError).toHaveBeenCalledTimes(1)
+    expect(t.copies).toHaveLength(0)
+    expect(t.draft.getState()).toMatchObject({ md: 'Мой текст' })
+    expect(t.draft.getState().conflict).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(RETRY_MS * 3)
+    expect(t.deps.onError).toHaveBeenCalledTimes(1)
+  })
+
+  it('без saveCopy конфликт ждёт человека, как раньше', async () => {
+    const t = setup()
+    t.server.page = page({ rev: 2, md: 'Текст соседа' })
+    t.draft.setMd('Мой текст')
+    await t.draft.flush()
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS * 10)
+    expect(t.draft.getState().conflict).toMatchObject({ rev: 2 })
+  })
+
+  it('dispose отменяет ожидающую копию', async () => {
+    const { t } = await orphaned()
+    t.draft.dispose()
+    await vi.advanceTimersByTimeAsync(ORPHAN_GRACE_MS * 5)
+    expect(t.copies).toHaveLength(0)
   })
 })
 

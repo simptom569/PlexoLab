@@ -2,6 +2,7 @@
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api/client'
+import { copyTitle } from '../../lib/copyTitle'
 import { keys } from '../../lib/api/queries'
 import type { WikiNode, WikiPage } from '../../lib/api/types'
 import { queryClient } from '../../lib/query'
@@ -12,6 +13,9 @@ import { PageDraft, type DraftDeps } from './draft'
 
 export const SAVE_PAGE_FAILED = 'Не удалось сохранить страницу, попробуем ещё раз'
 
+/** Сообщение о копии длиннее обычной плашки: человеку надо успеть прочитать, где его правки */
+export const COPY_TOAST_MS = 9000
+
 /** Страница без текста: так она лежит в дереве */
 export const toNode = ({ md: _md, ...node }: WikiPage): WikiNode => node
 
@@ -21,10 +25,34 @@ export function cachePage(page: WikiPage): void {
   queryClient.setQueryData<WikiNode[]>(keys.wiki, (list) => list?.map((n) => (n.id === page.id ? toNode(page) : n)))
 }
 
+/**
+ * Правки не слились с чужими, а человек ушёл со страницы: они сохраняются новой страницей «Название (правки Имя, дд.мм чч:мм)»
+ * у того же родителя, сразу после оригинала. Оригинал остаётся с чужой версией. Возвращает название копии.
+ */
+async function saveCopy(original: WikiPage, mine: { title: string; md: string }): Promise<string> {
+  const title = copyTitle(mine.title, useSession.getState().user?.name ?? '', new Date())
+  const parent = original.parent_id ?? null
+  const created = await api.post<WikiPage>('/wiki', { title, md: mine.md, parent_id: parent })
+  try {
+    // сервер кладёт новую страницу в конец; переставляем её перед той, что шла за оригиналом
+    const siblings = await api.get<WikiNode[]>('/wiki')
+    const next = siblings
+      .filter((n) => n.id !== created.id && (n.parent_id ?? null) === parent && n.position > original.position)
+      .sort((a, b) => a.position - b.position)[0]
+    if (next) await api.patch(`/wiki/${created.id}`, { before_id: next.id })
+  } catch {
+    // копия уже сохранена, а её место среди соседей не страшно: останется в конце
+  }
+  void queryClient.invalidateQueries({ queryKey: keys.wiki })
+  return title
+}
+
 const deps: DraftDeps = {
   patch: (id, body) => api.patch<WikiPage>(`/wiki/${id}`, body),
   onSaved: cachePage,
   onError: () => useToast.getState().show(SAVE_PAGE_FAILED),
+  saveCopy,
+  onCopySaved: (title) => useToast.getState().show(`Правки не удалось объединить с чужими, они сохранены отдельной страницей «${title}»`, COPY_TOAST_MS),
 }
 
 const drafts = new Map<string, PageDraft>()

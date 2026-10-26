@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { TOAST_MS, useToast } from '../lib/toast'
+import { useToast } from '../lib/toast'
 
 /**
  * Плашка снизу: «Не удалось сохранить…». В макете такого элемента нет (решение владельца, этап 4),
@@ -7,14 +7,15 @@ import { TOAST_MS, useToast } from '../lib/toast'
  */
 export function Toast() {
   const message = useToast((s) => s.message)
+  const ms = useToast((s) => s.ms)
   const seq = useToast((s) => s.seq)
   const hide = useToast((s) => s.hide)
 
   useEffect(() => {
     if (!message) return
-    const timer = setTimeout(hide, TOAST_MS)
+    const timer = setTimeout(hide, ms)
     return () => clearTimeout(timer)
-  }, [message, seq, hide])
+  }, [message, ms, seq, hide])
 
   if (!message) return null
   return (

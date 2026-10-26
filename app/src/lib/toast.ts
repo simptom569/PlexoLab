@@ -11,15 +11,18 @@ export const TOAST_MS = 4000
 
 type ToastState = {
   message: string | null
+  /** Сколько показывать это сообщение, мс */
+  ms: number
   /** Растёт с каждым показом: повторное сообщение перезапускает таймер */
   seq: number
-  show: (message: string) => void
+  show: (message: string, ms?: number) => void
   hide: () => void
 }
 
 export const useToast = create<ToastState>()((set) => ({
   message: null,
+  ms: TOAST_MS,
   seq: 0,
-  show: (message) => set((s) => ({ message, seq: s.seq + 1 })),
+  show: (message, ms = TOAST_MS) => set((s) => ({ message, ms, seq: s.seq + 1 })),
   hide: () => set({ message: null }),
 }))

@@ -4,13 +4,15 @@
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { api } from '../../lib/api/client'
+import { copyTitle } from '../../lib/copyTitle'
 import { keys } from '../../lib/api/queries'
-import type { Doc, SavedCanvas } from '../../lib/api/types'
+import type { Doc, DocSummary, SavedCanvas } from '../../lib/api/types'
 import { queryClient } from '../../lib/query'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { trackUnsent, untrackUnsent } from '../../lib/unsent'
 import { PageDraft, type DraftDeps } from '../wiki/draft'
+import { COPY_TOAST_MS } from '../wiki/drafts'
 import type { CanvasState } from './canvas'
 import { CanvasDraft, type CanvasDraftDeps } from './canvasDraft'
 
@@ -41,10 +43,34 @@ export function cacheCanvas(id: string, saved: SavedCanvas): void {
   staleList()
 }
 
+/**
+ * Правки не слились с чужими, а человек ушёл из документа: они сохраняются новым документом «Название (правки Имя, дд.мм чч:мм)»
+ * в том же проекте и режиме, сразу после оригинала. Оригинал остаётся с чужой версией. Возвращает название копии.
+ */
+async function saveDocCopy(original: Doc, mine: { title: string; md: string }): Promise<string> {
+  const title = copyTitle(mine.title, useSession.getState().user?.name ?? '', new Date())
+  const created = await api.post<Doc>(`/projects/${original.project_id}/docs`, { title, md: mine.md, mode: original.mode })
+  try {
+    // новый документ встаёт первым; переставляем его перед тем, что шёл за оригиналом (или в конец, если оригинал последний)
+    const list = await api.get<DocSummary[]>(`/projects/${original.project_id}/docs`)
+    const at = list.find((d) => d.id === original.id)
+    if (at) {
+      const next = list.filter((d) => d.id !== created.id && d.position > at.position).sort((a, b) => a.position - b.position)[0]
+      await api.patch(`/docs/${created.id}`, { before_id: next ? next.id : null })
+    }
+  } catch {
+    // копия уже сохранена, а её место в списке не страшно: останется первой
+  }
+  staleList()
+  return title
+}
+
 const docDeps: DraftDeps<Doc> = {
   patch: (id, body) => api.patch<Doc>(`/docs/${id}`, body),
   onSaved: cacheDocContent,
   onError: () => useToast.getState().show(SAVE_DOC_FAILED),
+  saveCopy: saveDocCopy,
+  onCopySaved: (title) => useToast.getState().show(`Правки не удалось объединить с чужими, они сохранены отдельным документом «${title}»`, COPY_TOAST_MS),
 }
 
 const canvasDeps: CanvasDraftDeps = {
