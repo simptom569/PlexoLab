@@ -37,7 +37,7 @@ function LinkCard({ link, mutations }: { link: LinkItem; mutations: LinkMutation
           <span style={{ fontSize: 13, color: 'var(--muted)' }}>{link.description}</span>
         </span>
       </a>
-      <IconButton icon="close" small label={`Удалить ссылку ${link.title}`} onClick={() => mutations.deleteLink.mutate({ id: link.id })} />
+      <IconButton write icon="close" small label={`Удалить ссылку ${link.title}`} onClick={() => mutations.deleteLink.mutate({ id: link.id })} />
     </div>
   )
 }
@@ -67,7 +67,7 @@ function NewLink({ group, mutations }: { group: LinkGroup; mutations: LinkMutati
         onChange={(e) => setUrl(e.target.value)}
         onKeyDown={onKeyDown}
       />
-      <Button style={{ alignSelf: 'flex-start' }} onClick={add}>
+      <Button write style={{ alignSelf: 'flex-start' }} onClick={add}>
         Добавить ссылку
       </Button>
     </div>
@@ -121,7 +121,7 @@ export function LinksPage({ projectId }: { projectId: string }) {
               if (e.key === 'Enter') addGroup()
             }}
           />
-          <Button variant="primary" onClick={addGroup}>
+          <Button write variant="primary" onClick={addGroup}>
             Группа
           </Button>
         </div>

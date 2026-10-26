@@ -51,10 +51,10 @@ export function InvitesDialog() {
                   </div>
                 </div>
                 <div className="proj-actions">
-                  <Button variant="primary" disabled={busy === i.id} onClick={() => void answer(i.id, true)}>
+                  <Button write variant="primary" disabled={busy === i.id} onClick={() => void answer(i.id, true)}>
                     Принять
                   </Button>
-                  <Button disabled={busy === i.id} onClick={() => void answer(i.id, false)}>
+                  <Button write disabled={busy === i.id} onClick={() => void answer(i.id, false)}>
                     Отклонить
                   </Button>
                 </div>

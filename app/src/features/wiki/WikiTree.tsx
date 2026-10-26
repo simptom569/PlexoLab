@@ -53,7 +53,7 @@ function TreeItem({ row, current, searching, onAdd }: { row: TreeRow; current: b
       <button className="tr-title" type="button" role="treeitem" onClick={() => openPage(node.id)}>
         {title}
       </button>
-      <IconButton className="tr-add" label={`Добавить вложенную страницу в ${title}`} icon="plus" small onClick={() => onAdd(node.id)} />
+      <IconButton write className="tr-add" label={`Добавить вложенную страницу в ${title}`} icon="plus" small onClick={() => onAdd(node.id)} />
     </div>
   )
 }
@@ -117,7 +117,7 @@ export function WikiTree({ pages, currentId, fileTotal }: WikiTreeProps) {
           <Rows rows={rows} currentId={currentId} searching={q.trim() !== ''} onAdd={add} />
           {rows.length === 0 && <div style={{ padding: '10px 8px', color: 'var(--muted)', fontSize: 13 }}>Ничего не найдено</div>}
         </div>
-        <Button onClick={() => add(null)}>
+        <Button write onClick={() => add(null)}>
           <Icon name="plus" sm />
           Новая страница
         </Button>

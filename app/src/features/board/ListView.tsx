@@ -13,7 +13,7 @@ function Row({ task }: { task: TaskCard }) {
   const v = describeTask(task, m)
   return (
     <div className="row">
-      <Tick done={m.done(task)} label={`Переключить выполнение ${task.key}`} onClick={() => toggleDone(task)} />
+      <Tick write done={m.done(task)} label={`Переключить выполнение ${task.key}`} onClick={() => toggleDone(task)} />
       <span className="mono" style={{ fontSize: 12, color: 'var(--muted)' }}>
         {task.key}
       </span>

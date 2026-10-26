@@ -3,6 +3,7 @@ import { Avatar, Button, Chip, EmptyState, Icon, SearchField } from '../../compo
 import { useDocSearch, useDocs, useUsers } from '../../lib/api/queries'
 import type { DocSummary, User } from '../../lib/api/types'
 import { cx } from '../../lib/cx'
+import { useReadOnly } from '../../lib/link'
 import { useDebounced } from '../../lib/useDebounced'
 import { DragProvider } from '../board/DragProvider'
 import { END, nextOf, useDragSource, useDragState, type DragState } from '../board/dnd'
@@ -27,6 +28,7 @@ type FaceProps = {
 
 /** Карточка документа (.dcard) */
 function CardFace({ doc, author, dragging, overlay, nodeRef, handlers }: FaceProps) {
+  const readOnly = useReadOnly()
   const star = useStarDoc()
   const open = useDocsStore((s) => s.openDoc)
   const label = starLabel(doc.starred)
@@ -62,6 +64,7 @@ function CardFace({ doc, author, dragging, overlay, nodeRef, handlers }: FacePro
         type="button"
         aria-label={label}
         title={label}
+        disabled={readOnly}
         onClick={overlay ? undefined : () => star.mutate({ id: doc.id, starred: !doc.starred })}
       >
         <Icon name="star" />
@@ -156,8 +159,8 @@ export function DocsList({ projectId }: { projectId: string }) {
           <p className="sub">Заметки, планы и схемы. Каждый документ открывается как страница или как холст, а текст в обоих режимах один и тот же.</p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Button onClick={() => createDoc('edge')}>Новый холст</Button>
-          <Button variant="primary" onClick={() => createDoc('page')}>
+          <Button write onClick={() => createDoc('edge')}>Новый холст</Button>
+          <Button write variant="primary" onClick={() => createDoc('page')}>
             <Icon name="plus" />
             Новый документ
           </Button>

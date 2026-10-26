@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useReadOnly } from '../lib/link'
 import { Avatar } from './Avatar'
 import { Icon } from './Icon'
 import { Anchor, Backdrop, MenuItem, Popover } from './Popover'
@@ -25,6 +26,7 @@ type Props = {
  * на кнопку, клик мимо закрывает.
  */
 export function PersonSelect({ value, people, noneLabel, label, title, onChange }: Props) {
+  const readOnly = useReadOnly()
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -76,6 +78,7 @@ export function PersonSelect({ value, people, noneLabel, label, title, onChange 
         title={title}
         aria-haspopup="menu"
         aria-expanded={open}
+        disabled={readOnly}
         onClick={() => setOpen((o) => !o)}
       >
         <Avatar name={current?.name ?? null} tone={current?.tone} size="sm" decorative />

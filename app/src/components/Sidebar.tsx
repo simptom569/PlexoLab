@@ -132,7 +132,7 @@ export function Sidebar({
           }}
         >
           Проекты
-          <IconButton className="proj-add" icon="plus" small label="Новый проект" onClick={onNewProject} />
+          <IconButton write className="proj-add" icon="plus" small label="Новый проект" onClick={onNewProject} />
         </div>
         <nav aria-label="Проекты" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {projects.map((p) => (

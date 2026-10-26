@@ -83,6 +83,7 @@ export function ProjectMenu() {
           </MenuItem>
         )}
         <MenuItem
+          write
           danger={confirm === leaveKey}
           onClick={() => {
             if (confirm === leaveKey) void leave()

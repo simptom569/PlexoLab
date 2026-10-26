@@ -5,6 +5,7 @@ import { MODULE_STATUS_LABELS, NEXT_STATUS, type WorkStatus } from '../../lib/do
 import { isValidKey, KEY_RULE, normalizeKey } from '../../lib/project-dialogs'
 import { percent, tasksText } from '../../lib/progress'
 import { moduleKeyChangeCount, moduleKeyChangeDetail, projectPrefix } from '../../lib/task-ids'
+import { useReadOnly } from '../../lib/link'
 import { useUi } from '../../lib/ui-store'
 import { useDraft, useDraftField } from '../../lib/useDraft'
 import { BoardLoader } from '../board/BoardLoader'
@@ -38,6 +39,7 @@ function MiniTask({ task }: { task: TaskCard }) {
 function ModuleCard({ module }: { module: Module }) {
   const m = useModel()
   const { updateModule, deleteModule } = useMutations()
+  const readOnly = useReadOnly()
   const showOnBoard = useUi((s) => s.showModuleOnBoard)
   const confirm = useUi((s) => s.confirm)
   const setConfirm = useUi((s) => s.setConfirm)
@@ -91,7 +93,7 @@ function ModuleCard({ module }: { module: Module }) {
     <Panel>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <TitleInput aria-label="Название модуля" {...title} />
-        <button className={`pill-btn ${status}`} type="button" title="Сменить статус" onClick={() => update({ status: NEXT_STATUS[status] })}>
+        <button className={`pill-btn ${status}`} type="button" title="Сменить статус" disabled={readOnly} onClick={() => update({ status: NEXT_STATUS[status] })}>
           {MODULE_STATUS_LABELS[status]}
         </button>
       </div>
@@ -161,7 +163,7 @@ function ModuleCard({ module }: { module: Module }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 'auto' }}>
         <Button onClick={() => showOnBoard(module.id)}>Показать на доске</Button>
-        <Button variant="ghost" onClick={remove}>
+        <Button write variant="ghost" onClick={remove}>
           {confirm === key ? 'Точно удалить?' : 'Удалить'}
         </Button>
       </div>
@@ -201,7 +203,7 @@ function NewModule() {
           if (e.key === 'Enter') add()
         }}
       />
-      <Button variant="primary" onClick={add}>
+      <Button write variant="primary" onClick={add}>
         Модуль
       </Button>
     </div>

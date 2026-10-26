@@ -13,6 +13,7 @@ import {
   type ProjectTab,
 } from '../../lib/project-dialogs'
 import { projectKeyChangeCount, projectKeyChangeDetail } from '../../lib/task-ids'
+import { useReadOnly } from '../../lib/link'
 import { useUi } from '../../lib/ui-store'
 import { errorText, setArchived, updateProject } from './api'
 import { IdChangeDialog } from './IdChangeDialog'
@@ -73,6 +74,7 @@ export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialo
 }
 
 function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => void }) {
+  const readOnly = useReadOnly()
   const board = useBoard(project.id)
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState<string>(project.color)
@@ -144,6 +146,7 @@ function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => 
                 type="button"
                 aria-label={c.name}
                 aria-pressed={c.value === color}
+                disabled={readOnly}
                 style={{ background: `var(--${c.value})` }}
                 onClick={() => edited(() => setColor(c.value))}
               />
@@ -174,7 +177,7 @@ function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => 
         )}
         {!keyOk && <Problem>{KEY_RULE}</Problem>}
         {state.kind === 'error' && <Problem>{state.text}</Problem>}
-        <Button variant="primary" type="submit" disabled={!canSave}>
+        <Button write variant="primary" type="submit" disabled={!canSave}>
           Сохранить
         </Button>
       </div>

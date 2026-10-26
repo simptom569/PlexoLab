@@ -8,6 +8,7 @@ import { NEXT_STATUS, RELEASE_STATUS_LABELS, type WorkStatus } from '../../lib/d
 import { milestoneWhen, percent, tasksText } from '../../lib/progress'
 import { cx } from '../../lib/cx'
 import { useUi } from '../../lib/ui-store'
+import { useReadOnly } from '../../lib/link'
 import { useDraftField } from '../../lib/useDraft'
 import { BoardLoader } from '../board/BoardLoader'
 import { colorVar, useModel, useMutations } from '../board/model'
@@ -24,6 +25,7 @@ function DeleteButton({ confirmKey, onDelete }: { confirmKey: string; onDelete: 
   const setConfirm = useUi((s) => s.setConfirm)
   return (
     <Button
+      write
       variant="ghost"
       onClick={() => {
         if (confirm === confirmKey) {
@@ -94,7 +96,7 @@ function NewMilestone() {
       />
       <DateField clearable aria-label="Дата новой вехи" value={date} onChange={setDate} />
       <div style={{ gridColumn: '1 / -1' }}>
-        <Button onClick={add}>Добавить веху</Button>
+        <Button write onClick={add}>Добавить веху</Button>
       </div>
     </div>
   )
@@ -125,12 +127,13 @@ function Step({ release, item, mutations }: { release: Release; item: ReleaseIte
   return (
     <div className="sub-row">
       <Tick
+        write
         done={item.done}
         label="Отметить шаг"
         onClick={() => updateItem.mutate({ releaseId: release.id, id: item.id, patch: { done: !item.done } })}
       />
       <input className={cx('sub-input', item.done && 'done')} aria-label="Шаг выкатки" {...title} />
-      <IconButton icon="close" small label="Удалить шаг" onClick={() => deleteItem.mutate({ releaseId: release.id, id: item.id })} />
+      <IconButton write icon="close" small label="Удалить шаг" onClick={() => deleteItem.mutate({ releaseId: release.id, id: item.id })} />
     </div>
   )
 }
@@ -164,6 +167,7 @@ function NewStep({ release, mutations }: { release: Release; mutations: ReleaseM
 
 function ReleaseCard({ release, mutations }: { release: Release; mutations: ReleaseMutations }) {
   const { updateRelease, deleteRelease } = mutations
+  const readOnly = useReadOnly()
   const update = (patch: UpdateRelease) => updateRelease.mutate({ id: release.id, patch })
   const version = useDraftField(release.version, (next) => update({ version: next }))
   const notes = useDraftField(release.notes, (next) => update({ notes: next }), { allowEmpty: true, trim: false })
@@ -174,7 +178,7 @@ function ReleaseCard({ release, mutations }: { release: Release; mutations: Rele
     <Panel>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <TitleInput className="mono" style={{ maxWidth: 150 }} aria-label="Версия" {...version} />
-        <button className={`pill-btn ${status}`} type="button" title="Сменить статус" onClick={() => update({ status: NEXT_STATUS[status] })}>
+        <button className={`pill-btn ${status}`} type="button" title="Сменить статус" disabled={readOnly} onClick={() => update({ status: NEXT_STATUS[status] })}>
           {RELEASE_STATUS_LABELS[status]}
         </button>
         <span style={{ flex: 1 }} />
@@ -229,7 +233,7 @@ function NewRelease({ mutations }: { mutations: ReleaseMutations }) {
           if (e.key === 'Enter') add()
         }}
       />
-      <Button onClick={add}>Новый релиз</Button>
+      <Button write onClick={add}>Новый релиз</Button>
     </div>
   )
 }

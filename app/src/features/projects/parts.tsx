@@ -135,6 +135,7 @@ export function TwoStep({
   const armed = confirm === id
   return (
     <Button
+      write
       variant={variant}
       disabled={disabled}
       onClick={() => {

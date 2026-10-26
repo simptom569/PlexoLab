@@ -95,7 +95,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
               Роль
             </span>
             <div className="f-val">
-              <Segmented label="Роль приглашённого" options={ROLE_OPTIONS} value={role} onChange={setRole} />
+              <Segmented write label="Роль приглашённого" options={ROLE_OPTIONS} value={role} onChange={setRole} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
@@ -105,7 +105,7 @@ export function MembersTab({ projectId }: { projectId: string }) {
                 Приглашение отправлено: {sent}
               </span>
             )}
-            <Button variant="primary" type="submit" disabled={inviting || email.trim() === ''}>
+            <Button write variant="primary" type="submit" disabled={inviting || email.trim() === ''}>
               Пригласить
             </Button>
           </div>
@@ -139,6 +139,7 @@ function MemberRow({ member, itsMe, projectId }: { member: Member; itsMe: boolea
             </span>
           ) : (
             <Segmented
+              write
               label={`Роль: ${member.name}`}
               options={ROLE_OPTIONS}
               value={role}
@@ -175,7 +176,7 @@ function InviteRow({ invite, projectId }: { invite: PendingInvite; projectId: st
           </span>
         </div>
         <div className="proj-actions">
-          <Button variant="ghost" onClick={() => void run(() => revokeInvite(projectId, invite.id))}>
+          <Button write variant="ghost" onClick={() => void run(() => revokeInvite(projectId, invite.id))}>
             Отозвать
           </Button>
         </div>

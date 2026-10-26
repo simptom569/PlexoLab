@@ -10,6 +10,7 @@ import { toneAt } from '../../lib/tones'
 import { UPLOAD_FAILED, useToast } from '../../lib/toast'
 import { pickedFiles } from '../../lib/upload'
 import { useUi } from '../../lib/ui-store'
+import { useReadOnly } from '../../lib/link'
 import { useDraft } from '../../lib/useDraft'
 import { FileName } from '../wiki/FileBits'
 import { cardOf } from './cache'
@@ -29,6 +30,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function TitleField({ task }: { task: TaskCard }) {
   const { updateTask } = useMutations()
+  const readOnly = useReadOnly()
   const focusTitle = useUi((s) => s.focusTitle)
   const [draft, setDraft] = useDraft(task.title)
   const ref = useRef<HTMLInputElement>(null)
@@ -48,6 +50,7 @@ function TitleField({ task }: { task: TaskCard }) {
       ref={ref}
       className="dr-title"
       aria-label="Название задачи"
+      readOnly={readOnly}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
@@ -74,7 +77,7 @@ function Fields({ task }: { task: TaskCard }) {
   }
 
   const choose = (label: string, on: boolean, pick: () => void) => (
-    <Opt key={label} on={on} onClick={pick}>
+    <Opt write key={label} on={on} onClick={pick}>
       {label}
     </Opt>
   )
@@ -83,7 +86,7 @@ function Fields({ task }: { task: TaskCard }) {
     <div className="fields">
       <Row label="Статус">
         {[{ id: null, title: 'Бэклог', color: 'var(--muted)' }, ...m.columns.map((c) => ({ id: c.id, title: c.title, color: colorVar(c.color) }))].map((s) => (
-          <Opt
+          <Opt write
             key={s.id ?? 'backlog'}
             on={(task.column_id ?? null) === s.id}
             swatch={s.color}
@@ -94,13 +97,13 @@ function Fields({ task }: { task: TaskCard }) {
         ))}
       </Row>
       <Row label="Исполнитель">
-        <Opt on={!task.assignee_id} onClick={() => update({ assignee_id: null })}>
+        <Opt write on={!task.assignee_id} onClick={() => update({ assignee_id: null })}>
           <Avatar name={null} size="sm" decorative />
           Никто
         </Opt>
         {/* исполнителем назначают участников проекта; тот, кто уже назначен и вышел из проекта, остаётся виден */}
         {m.pickable(task.assignee_id).map((u) => (
-          <Opt key={u.id} on={task.assignee_id === u.id} onClick={() => update({ assignee_id: u.id })}>
+          <Opt write key={u.id} on={task.assignee_id === u.id} onClick={() => update({ assignee_id: u.id })}>
             <Avatar name={u.name} tone={u.tone} size="sm" decorative />
             {u.name}
           </Opt>
@@ -116,7 +119,7 @@ function Fields({ task }: { task: TaskCard }) {
       </Row>
       <Row label="Приоритет">
         {(['high', 'med', 'low'] as Priority[]).map((k) => (
-          <Opt key={k} on={task.priority === k} onClick={() => update({ priority: k })}>
+          <Opt write key={k} on={task.priority === k} onClick={() => update({ priority: k })}>
             <PriorityBars prio={k} />
             {PRIORITY_LABELS[k]}
           </Opt>
@@ -126,7 +129,7 @@ function Fields({ task }: { task: TaskCard }) {
         {m.board.tags.map((tag) => {
           const on = task.tag_ids.includes(tag.id)
           return (
-            <Opt
+            <Opt write
               key={tag.id}
               on={on}
               swatch={toneAt(tag.tone).fg}
@@ -187,14 +190,16 @@ function Description({ detail }: { detail: TaskDetail }) {
 
 function SubtaskRow({ taskId, subtask }: { taskId: string; subtask: Subtask }) {
   const { updateSubtask, deleteSubtask } = useMutations()
+  const readOnly = useReadOnly()
   const [draft, setDraft] = useDraft(subtask.title)
   const cls = subtask.done ? 'done' : ''
   return (
     <div className="sub-row">
-      <Tick done={subtask.done} label="Отметить подзадачу" onClick={() => updateSubtask.mutate({ taskId, id: subtask.id, patch: { done: !subtask.done } })} />
+      <Tick write done={subtask.done} label="Отметить подзадачу" onClick={() => updateSubtask.mutate({ taskId, id: subtask.id, patch: { done: !subtask.done } })} />
       <input
         className={cx('sub-input', cls)}
         aria-label="Подзадача"
+        readOnly={readOnly}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
@@ -204,13 +209,14 @@ function SubtaskRow({ taskId, subtask }: { taskId: string; subtask: Subtask }) {
         }}
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
       />
-      <IconButton icon="close" small label="Удалить подзадачу" onClick={() => deleteSubtask.mutate({ taskId, id: subtask.id })} />
+      <IconButton write icon="close" small label="Удалить подзадачу" onClick={() => deleteSubtask.mutate({ taskId, id: subtask.id })} />
     </div>
   )
 }
 
 function Subtasks({ detail }: { detail: TaskDetail }) {
   const { createSubtask } = useMutations()
+  const readOnly = useReadOnly()
   const [draft, setDraft] = useState('')
   const done = detail.subtasks.filter((s) => s.done).length
   const total = detail.subtasks.length
@@ -237,6 +243,7 @@ function Subtasks({ detail }: { detail: TaskDetail }) {
           className="sub-input"
           placeholder="Добавить подзадачу и нажать Enter"
           aria-label="Новая подзадача"
+          readOnly={readOnly}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && add()}
@@ -248,6 +255,7 @@ function Subtasks({ detail }: { detail: TaskDetail }) {
 
 function Files({ detail }: { detail: TaskDetail }) {
   const { upload, remove } = useTaskFiles(detail.id)
+  const readOnly = useReadOnly()
   return (
     <div>
       <h3 className="sec-title">
@@ -259,7 +267,7 @@ function Files({ detail }: { detail: TaskDetail }) {
             <Icon name="docs" />
             <FileName file={f} plain />
             <span style={{ color: 'var(--muted)', fontSize: 12 }}>{formatSize(f.size_bytes)}</span>
-            <IconButton label="Убрать файл" icon="close" small onClick={() => remove.mutate({ id: f.id })} />
+            <IconButton write label="Убрать файл" icon="close" small onClick={() => remove.mutate({ id: f.id })} />
           </div>
         ))}
         <label className="btn" style={{ alignSelf: 'flex-start', cursor: 'pointer' }}>
@@ -269,6 +277,7 @@ function Files({ detail }: { detail: TaskDetail }) {
             className="sr"
             type="file"
             multiple
+            disabled={readOnly}
             onChange={(e) => {
               const picked = pickedFiles(e.currentTarget)
               if (picked.length) upload.mutate(picked, { onError: () => useToast.getState().show(UPLOAD_FAILED) })
@@ -325,7 +334,7 @@ function Comments({ detail }: { detail: TaskDetail }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
             />
-            <Button style={{ alignSelf: 'flex-end' }} onClick={send}>
+            <Button write style={{ alignSelf: 'flex-end' }} onClick={send}>
               Отправить
             </Button>
           </div>
@@ -354,7 +363,7 @@ function DrawerBody({ card, detail }: { card: TaskCard; detail: TaskDetail | und
       <button className="scrim" type="button" aria-label="Закрыть задачу" onClick={closeTask} />
       <aside className="drawer" role="dialog" aria-label={`Задача ${task.key}`}>
         <div className="dr-head">
-          <Button on={done} onClick={() => toggleDone(task)}>
+          <Button write on={done} onClick={() => toggleDone(task)}>
             <Icon name="check" sm />
             {done ? 'Выполнена' : 'Отметить выполненной'}
           </Button>
@@ -362,7 +371,7 @@ function DrawerBody({ card, detail }: { card: TaskCard; detail: TaskDetail | und
             {task.key}
           </span>
           <span style={{ flex: 1 }} />
-          <Button danger onClick={remove}>
+          <Button write danger onClick={remove}>
             <Icon name="trash" sm />
             {confirmDelete ? 'Точно удалить?' : 'Удалить'}
           </Button>

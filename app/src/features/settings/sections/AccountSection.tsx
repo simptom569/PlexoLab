@@ -165,7 +165,7 @@ export function AccountSection() {
             </span>
           )}
           {profile.state === 'error' && <Problem>{profile.text}</Problem>}
-          <Button variant="primary" disabled={!canSave} onClick={saveProfile}>
+          <Button write variant="primary" disabled={!canSave} onClick={saveProfile}>
             Сохранить
           </Button>
         </div>
@@ -230,7 +230,7 @@ export function AccountSection() {
             </Field>
             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
               {password.state === 'error' && <Problem>{password.text}</Problem>}
-              <Button variant="primary" type="submit" disabled={password.state === 'saving'}>
+              <Button write variant="primary" type="submit" disabled={password.state === 'saving'}>
                 Сохранить пароль
               </Button>
             </div>

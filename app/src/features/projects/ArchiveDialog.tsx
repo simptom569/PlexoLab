@@ -44,7 +44,7 @@ export function ArchiveDialog() {
                   <Sq color={`var(--${p.color})`} />
                   {p.name}
                 </div>
-                <Button disabled={busy === p.id} onClick={() => void restore(p.id)}>
+                <Button write disabled={busy === p.id} onClick={() => void restore(p.id)}>
                   Вернуть
                 </Button>
               </div>

@@ -26,7 +26,7 @@ export function IdChangeDialog({ count, detail, onConfirm, onCancel }: Props) {
         <Button variant="ghost" onClick={onCancel}>
           Отмена
         </Button>
-        <Button variant="primary" onClick={onConfirm}>
+        <Button write variant="primary" onClick={onConfirm}>
           Продолжить
         </Button>
       </div>

@@ -35,7 +35,7 @@ export function BoardHeader() {
           </div>
           <ProgressBar ok pct={total ? Math.round((done / total) * 100) : 0} />
         </div>
-        <Button variant="primary" onClick={newTask}>
+        <Button write variant="primary" onClick={newTask}>
           <Icon name="plus" />
           Новая задача
         </Button>

@@ -4,6 +4,7 @@ import { Button, ConfirmDelete, ConflictBanner, EmptyState, Icon, MarkdownEditor
 import { keys, useLibrary, useWiki, useWikiPage } from '../../lib/api/queries'
 import type { WikiNode, WikiPage } from '../../lib/api/types'
 import { formatSize } from '../../lib/format'
+import { useReadOnly } from '../../lib/link'
 import { pickedFiles } from '../../lib/upload'
 import { openExternal } from '../../lib/platform/opener'
 import { UPLOAD_FAILED, useToast } from '../../lib/toast'
@@ -16,6 +17,7 @@ import { usePagePresence } from './presence'
 import { useWikiStore } from './store'
 
 function PageFiles({ page }: { page: WikiNode }) {
+  const readOnly = useReadOnly()
   const files = (useLibrary().data?.files ?? []).filter((f) => f.wiki_page_id === page.id)
   const upload = useUploadFiles()
   const deleteFile = useDeleteFile()
@@ -52,6 +54,7 @@ function PageFiles({ page }: { page: WikiNode }) {
               className="sr"
               type="file"
               multiple
+              disabled={readOnly}
               onChange={(e) => {
                 const picked = pickedFiles(e.currentTarget)
                 if (picked.length) upload.mutate({ files: picked, wikiPageId: page.id }, { onError: () => useToast.getState().show(UPLOAD_FAILED) })
@@ -69,6 +72,8 @@ function PageFiles({ page }: { page: WikiNode }) {
 
 /** Загруженная страница: название, редактор, файлы */
 function LoadedPage({ page }: { page: WikiPage }) {
+  // пока нет связи, страница только читается (lib/link.ts)
+  const readOnly = useReadOnly()
   const qc = useQueryClient()
   const pages = useWiki().data ?? []
   const { draft, state } = usePageDraft(page)
@@ -112,6 +117,7 @@ function LoadedPage({ page }: { page: WikiPage }) {
         className="doc-title"
         placeholder="Без названия"
         aria-label="Название страницы"
+        readOnly={readOnly}
         value={state.title}
         onChange={(e) => setTitle(e.target.value)}
       />

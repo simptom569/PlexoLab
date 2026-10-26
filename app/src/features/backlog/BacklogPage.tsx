@@ -47,6 +47,7 @@ function RowFace({ task, dragging, overlay, nodeRef, handlers }: RowProps & { no
       <Avatar name={v.who?.name ?? null} tone={v.who?.tone} />
       <PriorityBars prio={v.priority} labelled />
       <Button
+        write
         onClick={
           overlay || !first
             ? undefined
@@ -115,7 +116,7 @@ function QuickAdd() {
           if (e.key === 'Enter') add()
         }}
       />
-      <Button variant="primary" onClick={add}>
+      <Button write variant="primary" onClick={add}>
         Добавить
       </Button>
     </div>

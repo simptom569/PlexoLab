@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Compone
 import { cx } from '../lib/cx'
 import { MONF, MONTHS_GEN, weekdays } from '../lib/date'
 import { addMonths, finishDateEdit, isIsoDate, moveCursor, pickerDays } from '../lib/datePicker'
+import { useReadOnly } from '../lib/link'
 import { useDialogFocus } from '../lib/useDialogFocus'
 import { useDraft } from '../lib/useDraft'
 import { useToday } from '../lib/useToday'
@@ -168,6 +169,7 @@ export function DateField({ value, onChange, clearable = false, style, onBlur, o
   const [draft, setDraft] = useDraft(value)
   const field = useRef<HTMLSpanElement>(null)
   const opener = useRef<HTMLButtonElement>(null)
+  const readOnly = useReadOnly()
   const close = useCallback(() => setOpen(false), [])
 
   const finish = (el: HTMLInputElement) => {
@@ -210,6 +212,7 @@ export function DateField({ value, onChange, clearable = false, style, onBlur, o
         aria-label="Открыть календарь"
         aria-haspopup="dialog"
         aria-expanded={open}
+        disabled={readOnly}
         onClick={() => setOpen((o) => !o)}
       >
         <Icon name="calendar" sm />

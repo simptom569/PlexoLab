@@ -97,7 +97,7 @@ export function NewProjectDialog(_props: Props) {
           <Button variant="ghost" onClick={close}>
             Отмена
           </Button>
-          <Button variant="primary" type="submit" disabled={!canCreate}>
+          <Button write variant="primary" type="submit" disabled={!canCreate}>
             Создать
           </Button>
         </div>

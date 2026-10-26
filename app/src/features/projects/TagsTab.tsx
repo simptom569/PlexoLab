@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, Input } from '../../components'
+import { useReadOnly } from '../../lib/link'
 import { useBoard } from '../../lib/api/queries'
 import type { Tag } from '../../lib/api/types'
 import { TONES } from '../../lib/tones'
@@ -62,7 +63,7 @@ export function TagsTab({ projectId }: { projectId: string }) {
               attempt.clear()
             }}
           />
-          <Button variant="primary" type="submit" disabled={label.trim() === ''}>
+          <Button write variant="primary" type="submit" disabled={label.trim() === ''}>
             Добавить
           </Button>
         </form>
@@ -73,6 +74,7 @@ export function TagsTab({ projectId }: { projectId: string }) {
 }
 
 function TagRow({ tag, used, projectId }: { tag: Tag; used: number; projectId: string }) {
+  const readOnly = useReadOnly()
   const { problem, run } = useAttempt()
   const [name, setName] = useState(tag.label)
   const [seen, setSeen] = useState(tag.label)
@@ -116,6 +118,7 @@ function TagRow({ tag, used, projectId }: { tag: Tag; used: number; projectId: s
                 type="button"
                 aria-label={toneName(i)}
                 aria-pressed={i === tag.tone}
+                disabled={readOnly}
                 style={{ background: tone.fg }}
                 onClick={() => i !== tag.tone && void run(() => updateTag(projectId, tag.id, { tone: i }).then(() => undefined))}
               />

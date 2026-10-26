@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type Ref, type RefObject } from 
 import { create } from 'zustand'
 import { Anchor, Button, Count, Icon, IconButton, MenuItem, Popover } from '../../components'
 import { cx } from '../../lib/cx'
+import { useReadOnly } from '../../lib/link'
 import type { Column, TaskCard } from '../../lib/api/types'
 import { useUi } from '../../lib/ui-store'
 import { CardFace, DraggableCard } from './CardFace'
@@ -78,7 +79,7 @@ function QuickAdd({ columnId, onClose }: { columnId: string; onClose: () => void
         }}
       />
       <div style={{ display: 'flex', gap: 6 }}>
-        <Button onClick={() => add(false)}>Добавить</Button>
+        <Button write onClick={() => add(false)}>Добавить</Button>
         <Button variant="ghost" onClick={onClose}>
           Отмена
         </Button>
@@ -89,11 +90,13 @@ function QuickAdd({ columnId, onClose }: { columnId: string; onClose: () => void
 
 function ColumnMenu({ column, others, totalIn }: { column: Column; others: Column[]; totalIn: number }) {
   const { updateColumn, deleteColumn } = useMutations()
+  const readOnly = useReadOnly()
   const closeMenus = useUi((s) => s.closeMenus)
   const other = others[0]
   return (
     <Popover small right role="menu">
       <MenuItem
+        write
         onClick={() => {
           closeMenus()
           useColumnEdit.getState().start(column.id)
@@ -102,6 +105,7 @@ function ColumnMenu({ column, others, totalIn }: { column: Column; others: Colum
         Переименовать
       </MenuItem>
       <MenuItem
+        write
         onClick={() => {
           updateColumn.mutate({ id: column.id, patch: { is_done: !column.is_done } })
           closeMenus()
@@ -116,6 +120,7 @@ function ColumnMenu({ column, others, totalIn }: { column: Column; others: Colum
             className="sw-btn"
             type="button"
             aria-label="Цвет колонки"
+            disabled={readOnly}
             style={{ background: colorVar(token) }}
             onClick={() => {
               updateColumn.mutate({ id: column.id, patch: { color: token } })
@@ -125,6 +130,7 @@ function ColumnMenu({ column, others, totalIn }: { column: Column; others: Colum
         ))}
       </div>
       <MenuItem
+        write
         danger
         onClick={() => {
           if (!other) return
@@ -173,7 +179,7 @@ function ColumnView({ column, items, totalIn, others, drag, adding, onAdd, nodeR
         <span className="dot" style={{ background: colorVar(column.color) }} />
         {editing ? <ColumnTitleInput column={column} onDone={stopEdit} /> : <h2>{column.title}</h2>}
         <Count surface>{items.length}</Count>
-        <IconButton icon="plus" label={`Добавить задачу в колонку ${column.title}`} onClick={() => onAdd(true)} onPointerDown={stop} />
+        <IconButton write icon="plus" label={`Добавить задачу в колонку ${column.title}`} onClick={() => onAdd(true)} onPointerDown={stop} />
         <Anchor>
           <IconButton
             icon="dots"
@@ -262,7 +268,7 @@ function NewColumnForm({ onClose }: { onClose: () => void }) {
         }}
       />
       <div style={{ display: 'flex', gap: 6 }}>
-        <Button onClick={() => add(false)}>Добавить</Button>
+        <Button write onClick={() => add(false)}>Добавить</Button>
         <Button variant="ghost" onClick={onClose}>
           Отмена
         </Button>
@@ -272,13 +278,14 @@ function NewColumnForm({ onClose }: { onClose: () => void }) {
 }
 
 function NewColumn() {
+  const readOnly = useReadOnly()
   const [open, setOpen] = useState(false)
   return (
     <div className="col col-new" data-new-col>
       {open ? (
         <NewColumnForm onClose={() => setOpen(false)} />
       ) : (
-        <button className="add-col" type="button" onClick={() => setOpen(true)}>
+        <button className="add-col" type="button" disabled={readOnly} onClick={() => setOpen(true)}>
           <Icon name="plus" />
           Добавить колонку
         </button>

@@ -23,3 +23,13 @@
   opacity: 0.65;
   cursor: default;
 }
+
+/* кнопки календаря, выбора человека, нового столбца и статуса модуля, релиза */
+.app .dp-btn:disabled,
+.app .add-col:disabled,
+.app .pill-btn:disabled,
+.app .dstar:disabled,
+.app .dstar-inline:disabled {
+  opacity: 0.65;
+  cursor: default;
+}

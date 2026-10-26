@@ -2,6 +2,7 @@ import { Avatar, Button, Chip, ConfirmDelete, Icon, Input, SearchField } from '.
 import { useFolders, useLibrary, useUsers, useWiki } from '../../lib/api/queries'
 import type { LibraryFile } from '../../lib/api/types'
 import { formatSize } from '../../lib/format'
+import { useReadOnly } from '../../lib/link'
 import { pickedFiles } from '../../lib/upload'
 import { UPLOAD_FAILED, useToast } from '../../lib/toast'
 import { FileName, FileTile } from './FileBits'
@@ -11,6 +12,7 @@ import { useWikiStore } from './store'
 
 /** Библиотека файлов: папки, поиск, тип, загрузка (Файлы в макете) */
 export function FilesLibrary() {
+  const readOnly = useReadOnly()
   const { folder, kind, fileQ, newFolder, setFolder, setKind, setFileQuery, setNewFolder, libraryRoot, openPage } = useWikiStore()
   const files = useLibrary().data?.files ?? []
   const folders = useFolders().data ?? []
@@ -86,6 +88,7 @@ export function FilesLibrary() {
             className="sr"
             type="file"
             multiple
+            disabled={readOnly}
             onChange={(e) => {
               const picked = pickedFiles(e.currentTarget)
               if (picked.length) upload.mutate({ files: picked, folderId: folder }, { onError: () => useToast.getState().show(UPLOAD_FAILED) })
@@ -121,7 +124,7 @@ export function FilesLibrary() {
               onChange={(e) => setNewFolder(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addFolder()}
             />
-            <Button onClick={addFolder}>Создать</Button>
+            <Button write onClick={addFolder}>Создать</Button>
           </div>
         )}
       </div>
