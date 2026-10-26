@@ -866,6 +866,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Поиск по названиям. Сначала точное совпадение, потом начало названия или id, потом остальное; внутри группы недавно
+         *     менявшееся выше. Пустой запрос даёт пустые списки.
+         */
+        get: operations["search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/subtasks/{id}": {
         parameters: {
             query?: never;
@@ -1316,6 +1336,18 @@ export interface components {
             /** Format: uuid */
             updated_by?: string | null;
         };
+        /** @description Документ в результатах */
+        DocHitDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description page | edge */
+            mode: string;
+            /** Format: uuid */
+            project_id: string;
+            project_name: string;
+            /** @description Пустое название значит «без названия» */
+            title: string;
+        };
         /**
          * @description Режим документа: страница или холст. Текст и объекты в обоих режимах одни и те же.
          * @enum {string}
@@ -1397,6 +1429,16 @@ export interface components {
              * @description Страница вики, к которой прикреплён файл
              */
             wiki_page_id?: string | null;
+        };
+        /** @description Файл библиотеки в результатах */
+        FileHitDto: {
+            /** Format: uuid */
+            id: string;
+            /** @description img | pdf | doc | sheet | zip | other */
+            kind: string;
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
         };
         FileListDto: {
             /** @description Подходящие под фильтр, новые первыми */
@@ -1669,6 +1711,13 @@ export interface components {
             /** @description Снизу вверх */
             objects: components["schemas"]["CanvasObjectDto"][];
         };
+        /** @description Результаты поиска: по восемь лучших каждого вида */
+        SearchDto: {
+            docs: components["schemas"]["DocHitDto"][];
+            files: components["schemas"]["FileHitDto"][];
+            tasks: components["schemas"]["TaskHitDto"][];
+            wiki: components["schemas"]["WikiHitDto"][];
+        };
         SetStar: {
             starred: boolean;
         };
@@ -1795,6 +1844,20 @@ export interface components {
             size_bytes: number;
             /** Format: uuid */
             uploader_id?: string | null;
+        };
+        /** @description Задача в результатах */
+        TaskHitDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Id задачи для показа: `WEB-141`
+             * @example WEB-141
+             */
+            key: string;
+            /** Format: uuid */
+            project_id: string;
+            project_name: string;
+            title: string;
         };
         /** @description Поля формы загрузки вложения задачи */
         TaskUploadForm: {
@@ -2040,6 +2103,12 @@ export interface components {
             current: components["schemas"]["WikiPageDto"];
             /** @example Страницу изменил другой участник */
             message: string;
+        };
+        /** @description Страница вики в результатах */
+        WikiHitDto: {
+            /** Format: uuid */
+            id: string;
+            title: string;
         };
         /** @description Страница в дереве: без текста */
         WikiNodeDto: {
@@ -5117,6 +5186,47 @@ export interface operations {
             };
             /** @description Нет такого релиза */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    search: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Что искать: часть названия или id задачи (`WEB-141`), без учёта регистра. Пустой запрос ничего не находит. */
+                q: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Найденное, по восемь лучших каждого вида */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchDto"];
+                };
+            };
+            /** @description Запрос длиннее ста символов */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

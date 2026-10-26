@@ -70,6 +70,8 @@ type SidebarProps = {
   /** Сколько уведомлений не прочитано: число рядом с пунктом меню и точка у имени. Пункта нет, если не задано (витрина). */
   notificationsCount?: number
   onOpenNotifications?: () => void
+  /** Окно поиска (Ctrl+K). Пункта нет, если не задано (витрина). */
+  onOpenSearch?: () => void
   onOpenArchive: () => void
 }
 
@@ -101,6 +103,7 @@ export function Sidebar({
   onOpenInvites,
   notificationsCount = 0,
   onOpenNotifications,
+  onOpenSearch,
   onOpenArchive,
 }: SidebarProps) {
   const userButton = useRef<HTMLButtonElement>(null)
@@ -220,6 +223,15 @@ export function Sidebar({
                 <Icon name="gear" sm />
                 Настройки
               </MenuItem>
+              {onOpenSearch && (
+                <MenuItem onClick={onOpenSearch}>
+                  <Icon name="search" sm />
+                  Поиск
+                  <span aria-hidden="true" style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>
+                    Ctrl+K
+                  </span>
+                </MenuItem>
+              )}
               {onOpenNotifications && (
                 <MenuItem onClick={onOpenNotifications}>
                   <Icon name="bell" sm />

@@ -42,7 +42,7 @@ test('меню пользователя: открывается, закрыва�
   await trigger.click()
   await expect(trigger).toHaveAttribute('aria-expanded', 'true')
   await expect(menu).toBeVisible()
-  await expect(menu.getByRole('menuitem')).toHaveText(['Настройки', 'Уведомления', 'Приглашения', 'Архив проектов', 'Тёмная тема', 'Выйти'])
+  await expect(menu.getByRole('menuitem')).toHaveText(['Настройки', /^Поиск/, 'Уведомления', 'Приглашения', 'Архив проектов', 'Тёмная тема', 'Выйти'])
 
   await page.keyboard.press('Escape')
   await expect(menu).toBeHidden()

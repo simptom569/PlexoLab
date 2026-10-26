@@ -13,6 +13,7 @@ import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
 import { useDark } from '../../lib/useDark'
 import { useCloseGuard } from '../../lib/useCloseGuard'
+import { useSearchShortcut } from '../../lib/useSearchShortcut'
 import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
 import { CloseAskDialog } from './CloseAskDialog'
@@ -72,6 +73,8 @@ export function Workspace() {
   useLinkWatch()
   // окно с неотправленным текстом молча не закрывается (lib/closeGuard.ts)
   useCloseGuard()
+  // Ctrl+K: поиск по названиям
+  useSearchShortcut()
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
 
@@ -164,6 +167,7 @@ export function Workspace() {
           onOpenInvites={() => openProjectDialog({ kind: 'invites' })}
           notificationsCount={notifications.data?.unread ?? 0}
           onOpenNotifications={() => openProjectDialog({ kind: 'notifications' })}
+          onOpenSearch={() => openProjectDialog({ kind: 'search' })}
           onOpenArchive={() => openProjectDialog({ kind: 'archive' })}
           connection={live ? connection : undefined}
           onLogout={() => {

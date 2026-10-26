@@ -15,7 +15,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement | null>, onEscape: () 
     const dialog = ref.current
     if (!dialog) return
     const opener = returnFocus?.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
-    ;(dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? dialog).focus()
+    ;(dialog.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? dialog.querySelector<HTMLElement>('[data-autofocus]') ?? dialog).focus()
     openDialogs.push(dialog)
 
     const onKey = (e: KeyboardEvent) => {

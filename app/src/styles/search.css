@@ -1,0 +1,75 @@
+/*
+  Дополнение к макету (этап Н4, docs/OFFLINE-NOTIFY-SEARCH.md, раздел 3): окно «Поиск» (Ctrl+K). Собрано из переменных макета,
+  деталей окон проектов (projects.css) и поля поиска доски (.search из styles.css); styles.css (копия макета) не менялся.
+
+  - Поле поиска растянуто на всю ширину окна (в макете оно у доски фиксированной ширины). У .search в макете `flex: 0 1 260px`:
+    в колонке окна это была бы высота 260px, поэтому здесь `flex: none` и прежние 40px.
+  - Результаты по группам «Задачи», «Документы», «Вики», «Файлы»; выбранная строка залита --surface2, как наведённая у
+    строк уведомлений. Список прокручивается внутри окна.
+*/
+.srch-box {
+  flex: none;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.srch-empty {
+  margin-top: 4px;
+}
+
+.srch-list {
+  max-height: min(420px, calc(100vh - 220px));
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.srch-group {
+  padding: 10px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.srch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.srch-row.on {
+  background: var(--surface2);
+}
+
+.srch-ic {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+.srch-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.srch-title {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.srch-where {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -19,6 +19,7 @@ export type ProjectDialog =
   | { kind: 'invites' }
   | { kind: 'archive' }
   | { kind: 'notifications' }
+  | { kind: 'search' }
 
 /** Меню проекта по правой кнопке: где оно открыто на экране */
 export type ProjectMenu = { id: string; x: number; y: number }

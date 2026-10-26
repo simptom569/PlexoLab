@@ -1,5 +1,6 @@
 import { useUi } from '../../lib/ui-store'
 import { NotificationsDialog } from '../notifications/NotificationsDialog'
+import { SearchDialog } from '../search/SearchDialog'
 import { ArchiveDialog } from './ArchiveDialog'
 import { InvitesDialog } from './InvitesDialog'
 import { NewProjectDialog } from './NewProjectDialog'
@@ -17,6 +18,7 @@ export function ProjectDialogs() {
       {dialog?.kind === 'invites' && <InvitesDialog />}
       {dialog?.kind === 'archive' && <ArchiveDialog />}
       {dialog?.kind === 'notifications' && <NotificationsDialog />}
+      {dialog?.kind === 'search' && <SearchDialog />}
     </>
   )
 }

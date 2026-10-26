@@ -12,6 +12,7 @@ import type {
   Folder,
   Invite,
   NotificationList,
+  SearchResult,
   LinkGroup,
   Members,
   Project,
@@ -113,6 +114,19 @@ export const useFolders = () => useQuery({ queryKey: keys.folders, queryFn: () =
 /** Документы проекта без текста: карточки списка. Порядок общий для участников проекта. */
 export const useDocs = (projectId: string) =>
   useQuery({ queryKey: keys.projectDocs(projectId), queryFn: () => api.get<DocSummary[]>(`/projects/${projectId}/docs`) })
+
+/**
+ * Поиск по названиям задач (и их id), документов, страниц вики и файлов (окно «Поиск»). Пока идёт новый запрос, остаётся
+ * прошлый ответ. Пустой запрос не ходит на сервер.
+ */
+export const useSearch = (q: string) =>
+  useQuery({
+    queryKey: ['search', q] as const,
+    queryFn: () => api.get<SearchResult>(`/search?q=${encodeURIComponent(q)}`),
+    enabled: q !== '',
+    placeholderData: keepPreviousData,
+    staleTime: 5_000,
+  })
 
 /** Поиск по названию и тексту: ищет сервер, потому что текст в список не приходит. Пока ответа нет, остаётся прошлый. */
 export const useDocSearch = (projectId: string, q: string) =>
