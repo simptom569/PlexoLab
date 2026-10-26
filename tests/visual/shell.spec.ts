@@ -53,6 +53,15 @@ test('меню пользователя: открывается, закрыва�
   await expect(menu).toBeHidden()
 })
 
+test('окно не «пружинит»: у корня страницы overscroll-behavior none (в окне Tauri иначе страница тянется за край и возвращается)', async ({ page }) => {
+  await openApp(page)
+  await expect(page.locator('html')).toHaveCSS('overscroll-behavior-y', 'none')
+  await expect(page.locator('html')).toHaveCSS('overscroll-behavior-x', 'none')
+  await expect(page.locator('body')).toHaveCSS('overscroll-behavior-y', 'none')
+  // а у холста документа прежнее поведение: колесо там принадлежит холсту
+  await expect(page.locator('.app')).toBeVisible()
+})
+
 test('переключатель темы ставит класс dark на .app, меняет подпись и запоминается', async ({ page }) => {
   const app = page.locator('.app')
   await expect(app).not.toHaveClass(/\bdark\b/)
