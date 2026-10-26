@@ -17,6 +17,7 @@ pub mod notifications;
 pub mod project_dto;
 pub mod projects;
 pub mod releases;
+pub mod search;
 pub mod tags;
 pub mod tasks;
 pub mod users;
@@ -39,5 +40,6 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(docs::router())
         .merge(files::router())
         .merge(activity::router())
+        .merge(search::router())
         .merge(links::router())
 }

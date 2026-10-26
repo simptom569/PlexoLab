@@ -149,6 +149,8 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     // уведомления: список свой по определению, отметка действует только для владельца записи
     ("GET",    "/notifications",                       Nothing,      Open),
     ("POST",   "/notifications/read-all",              Nothing,      Open),
+    // поиск по названиям: проекты в нём отбираются по человеку внутри запроса, вики и файлы общие
+    ("GET",    "/search",                              Nothing,      Open),
     ("POST",   "/notifications/{id}/read",             Notif,        Own),
 ];
 

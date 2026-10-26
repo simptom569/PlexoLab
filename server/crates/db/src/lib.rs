@@ -23,6 +23,7 @@ pub mod modules;
 pub mod notifications;
 pub mod projects;
 pub mod releases;
+pub mod search;
 pub mod seed;
 pub mod subtasks;
 pub mod tags;

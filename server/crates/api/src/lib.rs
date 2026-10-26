@@ -72,6 +72,12 @@ async fn not_found() -> ApiError {
 pub async fn run(config: Config) -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await.context("не удалось подключиться к базе данных")?;
     db::migrate(&pool).await.context("не удалось применить миграции")?;
+    // поиск без учёта регистра идёт через lower(): в локали C русские буквы не различаются (README, «Локаль базы данных»)
+    if !db::search::lowercase_works(&pool).await.unwrap_or(true) {
+        tracing::warn!(
+            "локаль базы не различает регистр русских букв: поиск «планирование» не найдёт «Планирование» (см. README, «Локаль базы данных»)"
+        );
+    }
 
     let state = AppState::new(pool, &config.jwt_secret)
         .with_openapi(config.expose_openapi)
