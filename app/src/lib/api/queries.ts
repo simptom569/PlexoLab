@@ -11,6 +11,7 @@ import type {
   FileList,
   Folder,
   Invite,
+  NotificationList,
   LinkGroup,
   Members,
   Project,
@@ -46,6 +47,8 @@ export const keys = {
   activityFeed: (projectId: string, actor: string | null, kind: string | null) => ['activity', projectId, actor, kind] as const,
   /** Кто есть в ленте проекта; лежит под началом ключа ленты, поэтому новое событие перечитывает и его */
   activityActors: (projectId: string) => ['activity', projectId, 'actors'] as const,
+  /** Мои уведомления и счётчик непрочитанных (число в меню пользователя) */
+  notifications: ['notifications'] as const,
   /** Начало ключа групп ссылок всех проектов */
   linkGroups: ['link-groups'] as const,
   projectLinkGroups: (projectId: string) => ['link-groups', projectId] as const,
@@ -59,6 +62,10 @@ export const useArchivedProjects = () =>
 
 /** Приглашения, на которые я не ответил (их число показывает боковое меню) */
 export const useMyInvites = () => useQuery({ queryKey: keys.invites, queryFn: () => api.get<Invite[]>('/invites') })
+
+/** Мои уведомления: назначили исполнителем, упомянули. Число непрочитанных показывает боковое меню. */
+export const useNotifications = () =>
+  useQuery({ queryKey: keys.notifications, queryFn: () => api.get<NotificationList>('/notifications') })
 
 /** Участники проекта; ожидающие приглашения приходят только администратору */
 export const useMembers = (projectId: string | null) =>

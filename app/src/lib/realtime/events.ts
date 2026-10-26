@@ -141,6 +141,9 @@ export function queryKeysFor(e: ServerEvent): QueryKey[] {
     // чьё-то приглашение в проект появилось, принято или отозвано
     case 'invite.changed':
       return [keys.invites]
+    // мне пришло уведомление, или я прочитал его в другом окне
+    case 'notification.changed':
+      return [keys.notifications]
     // имя и цвет аватара участника видны везде: в списках, карточках, комментариях и ленте
     case 'user.changed':
       return [keys.users]

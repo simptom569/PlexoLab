@@ -1,4 +1,5 @@
-// Окна проектов (docs/PROJECTS.md, раздел 3): новый проект, настройки проекта, приглашения, архив проектов.
+// Окна проектов (docs/PROJECTS.md, раздел 3): новый проект, настройки проекта, приглашения, архив проектов; рядом с ними
+// окно «Уведомления» (docs/OFFLINE-NOTIFY-SEARCH.md, раздел 2).
 // В макете их нет, они собраны из деталей окна «Настройки» (styles/projects.css).
 
 export const PROJECT_TABS = ['main', 'members', 'tags', 'archive'] as const
@@ -17,6 +18,7 @@ export type ProjectDialog =
   | { kind: 'settings'; id: string; tab: ProjectTab }
   | { kind: 'invites' }
   | { kind: 'archive' }
+  | { kind: 'notifications' }
 
 /** Меню проекта по правой кнопке: где оно открыто на экране */
 export type ProjectMenu = { id: string; x: number; y: number }

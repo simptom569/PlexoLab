@@ -432,6 +432,57 @@ export interface paths {
         patch: operations["update_module"];
         trace?: never;
     };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Мои уведомления: новые первыми, и сколько из них не прочитано. Видны только уведомления проектов, где я участник. */
+        get: operations["list_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отметить прочитанными все мои уведомления */
+        post: operations["read_all"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отметить прочитанным одно моё уведомление. Повторная отметка ничего не меняет. */
+        post: operations["read_one"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects": {
         parameters: {
             query?: never;
@@ -1100,11 +1151,14 @@ export interface components {
         CommentDto: {
             /** Format: uuid */
             author_id: string;
+            /** @description Текст. Упоминание человека в нём метка `@[id]`, клиент показывает вместо неё его имя. */
             body: string;
             /** Format: date-time */
             created_at: string;
             /** Format: uuid */
             id: string;
+            /** @description Кого упомянули: участники проекта, проверенные при создании комментария */
+            mentions: string[];
         };
         CreateColumn: {
             /** @description Токен цвета; без него цвет берётся по кругу */
@@ -1487,6 +1541,46 @@ export interface components {
             x: number;
             /** Format: float */
             y: number;
+        };
+        /** @description Одно уведомление в списке */
+        NotificationDto: {
+            /**
+             * Format: uuid
+             * @description Кто назначил или упомянул (учётную запись могли удалить)
+             */
+            actor_id?: string | null;
+            /** @description Начало комментария с упоминанием (метки заменены на `@Имя`); у «назначили» нет */
+            comment?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description `assigned` — назначили исполнителем, `mentioned` — упомянули в комментарии
+             * @example mentioned
+             */
+            kind: string;
+            /** Format: uuid */
+            project_id: string;
+            read: boolean;
+            /** Format: uuid */
+            task_id: string;
+            /**
+             * @description Id задачи для показа: `WEB-141`
+             * @example WEB-141
+             */
+            task_key: string;
+            task_title: string;
+        };
+        /** @description Список уведомлений и сколько из них не прочитано */
+        NotificationListDto: {
+            /** @description Новые первыми, не больше ста */
+            items: components["schemas"]["NotificationDto"][];
+            /**
+             * Format: int64
+             * @description Сколько непрочитанных всего (может быть больше, чем в списке)
+             */
+            unread: number;
         };
         /**
          * @description Тип объекта на холсте
@@ -3451,6 +3545,101 @@ export interface operations {
             };
         };
     };
+    list_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Мои уведомления */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationListDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    read_all: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Все мои уведомления прочитаны */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    read_one: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Уведомление */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Уведомление прочитано */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого уведомления среди моих */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     list_projects: {
         parameters: {
             query?: {
@@ -5309,7 +5498,7 @@ export interface operations {
                     "application/json": components["schemas"]["CommentDto"];
                 };
             };
-            /** @description Пустой или слишком длинный комментарий */
+            /** @description Пустой или слишком длинный комментарий, упомянут не участник проекта */
             400: {
                 headers: {
                     [name: string]: unknown;

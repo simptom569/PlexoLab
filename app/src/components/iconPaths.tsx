@@ -184,6 +184,13 @@ export const ICON_PATHS = {
       <path d="M16 8l4 4-4 4M20 12H9" />
     </>
   ),
+  // для пункта «Уведомления» в меню пользователя (этап Н3)
+  bell: (
+    <>
+      <path d="M18 9a6 6 0 0 0-12 0c0 6-2.5 8-2.5 8h17S18 15 18 9z" />
+      <path d="M10.2 20.5a2 2 0 0 0 3.6 0" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>
 
 export type IconName = keyof typeof ICON_PATHS

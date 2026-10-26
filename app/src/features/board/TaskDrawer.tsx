@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Avatar, Button, DateField, Icon, IconButton, Input, Opt, Pill, PriorityBars, ProgressBar, Textarea, Tick } from '../../components'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Avatar, Button, DateField, Icon, IconButton, Input, MentionTextarea, Opt, Pill, PriorityBars, ProgressBar, Textarea, Tick } from '../../components'
 import { useTask } from '../../lib/api/queries'
 import type { Comment, Subtask, TaskCard, TaskDetail, UpdateTask } from '../../lib/api/types'
 import { cx } from '../../lib/cx'
 import { whenText } from '../../lib/date'
 import { PRIORITY_LABELS, type Priority } from '../../lib/domain'
 import { formatSize } from '../../lib/format'
+import { splitMarks, toWire, type Mentionable } from '../../lib/mentions'
 import { toneAt } from '../../lib/tones'
 import { UPLOAD_FAILED, useToast } from '../../lib/toast'
 import { pickedFiles } from '../../lib/upload'
@@ -289,6 +290,24 @@ function Files({ detail }: { detail: TaskDetail }) {
   )
 }
 
+/** Текст комментария: метки `@[id]` показаны именем человека, как оно сейчас в его профиле */
+function CommentBody({ body }: { body: string }) {
+  const m = useModel()
+  return (
+    <div>
+      {splitMarks(body).map((piece, i) => {
+        if (piece.kind === 'text') return <Fragment key={i}>{piece.text}</Fragment>
+        const user = m.usersById.get(piece.id)
+        return (
+          <span key={i} className={piece.id === m.me.id ? 'mention me' : 'mention'}>
+            @{user?.name ?? 'кто-то'}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 function CommentItem({ comment }: { comment: Comment }) {
   const m = useModel()
   const author = m.usersById.get(comment.author_id)
@@ -299,7 +318,7 @@ function CommentItem({ comment }: { comment: Comment }) {
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
           <strong style={{ color: 'var(--ink)' }}>{author?.name ?? 'Неизвестный автор'}</strong> · {whenText(comment.created_at)}
         </div>
-        <div>{comment.body}</div>
+        <CommentBody body={comment.body} />
       </div>
     </div>
   )
@@ -309,10 +328,15 @@ function Comments({ detail }: { detail: TaskDetail }) {
   const m = useModel()
   const { createComment } = useMutations()
   const [draft, setDraft] = useState('')
+  // кого выбрали в списке по «@»: их имена при отправке станут метками
+  const [picked, setPicked] = useState<Mentionable[]>([])
+  const people = m.members.filter((u) => u.id !== m.me.id).map((u) => ({ id: u.id, name: u.name, tone: u.tone }))
   const send = () => {
-    const body = draft.trim()
-    if (!body) return
+    const text = draft.trim()
+    if (!text) return
+    const body = toWire(text, picked)
     setDraft('')
+    setPicked([])
     createComment.mutate({ taskId: detail.id, body })
   }
   return (
@@ -327,12 +351,14 @@ function Comments({ detail }: { detail: TaskDetail }) {
         <div className="comment">
           <Avatar name={m.me.name} tone={m.me.tone} decorative />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-            <Textarea
+            <MentionTextarea
               style={{ minHeight: 64 }}
               placeholder="Написать комментарий"
               aria-label="Комментарий"
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={setDraft}
+              people={people}
+              onPick={(p) => setPicked((list) => [...list, p])}
             />
             <Button write style={{ alignSelf: 'flex-end' }} onClick={send}>
               Отправить

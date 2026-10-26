@@ -5,7 +5,7 @@ import { OfflineBar } from '../../components/OfflineBar'
 import { Toast } from '../../components/Toast'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/Surfaces'
-import { useBoard, useMyInvites, useProjects, useUsers } from '../../lib/api/queries'
+import { useBoard, useMyInvites, useNotifications, useProjects, useUsers } from '../../lib/api/queries'
 import { queryClient } from '../../lib/query'
 import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
@@ -65,6 +65,7 @@ export function Workspace() {
   const dark = useDark()
   const projects = useProjects()
   const invites = useMyInvites()
+  const notifications = useNotifications()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient, live)
   // сеть пропала или вернулась: узнаём сразу, а не по неудачному запросу
@@ -161,6 +162,8 @@ export function Workspace() {
           onProjectMenu={(id, x, y) => openProjectMenu({ id, x, y })}
           invitesCount={invites.data?.length ?? 0}
           onOpenInvites={() => openProjectDialog({ kind: 'invites' })}
+          notificationsCount={notifications.data?.unread ?? 0}
+          onOpenNotifications={() => openProjectDialog({ kind: 'notifications' })}
           onOpenArchive={() => openProjectDialog({ kind: 'archive' })}
           connection={live ? connection : undefined}
           onLogout={() => {

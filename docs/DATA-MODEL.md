@@ -131,8 +131,25 @@ create table comments (
   id uuid primary key default gen_random_uuid(),
   task_id uuid not null references tasks on delete cascade,
   author_id uuid not null references users,
-  body text not null, created_at timestamptz not null default now()
+  body text not null, created_at timestamptz not null default now(),
+  mentions uuid[] not null default '{}'   -- кого упомянули: участники проекта, проверенные при создании (этап Н3); в тексте метки `@[id]`
 );
+
+create type notification_kind as enum ('assigned', 'mentioned');
+create table notifications (          -- уведомления (этап Н3): назначили исполнителем, упомянули в комментарии
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users on delete cascade,        -- кому
+  kind notification_kind not null,
+  actor_id uuid references users on delete set null,               -- кто назначил или упомянул
+  project_id uuid not null references projects on delete cascade,
+  task_id uuid not null references tasks on delete cascade,
+  comment_id uuid references comments on delete cascade,           -- только у «упомянули»
+  created_at timestamptz not null default now(),
+  read_at timestamptz,
+  check ((kind = 'mentioned') = (comment_id is not null))
+);
+create index on notifications (user_id, created_at desc, id desc);
+create index on notifications (user_id) where read_at is null;
 
 create table releases (
   id uuid primary key default gen_random_uuid(),
@@ -248,7 +265,8 @@ create index on tasks (project_id, column_id, position);
 | `POST /projects/{id}/columns`, `PATCH /columns/{id}`, `DELETE /columns/{id}?move_to=` | колонки; порядок и цвет через `PATCH` |
 | `POST /projects/{id}/tasks`, `GET /tasks/{id}`, `PATCH /tasks/{id}`, `DELETE /tasks/{id}` | задачи; `PATCH` принимает любые поля, в том числе `column_id` и `before_id` (перенос) |
 | `POST /tasks/{id}/subtasks`, `PATCH /subtasks/{id}`, `DELETE /subtasks/{id}` | подзадачи |
-| `POST /tasks/{id}/comments` | комментарий |
+| `POST /tasks/{id}/comments` | комментарий. Упоминание человека в тексте метка `@[id]` (клиент показывает вместо неё имя); упомянуть можно только участника проекта и не больше 20 человек за раз, иначе 400. Каждому упомянутому, кроме автора, создаётся уведомление |
+| `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all` | мои уведомления (этап Н3): новые первыми, не больше 100, и `unread`, сколько всего не прочитано; `read` отмечает одно (чужое или неизвестное: 404, повтор ничего не меняет), `read-all` все. Видны только уведомления проектов, где я участник и которые не в архиве. «Назначили исполнителем» создаёт `PATCH /tasks/{id}` (себя назначить не сообщается, повторное непрочитанное по той же задаче заменяется), «упомянули» создаёт комментарий. Прочитанные старше 30 дней и всё сверх 200 самых новых у человека сервер убирает при создании нового уведомления, фонового процесса нет |
 | `POST /tasks/{id}/files` (multipart), `DELETE /files/{id}` | вложения задачи |
 | `POST /projects/{id}/modules`, `PATCH`/`DELETE /modules/{id}` | модули (список приходит в `GET /projects/{id}/board`; `tasks_total` и `tasks_done` считает сервер, «готово» — задача в колонке с отметкой «Готово»). `key` в ответе и в `PATCH`: ключ задач (2–6 символов, латиница и цифры, с буквы, хранится в верхнем регистре; `null` или `""` убирает). Ключ не должен совпасть с ключом другого модуля и с ключом проекта (а у проекта без ключа с `TASK`): иначе 409. Первый ключ и снятие переносят задачи модуля в другой ряд, `DELETE` переносит задачи ряда модуля в ряд проекта (новые номера) |
 | `POST /projects/{id}/milestones`, `PATCH`/`DELETE /milestones/{id}` | вехи (в ответе тоже `tasks_total` и `tasks_done`) |
@@ -299,6 +317,7 @@ create index on tasks (project_id, column_id, position);
 | `file.changed` | файлы и папки | библиотека, папки, открытые задачи |
 | `link.changed` | ссылки проекта (участникам проекта) | группы ссылок |
 | `project.changed` | проект создан, переименован, заархивирован, поменялся состав участников или чьё-то приглашение | список проектов (боковое меню) и доска |
+| `notification.changed` | человеку пришло уведомление или он прочитал его в другом окне (приходит только ему лично) | мои уведомления |
 | `invite.changed` | приглашение человеку появилось, принято, отклонено или отозвано (приходит приглашённому лично) | мои приглашения |
 | `user.changed` | человек поменял своё имя, подпись или цвет аватара (`PATCH /me`) | список участников; у того же человека на другом устройстве обновляется и боковое меню |
 | `activity.created` | действие могло попасть в ленту (ручка записи, которая обычно пишет событие в активность) | лента активности |

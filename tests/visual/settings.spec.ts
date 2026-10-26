@@ -12,13 +12,13 @@ test.describe('меню пользователя', () => {
     await expect(page.locator('.side .count')).toHaveText('5')
   })
 
-  test('в шапке e-mail, связь и адрес сервера, ниже «Настройки», «Приглашения», «Архив проектов», тема и «Выйти»', async ({ page }) => {
+  test('в шапке e-mail, связь и адрес сервера, ниже «Настройки», «Уведомления», «Приглашения», «Архив проектов», тема и «Выйти»', async ({ page }) => {
     await page.getByRole('button', { name: USER_BUTTON }).click()
     const menu = page.getByRole('menu', { name: 'Меню пользователя' })
     await expect(menu.getByText('lena@example.com')).toBeVisible()
     await expect(menu.getByText('Связь есть')).toBeVisible()
     await expect(menu.getByText(SERVER)).toBeVisible()
-    await expect(menu.getByRole('menuitem')).toHaveText(['Настройки', 'Приглашения', 'Архив проектов', 'Тёмная тема', 'Выйти'])
+    await expect(menu.getByRole('menuitem')).toHaveText(['Настройки', 'Уведомления', 'Приглашения', 'Архив проектов', 'Тёмная тема', 'Выйти'])
   })
 
   test('«Настройки» закрывают меню и открывают окно на «Аккаунте»', async ({ page }) => {

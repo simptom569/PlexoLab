@@ -98,6 +98,10 @@ describe('queryKeysFor', () => {
     expect(queryKeysFor(event('invite.changed'))).toEqual([keys.invites])
   })
 
+  it('уведомление пришло или прочитано в другом окне: список уведомлений', () => {
+    expect(queryKeysFor(event('notification.changed'))).toEqual([keys.notifications])
+  })
+
   it('комментарий: только задача', () => {
     expect(queryKeysFor(event('comment.created', { id: 't1' }))).toEqual([keys.task('t1')])
     expect(queryKeysFor(event('comment.created'))).toEqual([['task']])

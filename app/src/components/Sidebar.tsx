@@ -67,7 +67,16 @@ type SidebarProps = {
   /** Сколько приглашений ждёт ответа: число в меню пользователя и точка у имени */
   invitesCount: number
   onOpenInvites: () => void
+  /** Сколько уведомлений не прочитано: число рядом с пунктом меню и точка у имени. Пункта нет, если не задано (витрина). */
+  notificationsCount?: number
+  onOpenNotifications?: () => void
   onOpenArchive: () => void
+}
+
+/** Подпись точки у имени: что ждёт человека */
+function attentionLabel(invites: number, notifications: number): string {
+  if (invites > 0 && notifications > 0) return 'Есть приглашения в проекты и непрочитанные уведомления'
+  return invites > 0 ? 'Есть приглашения в проекты' : 'Есть непрочитанные уведомления'
 }
 
 export function Sidebar({
@@ -90,6 +99,8 @@ export function Sidebar({
   onProjectMenu,
   invitesCount,
   onOpenInvites,
+  notificationsCount = 0,
+  onOpenNotifications,
   onOpenArchive,
 }: SidebarProps) {
   const userButton = useRef<HTMLButtonElement>(null)
@@ -179,7 +190,9 @@ export function Sidebar({
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
               <strong style={{ fontSize: 14 }}>
                 {user.name}
-                {invitesCount > 0 && <span className="invite-dot" role="img" aria-label="Есть приглашения в проекты" />}
+                {invitesCount + notificationsCount > 0 && (
+                  <span className="invite-dot" role="img" aria-label={attentionLabel(invitesCount, notificationsCount)} />
+                )}
               </strong>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{user.role}</span>
             </span>
@@ -207,6 +220,17 @@ export function Sidebar({
                 <Icon name="gear" sm />
                 Настройки
               </MenuItem>
+              {onOpenNotifications && (
+                <MenuItem onClick={onOpenNotifications}>
+                  <Icon name="bell" sm />
+                  Уведомления
+                  {notificationsCount > 0 && (
+                    <span style={{ marginLeft: 'auto' }}>
+                      <Count>{notificationsCount}</Count>
+                    </span>
+                  )}
+                </MenuItem>
+              )}
               <MenuItem onClick={onOpenInvites}>
                 <Icon name="user" sm />
                 Приглашения

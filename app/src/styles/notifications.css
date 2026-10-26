@@ -1,0 +1,109 @@
+/*
+  Дополнение к макету (этап Н3, docs/OFFLINE-NOTIFY-SEARCH.md, раздел 2): окно «Уведомления» и упоминания в комментариях.
+  Собрано из переменных макета и деталей окон проектов (projects.css); styles.css (копия макета) не менялся.
+
+  - Строка уведомления: кнопка на всю ширину, у непрочитанной справа от заголовка точка цвета --accent (как точка у имени
+    пользователя для приглашений), прочитанная приглушена.
+  - Упоминание в тексте комментария: фон --accent-soft и цвет --accent, как у выбранной кнопки; упоминание меня самого
+    заливается --accent.
+*/
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.notif-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.notif {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* разделитель между строками, как у строк окон проектов (.proj-row) */
+.notif + .notif {
+  border-top: 1px solid var(--line);
+}
+
+.notif:hover {
+  background: var(--surface2);
+}
+
+.notif.unread {
+  color: var(--ink);
+}
+
+.notif-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notif-title {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.notif-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.notif-task {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-quote {
+  font-size: 13px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.mention {
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.mention.me {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
