@@ -129,6 +129,11 @@ pub async fn exists<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<bool, sqlx:
     sqlx::query_scalar("select exists (select 1 from users where id = $1)").bind(id).fetch_one(ex).await
 }
 
+/// Имена людей по id (для текста уведомлений); кого нет, тех в ответе нет
+pub async fn names<'e>(ex: impl PgExecutor<'e>, ids: &[Uuid]) -> Result<Vec<(Uuid, String)>, sqlx::Error> {
+    sqlx::query_as("select id, name from users where id = any($1)").bind(ids).fetch_all(ex).await
+}
+
 /// Участники команды в порядке добавления
 pub async fn list(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(select_user!("order by seq")).fetch_all(pool).await

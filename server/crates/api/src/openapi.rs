@@ -25,7 +25,8 @@ use utoipa::{
         (name = "docs", description = "Документы и холст"),
         (name = "files", description = "Библиотека файлов, папки, вложения задач"),
         (name = "activity", description = "Лента активности команды"),
-        (name = "links", description = "Ссылки команды")
+        (name = "links", description = "Ссылки команды"),
+        (name = "notifications", description = "Уведомления: назначили, упомянули")
     )
 )]
 pub struct ApiDoc;

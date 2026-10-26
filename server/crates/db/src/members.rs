@@ -33,6 +33,15 @@ pub async fn list<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<M
     .await
 }
 
+/// Сколько из этих людей участники проекта (повторы в `user_ids` не считаются дважды)
+pub async fn count_of<'e>(ex: impl PgExecutor<'e>, project_id: Uuid, user_ids: &[Uuid]) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("select count(*) from project_members where project_id = $1 and user_id = any($2)")
+        .bind(project_id)
+        .bind(user_ids)
+        .fetch_one(ex)
+        .await
+}
+
 /// Роль человека в проекте (`admin` | `member`), если он участник
 pub async fn role_of<'e>(
     ex: impl PgExecutor<'e>,

@@ -153,12 +153,12 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("PATCH",  "/columns/{id}",             &[one("column.changed")]),
     ("DELETE", "/columns/{id}",             &[one("column.changed"), all("task.moved")]),
     ("POST",   "/projects/{id}/tasks",      &[all("task.created"), ACTIVITY]),
-    ("PATCH",  "/tasks/{id}",               &[one("task.updated"), ACTIVITY]),
+    ("PATCH",  "/tasks/{id}",               &[one("task.updated"), ACTIVITY, users("notification.changed")]),
     ("DELETE", "/tasks/{id}",               &[one("task.deleted"), ACTIVITY]),
     ("POST",   "/tasks/{id}/subtasks",      &[one("task.updated")]),
     ("PATCH",  "/subtasks/{id}",            &[all("task.updated")]),
     ("DELETE", "/subtasks/{id}",            &[all("task.updated")]),
-    ("POST",   "/tasks/{id}/comments",      &[one("comment.created"), ACTIVITY]),
+    ("POST",   "/tasks/{id}/comments",      &[one("comment.created"), ACTIVITY, users("notification.changed")]),
     ("POST",   "/tasks/{id}/files",         &[one("task.updated"), all("file.changed"), ACTIVITY]),
     ("POST",   "/projects/{id}/tags",       &[all("tag.changed")]),
     ("PATCH",  "/tags/{id}",                &[one("tag.changed")]),
@@ -174,6 +174,9 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("DELETE", "/invites/{id}",             &[all("project.changed"), users("invite.changed")]),
     ("POST",   "/invites/{id}/accept",      &[all("project.changed"), users("invite.changed")]),
     ("POST",   "/invites/{id}/decline",     &[all("project.changed"), users("invite.changed")]),
+    // уведомления: прочитал в одном окне, счётчик обновится в других окнах этого же человека
+    ("POST",   "/notifications/read-all",   &[users("notification.changed")]),
+    ("POST",   "/notifications/{id}/read",  &[users("notification.changed")]),
     // модули, вехи, релизы
     ("POST",   "/projects/{id}/modules",    &[all("module.changed"), ACTIVITY]),
     // ключ модуля меняет id его задач, поэтому перечитываются и задачи

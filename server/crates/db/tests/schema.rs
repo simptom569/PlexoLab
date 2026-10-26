@@ -17,6 +17,7 @@ const TABLES: &[&str] = &[
     "links",
     "milestones",
     "modules",
+    "notifications",
     "project_invites",
     "project_members",
     "projects",

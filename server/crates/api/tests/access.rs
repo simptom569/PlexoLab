@@ -28,6 +28,8 @@ enum Kind {
     Scoped,
     /// Данные проекта, и менять их может только администратор: участник получает 403
     AdminOnly,
+    /// Запись, принадлежащая одному человеку (уведомление): чужую не видно никому, даже администратору проекта
+    Own,
 }
 
 use Kind::*;
@@ -50,6 +52,7 @@ enum Of {
     Doc,
     Group,
     Link,
+    Notif,
 }
 
 use Of::*;
@@ -143,6 +146,10 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("DELETE", "/link-groups/{id}",                    Group,  Scoped),
     ("POST",   "/link-groups/{id}/links",              Group,  Scoped),
     ("DELETE", "/links/{id}",                          Link,   Scoped),
+    // уведомления: список свой по определению, отметка действует только для владельца записи
+    ("GET",    "/notifications",                       Nothing,      Open),
+    ("POST",   "/notifications/read-all",              Nothing,      Open),
+    ("POST",   "/notifications/{id}/read",             Notif,        Own),
 ];
 
 /// Все адреса из схемы OpenAPI без префикса `/api/v1`: (метод, адрес)
@@ -209,6 +216,8 @@ struct World {
     doc: Uuid,
     group: Uuid,
     link: Uuid,
+    /// Уведомление приглашённого (он не участник, но отметка прочитанным касается только владельца записи)
+    notification: Uuid,
 }
 
 impl World {
@@ -287,6 +296,13 @@ impl World {
             )
             .await,
         );
+        let notification = {
+            let mut conn = c.pool.acquire().await.unwrap();
+            db::notifications::insert_assigned(&mut conn, invitee.user.id, c.user.id, f.project, id_of(&task))
+                .await
+                .unwrap()
+                .id
+        };
         World {
             project: f.project,
             column,
@@ -302,6 +318,7 @@ impl World {
             doc,
             group,
             link,
+            notification,
         }
     }
 
@@ -322,6 +339,7 @@ impl World {
             Doc => self.doc,
             Group => self.group,
             Link => self.link,
+            Notif => self.notification,
         }
     }
 }
@@ -393,7 +411,7 @@ async fn every_address_with_project_data_refuses_a_stranger_and_works_for_member
 
     let mut checked = 0;
     for (method, path, of, kind) in ROUTES {
-        if !matches!(kind, Scoped | AdminOnly | Invitee) {
+        if !matches!(kind, Scoped | AdminOnly | Invitee | Own) {
             continue;
         }
         let w = World::build(&f, &invitee).await;
@@ -434,6 +452,14 @@ async fn every_address_with_project_data_refuses_a_stranger_and_works_for_member
                 );
                 let s = call(&invitee, method, path, *of, &w, other).await;
                 assert!(s != StatusCode::NOT_FOUND && s != StatusCode::FORBIDDEN, "приглашённый: {label} → {s}");
+            }
+            Own => {
+                // чужое уведомление «не найдено» всем, кроме владельца: и постороннему, и участнику, и администратору проекта
+                for (who, name) in [(&stranger, "посторонний"), (&mate, "участник"), (&f.c, "администратор проекта")] {
+                    assert_eq!(call(who, method, path, *of, &w, other).await, StatusCode::NOT_FOUND, "{name}: {label}");
+                }
+                let s = call(&invitee, method, path, *of, &w, other).await;
+                assert!(s != StatusCode::NOT_FOUND && s != StatusCode::FORBIDDEN, "владелец: {label} → {s}");
             }
             _ => unreachable!(),
         }

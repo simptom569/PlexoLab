@@ -284,14 +284,17 @@ impl From<Subtask> for SubtaskDto {
 pub struct CommentDto {
     pub id: Uuid,
     pub author_id: Uuid,
+    /// Текст. Упоминание человека в нём метка `@[id]`, клиент показывает вместо неё его имя.
     pub body: String,
+    /// Кого упомянули: участники проекта, проверенные при создании комментария
+    pub mentions: Vec<Uuid>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }
 
 impl From<Comment> for CommentDto {
     fn from(c: Comment) -> Self {
-        CommentDto { id: c.id, author_id: c.author_id, body: c.body, created_at: c.created_at }
+        CommentDto { id: c.id, author_id: c.author_id, body: c.body, mentions: c.mentions, created_at: c.created_at }
     }
 }
 

@@ -20,6 +20,7 @@ pub mod invites;
 pub mod links;
 pub mod members;
 pub mod modules;
+pub mod notifications;
 pub mod projects;
 pub mod releases;
 pub mod seed;

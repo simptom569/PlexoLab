@@ -6,6 +6,7 @@ pub mod board;
 pub mod docs;
 pub mod files;
 pub mod links;
+pub mod mentions;
 pub mod position;
 pub mod projects;
 pub mod users;

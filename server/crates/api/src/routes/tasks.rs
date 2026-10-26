@@ -8,7 +8,10 @@ use db::{
     sqlx::PgConnection,
     tasks::{self, Patch, Task},
 };
-use domain::board::{self, MAX_COMMENT_LEN, MAX_DESCRIPTION_LEN, MAX_PR_LEN, MAX_TITLE_LEN};
+use domain::{
+    board::{self, MAX_COMMENT_LEN, MAX_DESCRIPTION_LEN, MAX_PR_LEN, MAX_TITLE_LEN},
+    mentions,
+};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
@@ -19,6 +22,7 @@ use super::dto::{
 use crate::{
     access,
     error::{ApiError, ApiResult, ErrorBody},
+    events,
     extract::{ApiJson, ApiPath, AuthUser},
     state::AppState,
 };
@@ -255,6 +259,15 @@ async fn update_task(
         return Err(bad("Веха не найдена в проекте этой задачи"));
     }
 
+    // назначили исполнителем другого человека: ему уведомление (о том, что назначил себя, сообщать незачем)
+    let assigned = match patch.assignee {
+        Some(Some(assignee)) if task.assignee_id != Some(assignee) && assignee != auth.id => Some(assignee),
+        _ => None,
+    };
+    if let Some(assignee) = assigned {
+        db::notifications::insert_assigned(&mut tx, assignee, auth.id, project.id, id).await?;
+    }
+
     // другой ряд (модуль с ключом, из него, в другой такой) даёт новый номер, тот же ряд оставляет id как был
     let mut current = match module_change {
         Some(module) if module != task.module_id => {
@@ -306,6 +319,10 @@ async fn update_task(
     let current = tasks::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
     let dto = detail(&mut tx, current, &project).await?;
     tx.commit().await?;
+    // уведомление приходит назначенному сразу, даже если он смотрит другой проект
+    if let Some(assignee) = assigned {
+        events::note_user(assignee);
+    }
     Ok(Json(dto))
 }
 
@@ -440,7 +457,7 @@ async fn delete_subtask(
     request_body = CreateComment,
     responses(
         (status = 201, description = "Комментарий добавлен", body = CommentDto),
-        (status = 400, description = "Пустой или слишком длинный комментарий", body = ErrorBody),
+        (status = 400, description = "Пустой или слишком длинный комментарий, упомянут не участник проекта", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 404, description = "Нет такой задачи", body = ErrorBody),
     )
@@ -453,12 +470,29 @@ async fn create_comment(
 ) -> ApiResult<(StatusCode, Json<CommentDto>)> {
     let body = board::clean_text(&req.body, MAX_COMMENT_LEN)
         .ok_or_else(|| bad(format!("Комментарий: от 1 до {MAX_COMMENT_LEN} символов")))?;
+    // упомянутые: метки `@[id]` в тексте
+    let mentioned = mentions::extract(&body);
+    if mentioned.len() > mentions::MAX_MENTIONS {
+        return Err(bad(format!("В одном комментарии можно упомянуть не больше {} человек", mentions::MAX_MENTIONS)));
+    }
 
     let mut tx = state.pool.begin().await?;
     let (task, project) = load(&mut tx, auth, task_id).await?;
-    let comment = db::comments::insert(&mut tx, task_id, auth.id, &body).await?;
+    // упомянуть можно только участника проекта: так в уведомлениях не раскрывается, что чужому проекту что-то написано
+    if !mentioned.is_empty() && db::members::count_of(&mut *tx, project.id, &mentioned).await? != mentioned.len() as i64 {
+        return Err(bad("Упомянуть можно только участника проекта"));
+    }
+    let comment = db::comments::insert(&mut tx, task_id, auth.id, &body, &mentioned).await?;
+    // уведомление каждому упомянутому, кроме автора комментария
+    let recipients: Vec<Uuid> = mentioned.iter().copied().filter(|user| *user != auth.id).collect();
+    for user in &recipients {
+        db::notifications::insert_mentioned(&mut tx, *user, auth.id, project.id, task.id, comment.id).await?;
+    }
     db::activity::insert(&mut tx, auth.id, Some(project.id), "comment", &target(&project, &task), "новый комментарий")
         .await?;
     tx.commit().await?;
+    for user in recipients {
+        events::note_user(user);
+    }
     Ok((StatusCode::CREATED, Json(comment.into())))
 }
