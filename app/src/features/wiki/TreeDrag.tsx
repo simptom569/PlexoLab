@@ -51,10 +51,10 @@ export function TreeDragProvider({ pages, rows, onMove, renderOverlay, children 
   useEffect(() => {
     latest.current = { pages, rows, onMove }
   })
-  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  // пока нет связи, переносить нельзя (lib/link.ts): без датчиков страницу не поднять
+  // пока нет связи, переносить нельзя (lib/link.ts): порог захвата бесконечный, страницу не поднять. Датчик остаётся всегда:
+  // список датчиков не должен менять длину между отрисовками.
   const locked = useReadOnly()
-  const sensors = useSensors(...(locked ? [] : [pointerSensor]))
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: locked ? Infinity : 5 } }))
   const pointer = usePointer()
 
   const set = useCallback((next: TreeDragState) => {

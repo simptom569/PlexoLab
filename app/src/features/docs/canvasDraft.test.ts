@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CanvasObject, SavedCanvas } from '../../lib/api/types'
+import { NetworkError } from '../../lib/platform/http'
 import { addObject, moveNote, patchObject, type CanvasState } from './canvas'
 import { CANVAS_RETRY_MS, CANVAS_SAVE_DELAY_MS, CanvasDraft, type CanvasDraftDeps, type ServerCanvas } from './canvasDraft'
 
@@ -17,14 +18,16 @@ function setup(initial: ServerCanvas = serverCanvas()) {
   const server = { rev: initial.canvas_rev }
   const calls: CanvasState[] = []
   let gate: Promise<void> | null = null
-  const fail = { next: false }
+  /** Следующий запрос не удастся: `true` — обычная ошибка, иначе эта ошибка */
+  const fail = { next: false as boolean | Error }
   const deps: CanvasDraftDeps = {
     put: vi.fn(async (_id, canvas) => {
       calls.push(canvas)
       if (gate) await gate
       if (fail.next) {
+        const error = fail.next instanceof Error ? fail.next : new Error('нет связи')
         fail.next = false
-        throw new Error('нет связи')
+        throw error
       }
       server.rev++
       return { canvas_rev: server.rev, ...canvas } satisfies SavedCanvas
@@ -139,6 +142,20 @@ describe('сбой сети', () => {
     expect(t.draft.getState().objects[0]!.x).toBe(77)
 
     await vi.advanceTimersByTimeAsync(CANVAS_RETRY_MS)
+    expect(t.calls).toHaveLength(2)
+    expect(t.draft.dirty).toBe(false)
+  })
+
+  it('связи нет: плашки об ошибке нет, холст остаётся и уходит после возвращения связи', async () => {
+    const t = setup()
+    t.fail.next = new NetworkError('Нет связи с сервером')
+    t.draft.change((s) => patchObject(s, 'a', { x: 91 }))
+    await vi.advanceTimersByTimeAsync(CANVAS_SAVE_DELAY_MS)
+    expect(t.deps.onError).not.toHaveBeenCalled()
+    expect(t.draft.dirty).toBe(true)
+    expect(t.draft.getState().objects[0]!.x).toBe(91)
+
+    await t.draft.flush() // связь вернулась
     expect(t.calls).toHaveLength(2)
     expect(t.draft.dirty).toBe(false)
   })

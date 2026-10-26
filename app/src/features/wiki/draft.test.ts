@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api/client'
+import { OfflineError } from '../../lib/link'
+import { NetworkError } from '../../lib/platform/http'
 import type { WikiPage } from '../../lib/api/types'
 import { MAX_MERGES, PageDraft, RETRY_MS, SAVE_DELAY_MS, type DraftDeps } from './draft'
 
@@ -389,6 +391,33 @@ describe('сбои сети', () => {
     expect(t.calls).toHaveLength(2)
     expect(t.server.page.md).toBe('Не потеряется')
     expect(t.draft.dirty).toBe(false)
+  })
+
+  it('связи нет: плашки об ошибке нет, текст остаётся и уходит повтором', async () => {
+    const t = setup()
+    t.fail.next = new NetworkError('Нет связи с сервером')
+    t.draft.setMd('Без связи')
+    await t.draft.flush()
+    expect(t.deps.onError).not.toHaveBeenCalled()
+    expect(t.draft.dirty).toBe(true)
+    expect(t.draft.getState().md).toBe('Без связи')
+
+    await vi.advanceTimersByTimeAsync(RETRY_MS)
+    expect(t.server.page.md).toBe('Без связи')
+    expect(t.draft.dirty).toBe(false)
+  })
+
+  it('отказ записи в режиме «только просмотр» и ответ прокси (502) тоже тихие', async () => {
+    const t = setup()
+    t.fail.next = new OfflineError()
+    t.draft.setMd('Один')
+    await t.draft.flush()
+    t.fail.next = new ApiError(502, 'error', 'Bad Gateway')
+    await t.draft.flush()
+    expect(t.deps.onError).not.toHaveBeenCalled()
+    expect(t.draft.dirty).toBe(true)
+    await t.draft.flush() // связь вернулась: следующая отправка проходит
+    expect(t.server.page.md).toBe('Один')
   })
 
   it('другая ошибка сервера (не 409) тоже повторяется', async () => {

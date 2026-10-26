@@ -16,10 +16,10 @@ interface ProviderProps {
 export function DragProvider({ onDrop, renderOverlay, children }: ProviderProps) {
   const [state, setState] = useState<DragState>(IDLE)
   const ref = useRef<DragState>(IDLE)
-  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  // пока нет связи, переносить нельзя (lib/link.ts): без датчиков карточку не поднять
+  // пока нет связи, переносить нельзя (lib/link.ts): порог захвата бесконечный, карточку не поднять. Датчик остаётся всегда:
+  // список датчиков не должен менять длину между отрисовками.
   const locked = useReadOnly()
-  const sensors = useSensors(...(locked ? [] : [pointerSensor]))
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: locked ? Infinity : 5 } }))
   const pointer = usePointer()
 
   const set = useCallback((next: DragState) => {
