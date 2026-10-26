@@ -188,6 +188,41 @@ test.describe('открытый документ', () => {
     await expect.poll(() => orderOnServer(page)).toEqual(['Схема сервисов', 'Планирование Q4', 'Заметки со встречи 15 окт'])
   })
 
+  test('удалили документ, а список в это время ещё загружался со старым содержимым: после ответа сервера список обновляется', async ({ page }) => {
+    // Список документов в этом сценарии открывается только после удаления (человек вернулся к открытому документу), и его первая
+    // загрузка успевает спросить сервер раньше, чем тот выполнил удаление. Мы придерживаем этот устаревший ответ и отдаём его
+    // тогда, когда удаление уже закончилось: так гонка воспроизводится каждый раз, а не в одном запуске из десяти.
+    let release!: () => void
+    const held = new Promise<void>((resolve) => (release = resolve))
+    let staleReceived!: () => void
+    const staleReady = new Promise<void>((resolve) => (staleReceived = resolve))
+    let first = true
+    await page.route(/\/api\/v1\/projects\/[^/]+\/docs$/, async (route) => {
+      if (!first || route.request().method() !== 'GET') return route.continue()
+      first = false
+      const stale = await route.fetch() // сервер отвечает до удаления: документ в списке ещё есть
+      staleReceived()
+      await held
+      await route.fulfill({ response: stale })
+    })
+    // само удаление уходит на сервер только после того, как устаревший список получен: порядок на сервере всегда один
+    await page.route(/\/api\/v1\/docs\/[^/]+$/, async (route) => {
+      if (route.request().method() === 'DELETE') await staleReady
+      await route.continue()
+    })
+
+    await openDocByTitle(page, 'Идеи по онбордингу')
+    await page.getByRole('button', { name: 'Удалить', exact: true }).click()
+    const deleted = page.waitForResponse((r) => r.request().method() === 'DELETE' && /\/api\/v1\/docs\//.test(r.url()))
+    await page.getByRole('button', { name: 'Точно удалить?' }).click()
+    await deleted
+    await page.waitForTimeout(300) // клиент обработал ответ на удаление
+    release() // и только теперь приходит устаревший список
+
+    await expect(cardTitles(page)).toHaveText(['Схема сервисов', 'Планирование Q4', 'Заметки со встречи 15 окт'])
+    await expect.poll(() => orderOnServer(page)).toEqual(['Схема сервисов', 'Планирование Q4', 'Заметки со встречи 15 окт'])
+  })
+
   test('смена страницы сбрасывает подтверждение удаления', async ({ page }) => {
     await openDocByTitle(page, 'Идеи по онбордингу')
     await page.getByRole('button', { name: 'Удалить', exact: true }).click()

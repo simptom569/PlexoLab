@@ -71,8 +71,12 @@ export function useDeleteDoc() {
       return { lists }
     },
     onError: (_e, _v, ctx) => restoreLists(qc, ctx?.lists),
-    onSettled: (_d, _e, { id }) => {
+    onSettled: async (_d, _e, { id }) => {
       qc.removeQueries({ queryKey: keys.doc(id) })
+      // Если список документов только что открылся (человек вернулся к открытому документу и удалил его), его первая загрузка
+      // могла спросить сервер раньше, чем тот выполнил удаление, и принесёт старый список. «Пометить устаревшим» тут не помогает:
+      // данных у списка ещё нет, и библиотека считает, что идущая загрузка и есть нужное обновление. Поэтому её сначала отменяем.
+      await qc.cancelQueries({ queryKey: keys.docs })
       void qc.invalidateQueries({ queryKey: keys.docs })
     },
   })
