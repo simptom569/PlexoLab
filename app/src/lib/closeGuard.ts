@@ -1,0 +1,45 @@
+// Защита при закрытии приложения: пока в окне есть неотправленный текст (lib/unsent.ts), закрыть его молча нельзя.
+// Сначала пробуем отправить всё за пару секунд, и если не вышло (нет связи), спрашиваем человека.
+
+import { flushUnsent, unsentCount } from './unsent'
+
+/** Сколько дать неотправленному тексту на отправку, прежде чем спрашивать */
+export const CLOSE_WAIT_MS = 2_000
+
+export type CloseDeps = {
+  unsentCount: () => number
+  flushUnsent: () => Promise<void>
+  /** Спросить человека: `true` — закрыть всё равно */
+  ask: () => Promise<boolean>
+  /** Пауза (тестам нужна своя) */
+  wait?: (ms: number) => Promise<void>
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Окно просят закрыть. `close` — закрывать, `stay` — остаться. Нет несохранённого: закрываем без вопросов. Есть:
+ * отправляем, и если за `CLOSE_WAIT_MS` всё ушло, закрываем, а если нет, решает человек.
+ */
+export async function handleCloseRequest(deps: CloseDeps = { unsentCount, flushUnsent, ask: askPerson }): Promise<'close' | 'stay'> {
+  if (deps.unsentCount() === 0) return 'close'
+  await Promise.race([deps.flushUnsent().catch(() => undefined), (deps.wait ?? sleep)(CLOSE_WAIT_MS)])
+  if (deps.unsentCount() === 0) return 'close'
+  return (await deps.ask()) ? 'close' : 'stay'
+}
+
+async function askPerson(): Promise<boolean> {
+  const { useCloseAsk } = await import('./closeAsk')
+  return useCloseAsk.getState().ask()
+}
+
+/**
+ * Браузер (разработка, тесты): перед закрытием вкладки или окна просит подтверждение, если есть несохранённое.
+ * Текст вопроса задаёт сам браузер.
+ */
+export function guardUnload(event: { preventDefault: () => void; returnValue: unknown }, unsent: number = unsentCount()): void {
+  if (unsent === 0) return
+  event.preventDefault()
+  event.returnValue = ''
+  void flushUnsent() // вдруг успеет, пока человек читает вопрос
+}

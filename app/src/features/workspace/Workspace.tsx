@@ -12,8 +12,10 @@ import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
 import { useDark } from '../../lib/useDark'
+import { useCloseGuard } from '../../lib/useCloseGuard'
 import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
+import { CloseAskDialog } from './CloseAskDialog'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
 import { BoardPage } from '../board/BoardPage'
@@ -67,6 +69,8 @@ export function Workspace() {
   const connection = useRealtime(queryClient, live)
   // сеть пропала или вернулась: узнаём сразу, а не по неудачному запросу
   useLinkWatch()
+  // окно с неотправленным текстом молча не закрывается (lib/closeGuard.ts)
+  useCloseGuard()
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
 
@@ -131,6 +135,7 @@ export function Workspace() {
           {projectId ? <TaskDrawer projectId={projectId} /> : null}
           {settingsTab ? <SettingsModal tab={settingsTab} connection={connection} returnFocus={settingsOpener} /> : null}
           <ProjectDialogs />
+          <CloseAskDialog />
           <Toast />
         </>
       }

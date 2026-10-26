@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { docFull, makeDoc, openDoc } from './docs-helpers'
 import { openApp, resetData } from './fixtures'
+import { bar, card, cutOff, cutOffAndWait, refetchAll, restore } from './offline-helpers'
 import { api, blocks, editor, expectSaved, makePage, openPageById, wikiPage } from './wiki-helpers'
 
 // Нет связи с сервером (lib/link.ts, docs/OFFLINE-NOTIFY-SEARCH.md, раздел 1): через три секунды сверху полоска «Нет связи»,
@@ -10,34 +11,8 @@ import { api, blocks, editor, expectSaved, makePage, openPageById, wikiPage } fr
 
 test.beforeEach(() => resetData())
 
-const bar = (page: Page) => page.getByRole('status').filter({ hasText: 'Нет связи с сервером' })
-const card = (page: Page, key: string) => page.locator('[data-card-id]', { hasText: key })
 const column = (page: Page, title: string) => page.locator('.col', { has: page.locator('h2', { hasText: new RegExp(`^${title}$`) }) })
 const drawer = (page: Page) => page.getByRole('dialog', { name: /^Задача / })
-
-/** Связь пропала; полоска появится через три секунды */
-async function cutOff(page: Page) {
-  await page.context().setOffline(true)
-}
-
-/** Связь пропала и «просмотр» включился */
-async function cutOffAndWait(page: Page) {
-  await cutOff(page)
-  await expect(bar(page)).toBeVisible({ timeout: 8000 })
-}
-
-async function restore(page: Page) {
-  await page.context().setOffline(false)
-}
-
-/** Просит клиент перечитать все данные (как это делает сам клиент, когда приходит чужое изменение) */
-async function refetchAll(page: Page) {
-  await page.evaluate(async () => {
-    const path = '/src/lib/query.ts'
-    const { queryClient } = await import(/* @vite-ignore */ path)
-    await queryClient.invalidateQueries()
-  })
-}
 
 type Project = { id: string; key: string }
 const webProject = async (page: Page) => (await api<Project[]>(page, '/projects')).find((p) => p.key === 'WEB')!
