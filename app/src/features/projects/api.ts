@@ -4,7 +4,8 @@
 
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
-import type { CreateProject, Project, Tag, UpdateProject } from '../../lib/api/types'
+import type { CreateProject, Project, Tag, UpdateProject, VisibilityImpact } from '../../lib/api/types'
+import type { Visibility } from '../../lib/team-dialogs'
 import { queryClient } from '../../lib/query'
 import type { ProjectRole } from '../../lib/project-dialogs'
 
@@ -24,6 +25,17 @@ export async function updateProject(id: string, patch: UpdateProject): Promise<P
   const project = await api.patch<Project>(`/projects/${id}`, patch)
   await refresh(keys.projects, keys.board(id))
   return project
+}
+
+/** Видимость проекта: действует сразу; число затронутых людей заранее даёт `projectVisibilityImpact` */
+export async function setVisibility(id: string, visibility: Visibility): Promise<void> {
+  await api.patch(`/projects/${id}`, { visibility })
+  await refresh(keys.projects, keys.board(id), keys.members(id))
+}
+
+/** Сколько человек затронет смена видимости (для окна подтверждения) */
+export function projectVisibilityImpact(id: string, to: Visibility): Promise<VisibilityImpact> {
+  return api.get<VisibilityImpact>(`/projects/${id}/visibility-impact?to=${to}`)
 }
 
 export async function setArchived(id: string, archived: boolean): Promise<void> {

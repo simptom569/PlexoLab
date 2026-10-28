@@ -2245,7 +2245,9 @@ export interface components {
             id: string;
             /** @example Dream Team */
             name: string;
-            /** @description Личная команда «Личное»: её нельзя архивировать и покинуть */
+            /** @description Это моя личная команда: владелец из неё не выходит и его нельзя убрать (в чужое «Личное» меня могли позвать) */
+            owner: boolean;
+            /** @description Личная команда «Личное»: её нельзя архивировать */
             personal: boolean;
             /**
              * @description Моя роль в команде: admin | member. Пусто, если я здесь гость.

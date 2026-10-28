@@ -67,6 +67,8 @@ export const settingsSchema = z.object({
   presence: z.boolean().catch(true),
   page: z.enum(PAGE_IDS).catch('board'),
   project: z.string().nullable().catch(null),
+  /** Выбранная команда (переключатель в боковом меню); null — ещё не выбирали, тогда «Личное» */
+  team: z.string().nullable().catch(null),
   view: z.enum(VIEWS).catch('board'),
   filters: filtersSchema.catch(EMPTY_FILTERS),
   display: displaySchema.catch(DEFAULT_DISPLAY),

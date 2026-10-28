@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PageId } from './pages'
 import type { ProjectDialog, ProjectMenu, ProjectTab } from './project-dialogs'
+import type { TeamMenu, TeamTab } from './team-dialogs'
 import type { SettingsTab } from './settings-tabs'
 import {
   DEFAULT_DISPLAY,
@@ -21,8 +22,8 @@ import { resolveDark } from './theme'
 
 export type { Theme }
 
-type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'presence' | 'page' | 'project' | 'view' | 'filters' | 'display'>
-const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'presence', 'page', 'project', 'view', 'filters', 'display']
+type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'presence' | 'page' | 'project' | 'team' | 'view' | 'filters' | 'display'>
+const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'presence', 'page', 'project', 'team', 'view', 'filters', 'display']
 
 // Локальное состояние интерфейса. Часть сохраняется на диск (см. PERSISTED_KEYS), остальное живёт, пока открыто окно.
 type UiState = Persisted & {
@@ -43,9 +44,13 @@ type UiState = Persisted & {
   projectDialog: ProjectDialog | null
   /** Меню проекта по правой кнопке */
   projectMenu: ProjectMenu | null
+  /** Меню команды по правой кнопке на блоке PlexoLab */
+  teamMenu: TeamMenu | null
 
   setPage: (page: PageId) => void
   setProject: (project: string) => void
+  /** Выбрать команду: открытый проект, задача и меню остаются в прошлой команде, поэтому сбрасываются */
+  setTeam: (team: string) => void
   setView: (view: View) => void
   /** Быстрое переключение из меню пользователя: на противоположную той, что видна сейчас */
   toggleTheme: () => void
@@ -62,8 +67,11 @@ type UiState = Persisted & {
   openProjectDialog: (dialog: ProjectDialog) => void
   closeProjectDialog: () => void
   setProjectTab: (tab: ProjectTab) => void
+  setTeamTab: (tab: TeamTab) => void
   openProjectMenu: (menu: ProjectMenu) => void
   closeProjectMenu: () => void
+  openTeamMenu: (menu: TeamMenu) => void
+  closeTeamMenu: () => void
   setQuery: (q: string) => void
   openTask: (id: string, options?: { focusTitle?: boolean }) => void
   closeTask: () => void
@@ -89,6 +97,7 @@ export const useUi = create<UiState>()((set) => ({
   presence: DEFAULT_SETTINGS.presence,
   page: DEFAULT_SETTINGS.page,
   project: DEFAULT_SETTINGS.project,
+  team: DEFAULT_SETTINGS.team,
   view: DEFAULT_SETTINGS.view,
   filters: DEFAULT_SETTINGS.filters,
   display: DEFAULT_SETTINGS.display,
@@ -101,9 +110,12 @@ export const useUi = create<UiState>()((set) => ({
   settingsTab: null,
   projectDialog: null,
   projectMenu: null,
+  teamMenu: null,
 
   setPage: (page) => set({ page, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setProject: (project) => set({ project, menu: null, openTaskId: null, confirmDelete: false, confirm: null }),
+  setTeam: (team) =>
+    set({ team, project: null, menu: null, projectMenu: null, teamMenu: null, openTaskId: null, confirmDelete: false, confirm: null }),
   setView: (view) => set({ view, menu: null }),
   toggleTheme: () => set((s) => ({ theme: resolveDark(s.theme) ? 'light' : 'dark', menu: null })),
   setTheme: (theme) => set({ theme }),
@@ -116,12 +128,17 @@ export const useUi = create<UiState>()((set) => ({
   openSettings: (tab = 'account') => set({ settingsTab: tab, projectDialog: null, menu: null }),
   closeSettings: () => set({ settingsTab: null }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),
-  openProjectDialog: (projectDialog) => set({ projectDialog, settingsTab: null, projectMenu: null, menu: null, confirm: null }),
+  openProjectDialog: (projectDialog) =>
+    set({ projectDialog, settingsTab: null, projectMenu: null, teamMenu: null, menu: null, confirm: null }),
   closeProjectDialog: () => set({ projectDialog: null, confirm: null }),
   setProjectTab: (tab) =>
     set((s) => (s.projectDialog?.kind === 'settings' ? { projectDialog: { ...s.projectDialog, tab }, confirm: null } : {})),
   openProjectMenu: (projectMenu) => set({ projectMenu, menu: null }),
+  setTeamTab: (tab) =>
+    set((s) => (s.projectDialog?.kind === 'team-settings' ? { projectDialog: { ...s.projectDialog, tab }, confirm: null } : {})),
   closeProjectMenu: () => set({ projectMenu: null, confirm: null }),
+  openTeamMenu: (teamMenu) => set({ teamMenu, menu: null, projectMenu: null }),
+  closeTeamMenu: () => set({ teamMenu: null, confirm: null }),
   setQuery: (q) => set({ q }),
   openTask: (id, options) => set({ openTaskId: id, confirmDelete: false, focusTitle: !!options?.focusTitle }),
   closeTask: () => set({ openTaskId: null, confirmDelete: false, focusTitle: false }),
@@ -152,6 +169,7 @@ export function hydrateUi(settings: Settings): void {
     presence: settings.presence,
     page: settings.page,
     project: settings.project,
+    team: settings.team,
     view: settings.view,
     filters: settings.filters,
     display: settings.display,

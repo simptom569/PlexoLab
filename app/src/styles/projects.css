@@ -29,6 +29,77 @@
   z-index: 85;
 }
 
+/*
+  Переключатель команды (docs/TEAMS.md, 11.1, вариант Б, макет утверждён владельцем): блок PlexoLab в покое выглядит как в
+  макете, а под названием приложения стоит название текущей команды. Это кнопка: при наведении и фокусе фон и ▾ справа;
+  меню команд не шире блока (боковое меню прокручивается, шире оно обрезалось бы).
+*/
+.brand-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.brand-btn:hover,
+.brand-btn[aria-expanded='true'] {
+  background: var(--surface2);
+}
+
+.brand-btn .chev {
+  display: inline-flex;
+  opacity: 0;
+  color: var(--muted);
+  flex: none;
+}
+
+.brand-btn:hover .chev,
+.brand-btn:focus-visible .chev,
+.brand-btn[aria-expanded='true'] .chev {
+  opacity: 1;
+}
+
+.cap {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cap > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-gap {
+  width: 14px;
+  flex: none;
+}
+
+.team-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tag-guest {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .proj-head {
   position: relative;
 }

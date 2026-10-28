@@ -13,6 +13,8 @@ import { Count } from './Tag'
 import { Sq } from './Shapes'
 
 export type SidebarProject = { id: string; name: string; color: string }
+/** Команда в переключателе (docs/TEAMS.md, 11.1). `guest`: я здесь только гость; `outside`: чужая команда, которую открыл администратор сервера. */
+export type SidebarTeam = { id: string; name: string; guest: boolean; outside?: boolean }
 export type SidebarUser = { name: string; role: string; tone: number; email: string }
 
 // Точка связи с сервером на аватаре. В макете её нет (добавлена по плану этапа 8), поэтому собрана из его переменных и
@@ -73,12 +75,91 @@ type SidebarProps = {
   /** Окно поиска (Ctrl+K). Пункта нет, если не задано (витрина). */
   onOpenSearch?: () => void
   onOpenArchive: () => void
+  /** Переключатель команды (вариант Б): название текущей команды вместо подписи «Рабочее пространство». Не задано — подпись как в макете (витрина). */
+  teams?: {
+    items: SidebarTeam[]
+    currentId: string | null
+    /** Подпись под названием приложения: название текущей команды */
+    caption: string
+    menuOpen: boolean
+    onToggleMenu: () => void
+    onSelect: (id: string) => void
+    onCreate: () => void
+    /** Правая кнопка на блоке PlexoLab: меню команды у курсора */
+    onContextMenu: (x: number, y: number) => void
+    /** Для администратора сервера: окно «Все команды сервера» */
+    onOpenAll?: () => void
+  }
+  /** «+» у заголовка «Проекты» есть не везде: в гостевой команде его нет */
+  canCreateProject?: boolean
+  /** Пункт «Вики» есть не везде: в гостевой команде он только при включённой настройке команды */
+  showWiki?: boolean
 }
 
 /** Подпись точки у имени: что ждёт человека */
 function attentionLabel(invites: number, notifications: number): string {
-  if (invites > 0 && notifications > 0) return 'Есть приглашения в проекты и непрочитанные уведомления'
-  return invites > 0 ? 'Есть приглашения в проекты' : 'Есть непрочитанные уведомления'
+  if (invites > 0 && notifications > 0) return 'Есть приглашения и непрочитанные уведомления'
+  return invites > 0 ? 'Есть приглашения' : 'Есть непрочитанные уведомления'
+}
+
+/**
+ * Переключатель команды (вариант Б, утверждён владельцем): блок PlexoLab стал кнопкой, под названием приложения стоит название
+ * текущей команды, при наведении справа появляется ▾. Нажатие открывает меню команд, правая кнопка меню команды. В покое
+ * выглядит как в макете (подпись «Рабочее пространство» теперь название команды).
+ */
+function TeamSwitcher({ teams }: { teams: NonNullable<SidebarProps['teams']> }) {
+  return (
+    <Anchor>
+      <button
+        className="brand-btn"
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={teams.menuOpen}
+        onClick={teams.onToggleMenu}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          teams.onContextMenu(e.clientX, e.clientY)
+        }}
+      >
+        <BrandIcon />
+        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+          <strong style={{ fontSize: 15 }}>PlexoLab</strong>
+          <span className="cap">
+            <span>{teams.caption}</span>
+            <span className="chev" aria-hidden="true">
+              <Icon name="chevronDown" sm />
+            </span>
+          </span>
+        </div>
+      </button>
+      {teams.menuOpen && (
+        <Popover small role="menu" aria-label="Команды" style={{ left: 0, right: 0, minWidth: 0 }}>
+          <div className="pop-title" style={{ margin: '6px 10px 2px' }}>
+            Команды
+          </div>
+          {teams.items.map((t) => (
+            <MenuItem key={t.id} role="menuitemradio" aria-checked={t.id === teams.currentId} onClick={() => teams.onSelect(t.id)}>
+              {t.id === teams.currentId ? <Icon name="check" sm /> : <span className="menu-gap" />}
+              <span className="team-name">{t.name}</span>
+              {t.guest && <span className="tag-guest">гость</span>}
+              {t.outside && <span className="tag-guest">не ваша</span>}
+            </MenuItem>
+          ))}
+          <div role="separator" style={{ height: 1, margin: '2px 0', background: 'var(--line)' }} />
+          <MenuItem write onClick={teams.onCreate}>
+            <Icon name="plus" sm />
+            Создать команду
+          </MenuItem>
+          {teams.onOpenAll && (
+            <MenuItem onClick={teams.onOpenAll}>
+              <Icon name="server" sm />
+              Все команды сервера
+            </MenuItem>
+          )}
+        </Popover>
+      )}
+    </Anchor>
+  )
 }
 
 export function Sidebar({
@@ -105,20 +186,27 @@ export function Sidebar({
   onOpenNotifications,
   onOpenSearch,
   onOpenArchive,
+  teams,
+  canCreateProject = true,
+  showWiki = true,
 }: SidebarProps) {
   const userButton = useRef<HTMLButtonElement>(null)
   return (
     <aside className="side">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 6px' }}>
-        <BrandIcon />
-        <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
-          <strong style={{ fontSize: 15 }}>PlexoLab</strong>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Рабочее пространство</span>
+      {teams ? (
+        <TeamSwitcher teams={teams} />
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 6px' }}>
+          <BrandIcon />
+          <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2 }}>
+            <strong style={{ fontSize: 15 }}>PlexoLab</strong>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>Рабочее пространство</span>
+          </div>
         </div>
-      </div>
+      )}
 
       <nav aria-label="Основная навигация" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {NAV.map((n) => (
+        {NAV.filter((n) => n.id !== 'wiki' || showWiki).map((n) => (
           <button
             key={n.id}
             className={cx('nav', page === n.id && 'on')}
@@ -146,7 +234,7 @@ export function Sidebar({
           }}
         >
           Проекты
-          <IconButton write className="proj-add" icon="plus" small label="Новый проект" onClick={onNewProject} />
+          {canCreateProject && <IconButton write className="proj-add" icon="plus" small label="Новый проект" onClick={onNewProject} />}
         </div>
         <nav aria-label="Проекты" style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {projects.map((p) => (

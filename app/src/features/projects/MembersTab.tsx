@@ -115,9 +115,14 @@ export function MembersTab({ projectId }: { projectId: string }) {
   )
 }
 
+/** Подсказка у неактивной кнопки «Убрать» неявного члена команды */
+const WHOLE_TEAM_HINT = 'Доступ у всей команды. Чтобы убрать, выберите «Только участники»'
+
 function MemberRow({ member, itsMe, projectId }: { member: Member; itsMe: boolean; projectId: string }) {
   const role = roleOf(member.role)
   const { problem, run } = useAttempt()
+  // администратор команды всегда администратор её проектов; неявный член команды здесь по видимости «Вся команда»
+  const note = [member.email, member.team_admin ? 'Администратор команды' : member.implicit ? 'Член команды' : ''].filter(Boolean).join(' · ')
   return (
     <>
       <div className="proj-row">
@@ -128,12 +133,12 @@ function MemberRow({ member, itsMe, projectId }: { member: Member; itsMe: boolea
               {member.name}
               {itsMe ? ' (вы)' : ''}
             </strong>
-            <small>{member.email}</small>
+            <small>{note}</small>
           </span>
         </div>
         <div className="proj-actions">
           {/* свою роль здесь не меняем: понизив себя, человек закрыл бы это окно, а уйти можно из меню проекта */}
-          {itsMe ? (
+          {itsMe || member.team_admin ? (
             <span className="set-desc" style={{ margin: 0 }}>
               {ROLE_LABELS[role]}
             </span>
@@ -146,7 +151,12 @@ function MemberRow({ member, itsMe, projectId }: { member: Member; itsMe: boolea
               onChange={(next) => void run(() => setMemberRole(projectId, member.user_id, next))}
             />
           )}
-          {!itsMe && (
+          {!itsMe && !member.team_admin && member.implicit && (
+            <Button write variant="ghost" disabled title={WHOLE_TEAM_HINT} aria-label={`Убрать: ${WHOLE_TEAM_HINT}`}>
+              Убрать
+            </Button>
+          )}
+          {!itsMe && !member.team_admin && !member.implicit && (
             <TwoStep
               id={`member:${member.user_id}`}
               label="Убрать"

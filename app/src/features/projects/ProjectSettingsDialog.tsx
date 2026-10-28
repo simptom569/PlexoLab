@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Input } from '../../components'
+import { Button, Input, Segmented } from '../../components'
 import { useBoard, useProjects } from '../../lib/api/queries'
 import type { Project, UpdateProject } from '../../lib/api/types'
 import {
@@ -15,9 +15,11 @@ import {
 import { projectKeyChangeCount, projectKeyChangeDetail } from '../../lib/task-ids'
 import { useReadOnly } from '../../lib/link'
 import { useUi } from '../../lib/ui-store'
-import { errorText, setArchived, updateProject } from './api'
+import { VISIBILITY_LABELS, visibilityOf, type Visibility } from '../../lib/team-dialogs'
+import { errorText, projectVisibilityImpact, setArchived, setVisibility, updateProject } from './api'
 import { IdChangeDialog } from './IdChangeDialog'
 import { MembersTab } from './MembersTab'
+import { VisibilityDialog } from './VisibilityDialog'
 import { DialogFrame, Field, Problem, TwoStep, type FrameTab } from './parts'
 import { TagsTab } from './TagsTab'
 
@@ -31,6 +33,14 @@ const TABS: ReadonlyArray<FrameTab<ProjectTab>> = [
 /** Вопрос «У N задач изменятся id. Продолжить?» перед сохранением: что показать и что сделать после «Продолжить» */
 type IdAsk = { count: number; detail: string; proceed: () => void }
 
+/** Вопрос «Проект увидят N членов команды» перед сменой видимости: на что меняют и сколько людей это затронет */
+type VisibilityAsk = { to: Visibility; people: number }
+
+const VISIBILITY_OPTIONS = [
+  { value: 'members', label: VISIBILITY_LABELS.members },
+  { value: 'team', label: VISIBILITY_LABELS.team },
+] as const
+
 /** «Настройки проекта» (для администратора): основное, участники, метки, архив */
 export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialog, { kind: 'settings' }> }) {
   const close = useUi((s) => s.closeProjectDialog)
@@ -38,6 +48,29 @@ export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialo
   const projects = useProjects()
   const project = projects.data?.find((p) => p.id === dialog.id)
   const [ask, setAsk] = useState<IdAsk | null>(null)
+  const [visibilityAsk, setVisibilityAsk] = useState<VisibilityAsk | null>(null)
+  const [visibilityProblem, setVisibilityProblem] = useState<string | null>(null)
+
+  const applyVisibility = async (to: Visibility) => {
+    setVisibilityAsk(null)
+    setVisibilityProblem(null)
+    try {
+      await setVisibility(dialog.id, to)
+    } catch (e) {
+      setVisibilityProblem(errorText(e))
+    }
+  }
+  // сначала спрашиваем сервер, скольких людей это затронет; если никого, спрашивать не о чем
+  const requestVisibility = async (to: Visibility) => {
+    setVisibilityProblem(null)
+    try {
+      const { people } = await projectVisibilityImpact(dialog.id, to)
+      if (people === 0) await applyVisibility(to)
+      else setVisibilityAsk({ to, people })
+    } catch (e) {
+      setVisibilityProblem(errorText(e))
+    }
+  }
 
   // проект ушёл из списка (архив, выход, меня убрали) или перестал быть моим для управления: окно закрывается
   const gone = projects.isSuccess && (!project || project.role !== 'admin')
@@ -53,11 +86,21 @@ export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialo
         onClose={close}
         tabs={{ items: TABS, current: dialog.tab, onSelect: setTab, navTitle: project.name }}
       >
-        {dialog.tab === 'main' && <MainTab project={project} onAsk={setAsk} />}
+        {dialog.tab === 'main' && (
+          <MainTab project={project} onAsk={setAsk} onVisibility={(to) => void requestVisibility(to)} visibilityProblem={visibilityProblem} />
+        )}
         {dialog.tab === 'members' && <MembersTab projectId={project.id} />}
         {dialog.tab === 'tags' && <TagsTab projectId={project.id} />}
         {dialog.tab === 'archive' && <ArchiveTab project={project} />}
       </DialogFrame>
+      {visibilityAsk && (
+        <VisibilityDialog
+          to={visibilityAsk.to}
+          people={visibilityAsk.people}
+          onCancel={() => setVisibilityAsk(null)}
+          onConfirm={() => void applyVisibility(visibilityAsk.to)}
+        />
+      )}
       {ask && (
         <IdChangeDialog
           count={ask.count}
@@ -73,7 +116,17 @@ export function ProjectSettingsDialog({ dialog }: { dialog: Extract<ProjectDialo
   )
 }
 
-function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => void }) {
+function MainTab({
+  project,
+  onAsk,
+  onVisibility,
+  visibilityProblem,
+}: {
+  project: Project
+  onAsk: (ask: IdAsk) => void
+  onVisibility: (to: Visibility) => void
+  visibilityProblem: string | null
+}) {
   const readOnly = useReadOnly()
   const board = useBoard(project.id)
   const [name, setName] = useState(project.name)
@@ -168,6 +221,26 @@ function MainTab({ project, onAsk }: { project: Project; onAsk: (ask: IdAsk) => 
             Префикс номеров задач: {keyOk && cleanKey ? cleanKey : 'TASK'}-1. Если поменять ключ, сменится только подпись, номера те же.
           </span>
         </Field>
+        <div className="f-row">
+          <span className="f-label">Видимость</span>
+          <div className="f-val" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+            <Segmented
+              write
+              label="Видимость проекта"
+              options={VISIBILITY_OPTIONS}
+              value={visibilityOf(project.visibility)}
+              onChange={(to) => {
+                if (to !== visibilityOf(project.visibility)) onVisibility(to)
+              }}
+            />
+            <span className="set-desc" style={{ margin: 0 }}>
+              {visibilityOf(project.visibility) === 'members'
+                ? 'Проект видят приглашённые в него и администраторы команды.'
+                : 'Проект видят все члены команды и приглашённые в него.'}
+            </span>
+            {visibilityProblem && <Problem>{visibilityProblem}</Problem>}
+          </div>
+        </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 16 }}>
         {state.kind === 'saved' && (

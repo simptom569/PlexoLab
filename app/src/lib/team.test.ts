@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { Team } from './api/types'
-import { pickTeam, teamForNewProject } from './team'
+import { canCreateProject, canLeaveTeam, canManageTeam, pickTeam } from './team'
 
 const team = (id: string, over: Partial<Team> = {}): Team => ({
   id,
   name: id,
   personal: false,
+  owner: false,
   role: 'member',
   guest: false,
   wiki: true,
@@ -13,51 +14,59 @@ const team = (id: string, over: Partial<Team> = {}): Team => ({
   ...over,
 })
 
+const personal = team('personal', { personal: true, owner: true, role: 'admin' })
+const web = team('web')
+const guestClosed = team('closed', { role: null, guest: true, wiki: false })
+
 describe('pickTeam', () => {
-  const personal = team('personal', { personal: true, role: 'admin' })
-  const web = team('web')
-  const guestClosed = team('closed', { role: null, guest: true, wiki: false })
-  const guestOpen = team('open', { role: null, guest: true, wiki: true })
-
   it('пока команд нет, выбирать нечего', () => {
-    expect(pickTeam(undefined, 'web')).toBeNull()
-    expect(pickTeam([], 'web')).toBeNull()
+    expect(pickTeam(undefined, 'web', null)).toBeNull()
+    expect(pickTeam([], 'web', null)).toBeNull()
   })
 
-  it('берётся команда открытого проекта', () => {
-    expect(pickTeam([personal, web], 'web')).toBe('web')
+  it('выбранная команда берётся, если она ещё моя', () => {
+    expect(pickTeam([personal, web], 'web', null)).toEqual(web)
   })
 
-  it('если вики команды проекта не читать (гость без разрешения), берётся первая с доступной вики, то есть «Личное»', () => {
-    expect(pickTeam([personal, web, guestClosed], 'closed')).toBe('personal')
+  it('выбранной больше нет (меня убрали, команду заархивировали): «Личное», она первая в списке', () => {
+    expect(pickTeam([personal, web], 'ушла', null)).toEqual(personal)
   })
 
-  it('гостевая команда с разрешением годится', () => {
-    expect(pickTeam([personal, guestOpen], 'open')).toBe('open')
+  it('команду ещё не выбирали: команда запомненного проекта, а без него «Личное»', () => {
+    expect(pickTeam([personal, web], null, 'web')).toEqual(web)
+    expect(pickTeam([personal, web], null, null)).toEqual(personal)
+    expect(pickTeam([personal, web], null, 'чужая')).toEqual(personal)
   })
 
-  it('без проекта или с проектом чужой команды: первая с доступной вики', () => {
-    expect(pickTeam([personal, web], null)).toBe('personal')
-    expect(pickTeam([personal, web], 'нет такой')).toBe('personal')
+  it('выбранная команда сильнее запомненного проекта', () => {
+    expect(pickTeam([personal, web], 'personal', 'web')).toEqual(personal)
+  })
+
+  it('гостевую команду выбрать можно', () => {
+    expect(pickTeam([personal, guestClosed], 'closed', null)).toEqual(guestClosed)
   })
 })
 
-describe('teamForNewProject', () => {
-  const personal = team('personal', { personal: true, role: 'admin' })
-  const web = team('web')
-  const guest = team('guest', { role: null, guest: true, wiki: false })
-
-  it('проект создаётся в текущей команде, если я в ней член', () => {
-    expect(teamForNewProject([personal, web], 'web')).toBe('web')
+describe('права в команде', () => {
+  it('управляет администратор команды и администратор сервера, но не рядовой член и не гость', () => {
+    expect(canManageTeam(personal, false)).toBe(true)
+    expect(canManageTeam(web, false)).toBe(false)
+    expect(canManageTeam(guestClosed, false)).toBe(false)
+    expect(canManageTeam(web, true)).toBe(true)
+    expect(canManageTeam(null, true)).toBe(false)
   })
 
-  it('в гостевой команде создавать нельзя: берётся первая, где я член', () => {
-    expect(teamForNewProject([personal, web, guest], 'guest')).toBe('personal')
-    expect(teamForNewProject([personal, web], null)).toBe('personal')
+  it('проекты создаёт член команды, гость нет', () => {
+    expect(canCreateProject(web)).toBe(true)
+    expect(canCreateProject(guestClosed)).toBe(false)
+    expect(canCreateProject(null)).toBe(false)
   })
 
-  it('команд нет: создавать негде', () => {
-    expect(teamForNewProject(undefined, null)).toBeNull()
-    expect(teamForNewProject([guest], 'guest')).toBeNull()
+  it('выйти можно из чужой команды, а из своего «Личного» нельзя; гостю выходить не откуда', () => {
+    expect(canLeaveTeam(web)).toBe(true)
+    expect(canLeaveTeam(personal)).toBe(false)
+    expect(canLeaveTeam(team('чужое-личное', { personal: true, role: 'admin', owner: false }))).toBe(true)
+    expect(canLeaveTeam(guestClosed)).toBe(false)
+    expect(canLeaveTeam(null)).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input } from '../../components'
+import { Button, Input, Segmented } from '../../components'
 import {
   PROJECT_COLORS,
   PROJECT_NAME_MAX,
@@ -7,20 +7,28 @@ import {
   normalizeKey,
   type ProjectDialog,
 } from '../../lib/project-dialogs'
-import { useTeams } from '../../lib/api/queries'
-import { teamForNewProject, useTeamId } from '../../lib/team'
+import { canCreateProject, useCurrentTeamInfo } from '../../lib/team'
+import { VISIBILITY_LABELS, type Visibility } from '../../lib/team-dialogs'
 import { useUi } from '../../lib/ui-store'
 import { createProject, errorText } from './api'
 import { DialogFrame, Field, Problem } from './parts'
 
 type Props = { dialog: Extract<ProjectDialog, { kind: 'new' }> }
 
-/** «Новый проект»: название, цвет и необязательный ключ id задач. Создатель становится администратором. */
+const VISIBILITY_OPTIONS = [
+  { value: 'members', label: VISIBILITY_LABELS.members },
+  { value: 'team', label: VISIBILITY_LABELS.team },
+] as const
+
+/**
+ * «Новый проект»: название, цвет, необязательный ключ id задач и видимость (кто видит проект, кроме приглашённых). Проект
+ * создаётся в текущей команде. Создатель становится администратором.
+ */
 export function NewProjectDialog(_props: Props) {
   const close = useUi((s) => s.closeProjectDialog)
   const setProject = useUi((s) => s.setProject)
-  // проект создаётся в текущей команде, а если я в ней гость, в моей первой («Личное»)
-  const teamId = teamForNewProject(useTeams().data, useTeamId())
+  const team = useCurrentTeamInfo()
+  const [visibility, setVisibility] = useState<Visibility>('members')
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(PROJECT_COLORS[0].value)
   const [key, setKey] = useState('')
@@ -28,13 +36,13 @@ export function NewProjectDialog(_props: Props) {
 
   const cleanKey = normalizeKey(key)
   const keyOk = isValidKey(cleanKey)
-  const canCreate = name.trim() !== '' && keyOk && teamId !== null && !state.saving
+  const canCreate = name.trim() !== '' && keyOk && canCreateProject(team) && !state.saving
 
   const submit = async () => {
-    if (!canCreate || teamId === null) return
+    if (!canCreate || team === null) return
     setState({ saving: true, error: null })
     try {
-      const project = await createProject({ team_id: teamId, name: name.trim(), color, key: cleanKey })
+      const project = await createProject({ team_id: team.id, name: name.trim(), color, key: cleanKey, visibility })
       setProject(project.id)
       close()
     } catch (e) {
@@ -94,6 +102,25 @@ export function NewProjectDialog(_props: Props) {
               2–6 символов, латиница и цифры. Задачи получат номера вида {keyOk && cleanKey ? cleanKey : 'PLX'}-1, без ключа TASK-1.
             </span>
           </Field>
+          <div className="f-row">
+            <span className="f-label" id="np-vis-label">
+              Видимость
+            </span>
+            <div className="f-val" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+              <Segmented write label="Видимость проекта" options={VISIBILITY_OPTIONS} value={visibility} onChange={setVisibility} />
+              <span className="set-desc" style={{ margin: 0 }}>
+                {visibility === 'members'
+                  ? 'Проект видят приглашённые в него и администраторы команды.'
+                  : 'Проект видят все члены команды и приглашённые в него.'}
+              </span>
+            </div>
+          </div>
+          <div className="f-row">
+            <span className="f-label">Команда</span>
+            <div className="f-val">
+              <strong>{team?.name ?? ''}</strong>
+            </div>
+          </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginTop: 16 }}>
           {!keyOk && <Problem>Ключ: от 2 до 6 символов, латиница и цифры, начинается с буквы</Problem>}

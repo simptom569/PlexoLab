@@ -15,6 +15,9 @@ import type {
   NotificationList,
   SearchResult,
   Team,
+  TeamInvite,
+  TeamMembers,
+  AdminTeam,
   LinkGroup,
   Members,
   Project,
@@ -28,6 +31,13 @@ import type {
 export const keys = {
   /** Мои команды: те, где я член, и те, где я гость */
   teams: ['teams'] as const,
+  /** Архивные команды, которыми я управляю; лежит под началом ключа команд */
+  archivedTeams: ['teams', 'archived'] as const,
+  /** Одна команда по id: нужна администратору сервера, открывшему чужую (в `GET /teams` её нет) */
+  team: (id: string) => ['teams', 'one', id] as const,
+  teamMembers: (id: string) => ['team-members', id] as const,
+  teamInvites: ['team-invites'] as const,
+  adminTeams: (q: string) => ['admin-teams', q] as const,
   projects: ['projects'] as const,
   invites: ['invites'] as const,
   /** Архивные проекты, которыми я управляю; лежит под началом ключа проектов, поэтому `['projects']` затрагивает и его */
@@ -60,6 +70,36 @@ export const keys = {
 }
 
 export const useTeams = () => useQuery({ queryKey: keys.teams, queryFn: () => api.get<Team[]>('/teams') })
+
+/** Команда по id (для администратора сервера, открывшего чужую команду) */
+export const useTeamInfo = (id: string | null) =>
+  useQuery({ queryKey: keys.team(id ?? ''), queryFn: () => api.get<Team>(`/teams/${id}`), enabled: id !== null, retry: false })
+
+/** Архивные команды, которыми я управляю */
+export const useArchivedTeams = () =>
+  useQuery({ queryKey: keys.archivedTeams, queryFn: () => api.get<Team[]>('/teams?archived=true') })
+
+/** Приглашения в команды, на которые я не ответил */
+export const useMyTeamInvites = () =>
+  useQuery({ queryKey: keys.teamInvites, queryFn: () => api.get<TeamInvite[]>('/team-invites') })
+
+/** Состав команды; ожидающие приглашения приходят только администратору */
+export const useTeamMembers = (teamId: string | null) =>
+  useQuery({
+    queryKey: keys.teamMembers(teamId ?? ''),
+    queryFn: () => api.get<TeamMembers>(`/teams/${teamId}/members`),
+    enabled: teamId !== null,
+  })
+
+/** Все команды сервера (окно «Все команды сервера», только администратору сервера) */
+export const useAdminTeams = (q: string, enabled: boolean) =>
+  useQuery({
+    queryKey: keys.adminTeams(q),
+    queryFn: () => api.get<AdminTeam[]>(`/admin/teams?q=${encodeURIComponent(q)}`),
+    enabled,
+    placeholderData: keepPreviousData,
+    staleTime: 0,
+  })
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
 

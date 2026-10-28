@@ -16,6 +16,7 @@ describe('parseSettings', () => {
       presence: true,
       page: 'board',
       project: null,
+      team: null,
       view: 'board',
       filters: EMPTY_FILTERS,
       display: DEFAULT_DISPLAY,

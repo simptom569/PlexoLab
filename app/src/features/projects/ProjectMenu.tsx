@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Backdrop, Icon, MenuItem, Popover } from '../../components'
-import { useProjects } from '../../lib/api/queries'
+import { useProjects, useTeams } from '../../lib/api/queries'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { useUi } from '../../lib/ui-store'
@@ -21,6 +21,7 @@ export function ProjectMenu() {
   const openDialog = useUi((s) => s.openProjectDialog)
   const me = useSession((s) => s.user)
   const projects = useProjects()
+  const teams = useTeams()
   const project = projects.data?.find((p) => p.id === menu?.id)
   const popover = useRef<HTMLDivElement>(null)
 
@@ -56,6 +57,11 @@ export function ProjectMenu() {
 
   if (!menu || !project || !me) return null
 
+  // Выйти из проекта есть только у тех, кто этим теряет доступ: администратору команды и члену при «Вся команда» (и администратору
+  // сервера) проект останется (docs/TEAMS.md, 3.4)
+  const team = teams.data?.find((t) => t.id === project.team_id)
+  const staysAnyway =
+    me.is_admin || team?.role === 'admin' || (project.visibility === 'team' && team?.role !== undefined && team.role !== null)
   const leaveKey = `leave:${project.id}`
   const leave = async () => {
     setConfirm(null)
@@ -82,17 +88,19 @@ export function ProjectMenu() {
             Настройки проекта
           </MenuItem>
         )}
-        <MenuItem
-          write
-          danger={confirm === leaveKey}
-          onClick={() => {
-            if (confirm === leaveKey) void leave()
-            else setConfirm(leaveKey)
-          }}
-        >
-          <Icon name="logout" sm />
-          {confirm === leaveKey ? 'Точно выйти?' : 'Выйти из проекта'}
-        </MenuItem>
+        {!staysAnyway && (
+          <MenuItem
+            write
+            danger={confirm === leaveKey}
+            onClick={() => {
+              if (confirm === leaveKey) void leave()
+              else setConfirm(leaveKey)
+            }}
+          >
+            <Icon name="logout" sm />
+            {confirm === leaveKey ? 'Точно выйти?' : 'Выйти из проекта'}
+          </MenuItem>
+        )}
       </Popover>
     </>
   )

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { AppShell } from '../../components/AppShell'
-import { Sidebar, type SidebarProject } from '../../components/Sidebar'
+import { Sidebar, type SidebarProject, type SidebarTeam } from '../../components/Sidebar'
 import { OfflineBar } from '../../components/OfflineBar'
 import { Toast } from '../../components/Toast'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/Surfaces'
-import { useBoard, useMyInvites, useNotifications, useProjects, useTeams, useUsers } from '../../lib/api/queries'
+import { useBoard, useMyInvites, useMyTeamInvites, useNotifications, useProjects, useUsers } from '../../lib/api/queries'
+import { canCreateProject } from '../../lib/team'
 import { useCurrentTeam } from '../../lib/useCurrentTeam'
 import { queryClient } from '../../lib/query'
 import { useRealtime } from '../../lib/realtime/useRealtime'
@@ -57,6 +58,8 @@ export function Workspace() {
     live,
     setPage,
     setProject,
+    setTeam,
+    openTeamMenu,
     toggleTheme,
     toggleMenu,
     closeMenus,
@@ -67,6 +70,7 @@ export function Workspace() {
   const dark = useDark()
   const projects = useProjects()
   const invites = useMyInvites()
+  const teamInvites = useMyTeamInvites()
   const notifications = useNotifications()
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient, live)
@@ -89,16 +93,28 @@ export function Workspace() {
     if (me && mine && (mine.name !== me.name || mine.role !== me.role || mine.tone !== me.tone)) useSession.setState({ user: mine })
   }, [users.data])
 
-  // Открытый проект: сохранённый, если он ещё существует, иначе первый
-  const list = projects.data
+  // Команда на экране: выбранная в переключателе (docs/TEAMS.md, 11.1). Проекты, вики и файлы относятся к ней.
+  const { team, teams } = useCurrentTeam(projects.data)
+  // Проекты только этой команды; пока команда не определилась, списка нет (а не «нет проектов»)
+  const list = useMemo(() => (team ? projects.data?.filter((p) => p.team_id === team.id) : undefined), [projects.data, team])
+  // Открытый проект: сохранённый, если он есть в этой команде, иначе первый её проект
   const projectId = list?.find((p) => p.id === project)?.id ?? list?.[0]?.id ?? null
   useEffect(() => {
     if (projectId && projectId !== project) setProject(projectId)
   }, [projectId, project, setProject])
 
-  // вики, файлы и поиск идут по команде открытого проекта (переключатель команд появится позже)
-  const teams = useTeams()
-  useCurrentTeam(teams.data, list?.find((p) => p.id === projectId)?.team_id)
+  // Вики гостю нужна, только если команда её открыла: открытая страница «Вики» уступает доске
+  const showWiki = team?.wiki ?? true
+  useEffect(() => {
+    if (team && !team.wiki && page === 'wiki') setPage('board')
+  }, [team, page, setPage])
+
+  const teamItems: SidebarTeam[] = useMemo(() => {
+    const items: SidebarTeam[] = teams.map((t) => ({ id: t.id, name: t.name, guest: t.guest }))
+    // администратор сервера открыл чужую команду: она не в списке, но должна быть видна как текущая
+    if (team && !teams.some((t) => t.id === team.id)) items.push({ id: team.id, name: team.name, guest: false, outside: true })
+    return items
+  }, [teams, team])
 
   const board = useBoard(projectId)
   const backlogCount = board.data?.tasks.filter((t) => t.column_id === null || t.column_id === undefined).length ?? 0
@@ -131,7 +147,7 @@ export function Workspace() {
   if (!user) return null
 
   const ProjectPage = PROJECT_PAGES[page]
-  const TeamPage = TEAM_PAGES[page]
+  const TeamPage = showWiki ? TEAM_PAGES[page] : undefined
 
   return (
     <AppShell
@@ -168,7 +184,29 @@ export function Workspace() {
           serverUrl={serverUrl}
           onNewProject={() => openProjectDialog({ kind: 'new' })}
           onProjectMenu={(id, x, y) => openProjectMenu({ id, x, y })}
-          invitesCount={invites.data?.length ?? 0}
+          invitesCount={(invites.data?.length ?? 0) + (teamInvites.data?.length ?? 0)}
+          canCreateProject={canCreateProject(team)}
+          showWiki={showWiki}
+          teams={
+            team
+              ? {
+                  items: teamItems,
+                  currentId: team.id,
+                  caption: team.guest ? `${team.name} · гость` : team.name,
+                  menuOpen: menu === 'team',
+                  onToggleMenu: () => toggleMenu('team'),
+                  onSelect: (id) => {
+                    closeMenus()
+                    if (id !== team.id) setTeam(id)
+                  },
+                  onCreate: () => openProjectDialog({ kind: 'new-team' }),
+                  onContextMenu: (x, y) => {
+                    if (!team.guest) openTeamMenu({ x, y })
+                  },
+                  onOpenAll: user.is_admin ? () => openProjectDialog({ kind: 'all-teams' }) : undefined,
+                }
+              : undefined
+          }
           onOpenInvites={() => openProjectDialog({ kind: 'invites' })}
           notificationsCount={notifications.data?.unread ?? 0}
           onOpenNotifications={() => openProjectDialog({ kind: 'notifications' })}
