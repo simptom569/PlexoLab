@@ -27,7 +27,7 @@ async fn seeded(pool: PgPool) -> Ctx {
     let (app, events) = app_and_events(pool.clone());
     let tokens = login_ok(&app, "lena@example.com", "dev").await;
     let user = db::users::find_by_email(&pool, "lena@example.com").await.unwrap().unwrap();
-    let team: uuid::Uuid = db::sqlx::query_scalar("select id from teams where name = 'Dream Team'").fetch_one(&pool).await.unwrap();
+    let team: uuid::Uuid = db::sqlx::query_scalar("select id from teams where name = 'Рабочее пространство'").fetch_one(&pool).await.unwrap();
     Ctx { app, events, pool, token: str_field(&tokens, "access_token").to_owned(), user, team, dir: common::TestDir::new() }
 }
 

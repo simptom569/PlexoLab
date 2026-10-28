@@ -88,6 +88,8 @@ pub struct TeamAccess {
     /// Не член, но явный участник проекта этой команды
     pub guest: bool,
     pub server_admin: bool,
+    /// Это личная команда «Личное» самого человека
+    pub owner: bool,
 }
 
 impl TeamAccess {
@@ -115,7 +117,7 @@ impl TeamAccess {
 impl From<db::teams::TeamForUser> for TeamAccess {
     fn from(found: db::teams::TeamForUser) -> Self {
         let role = found.role.as_deref().and_then(Role::parse);
-        TeamAccess { team: found.team, role, guest: found.guest, server_admin: found.server_admin }
+        TeamAccess { team: found.team, role, guest: found.guest, server_admin: found.server_admin, owner: found.owner }
     }
 }
 

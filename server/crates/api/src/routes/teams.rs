@@ -45,8 +45,10 @@ pub struct TeamDto {
     pub id: Uuid,
     #[schema(example = "Dream Team")]
     pub name: String,
-    /// Личная команда «Личное»: её нельзя архивировать и покинуть
+    /// Личная команда «Личное»: её нельзя архивировать
     pub personal: bool,
+    /// Это моя личная команда: владелец из неё не выходит и его нельзя убрать (в чужое «Личное» меня могли позвать)
+    pub owner: bool,
     /// Моя роль в команде: admin | member. Пусто, если я здесь гость.
     #[schema(example = "member", nullable)]
     pub role: Option<String>,
@@ -73,6 +75,7 @@ impl From<TeamAccess> for TeamDto {
             id: access.team.id,
             name: access.team.name.clone(),
             personal: access.team.personal_for.is_some(),
+            owner: access.owner,
             role: access.role.map(|r| r.as_str().to_owned()),
             guest: access.guest,
             wiki: access.can_read_wiki(),

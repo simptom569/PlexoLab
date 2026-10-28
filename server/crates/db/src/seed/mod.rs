@@ -223,8 +223,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     let user = |key: &str| pick(&users, key);
     let opt_user = |key: Option<&str>| key.map(user).transpose();
 
-    // ----- Команда: личные «Личное» создала база вместе с аккаунтами; все данные сида живут в общей «Dream Team» -----
-    let team: Uuid = sqlx::query_scalar("insert into teams (name, created_by) values ('Dream Team', $1) returning id")
+    // ----- Команда: личные «Личное» создала база вместе с аккаунтами; все данные сида живут в общей команде «Рабочее пространство» (как подпись в макете: так боковое меню в покое совпадает с эталонными снимками) -----
+    let team: Uuid = sqlx::query_scalar("insert into teams (name, created_by) values ('Рабочее пространство', $1) returning id")
         .bind(me)
         .fetch_one(&mut *c)
         .await?;

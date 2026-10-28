@@ -361,6 +361,15 @@ async fn the_owner_cannot_leave_be_removed_or_demoted_in_personal_but_guests_can
     add_member(&owner, personal, &friend, "admin").await;
     let uri = |user: Uuid| format!("/api/v1/teams/{personal}/members/{user}");
 
+    // у друга «Личное» владельца в списке своё «Личное» первым, а чужое помечено не его
+    let friends = friend.ok(friend.get("/api/v1/teams").await, StatusCode::OK).await;
+    assert_eq!(names(&friends), ["Личное", "Личное"]);
+    assert_eq!((friends[0]["owner"].clone(), friends[0]["id"].clone()), (json!(true), json!(friend.team.to_string())));
+    assert_eq!(
+        (friends[1]["owner"].clone(), friends[1]["personal"].clone(), friends[1]["role"].clone()),
+        (json!(false), json!(true), json!("admin"))
+    );
+
     // даже при втором администраторе владелец защищён
     assert_eq!(friend.patch(&uri(owner.user.id), json!({ "role": "member" })).await.status, StatusCode::CONFLICT);
     assert_eq!(friend.delete(&uri(owner.user.id)).await.status, StatusCode::CONFLICT);

@@ -31,6 +31,8 @@ pub struct TeamForUser {
     pub guest: bool,
     /// Администратор сервера: видит и правит всё
     pub server_admin: bool,
+    /// Это личная команда «Личное» самого этого человека (чужая «Личное», в которую его позвали, не его)
+    pub owner: bool,
 }
 
 /// Команды человека с его положением в каждой. Колонки одинаковые у одной и многих команд, поэтому запрос собирается
@@ -46,7 +48,8 @@ macro_rules! team_for_user_sql {
                       (tm.user_id is null and exists ( \
                          select 1 from project_members m join projects p on p.id = m.project_id \
                          where m.user_id = u.id and p.team_id = t.id and p.archived_at is null)) as guest, \
-                      u.is_admin as server_admin \
+                      u.is_admin as server_admin, \
+                      (t.personal_for is not distinct from u.id) as owner \
                from teams t \
                join users u on u.id = $1 \
                left join team_members tm on tm.team_id = t.id and tm.user_id = u.id \
@@ -78,7 +81,7 @@ pub async fn list_for_user<'e>(ex: impl PgExecutor<'e>, user_id: Uuid) -> Result
     sqlx::query_as(team_for_user_sql!(
         "*",
         "where not archived and (role is not null or guest) \
-         order by (role is null), (personal_for is null), seq"
+         order by (role is null), (not owner), (personal_for is null), seq"
     ))
     .bind(user_id)
     .fetch_all(ex)
