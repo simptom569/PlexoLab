@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef } from 'react'
 import { api } from '../../lib/api/client'
 import { keys } from '../../lib/api/queries'
+import { teamPath } from '../../lib/team'
 import type { FileList, Folder, LibraryFile, WikiNode, WikiPage } from '../../lib/api/types'
 import { dropDrafts, toNode } from './drafts'
 import { uploadInBatches } from '../../lib/upload'
@@ -17,7 +18,7 @@ import { useWikiStore } from './store'
 export function useCreatePage() {
   const qc = useQueryClient()
   return useMutation<WikiPage, Error, { parentId: string | null; title: string }>({
-    mutationFn: ({ parentId, title }) => api.post<WikiPage>('/wiki', { parent_id: parentId, title }),
+    mutationFn: ({ parentId, title }) => api.post<WikiPage>(teamPath('/wiki'), { parent_id: parentId, title }),
     onSuccess: (page, { parentId }) => {
       qc.setQueryData(keys.wikiPage(page.id), page)
       qc.setQueryData<WikiNode[]>(keys.wiki, (list) => [...(list ?? []).filter((n) => n.id !== page.id), toNode(page)])
@@ -104,7 +105,7 @@ export function useUploadFiles() {
   const qc = useQueryClient()
   return useMutation<LibraryFile[], Error, { files: File[]; folderId?: string | null; wikiPageId?: string | null }>({
     mutationFn: ({ files, folderId, wikiPageId }) =>
-      uploadInBatches<LibraryFile>('/files', files, { folder_id: folderId, wiki_page_id: wikiPageId }),
+      uploadInBatches<LibraryFile>(teamPath('/files'), files, { folder_id: folderId, wiki_page_id: wikiPageId }),
     onSettled: () => {
       // порядок и папка «Вложения» (её сервер создаёт сам) известны только серверу
       for (const key of [keys.files, keys.folders]) void qc.invalidateQueries({ queryKey: key })
@@ -134,7 +135,7 @@ export function useDeleteFile() {
 export function useCreateFolder() {
   const qc = useQueryClient()
   return useMutation<Folder, Error, { name: string }>({
-    mutationFn: ({ name }) => api.post<Folder>('/folders', { name }),
+    mutationFn: ({ name }) => api.post<Folder>(teamPath('/folders'), { name }),
     onSuccess: (folder) => qc.setQueryData<Folder[]>(keys.folders, (list) => [...(list ?? []), folder]),
     // такую папку успел создать кто-то другой: список обновится
     onError: () => void qc.invalidateQueries({ queryKey: keys.folders }),

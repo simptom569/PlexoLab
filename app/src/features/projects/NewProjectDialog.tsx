@@ -7,6 +7,8 @@ import {
   normalizeKey,
   type ProjectDialog,
 } from '../../lib/project-dialogs'
+import { useTeams } from '../../lib/api/queries'
+import { teamForNewProject, useTeamId } from '../../lib/team'
 import { useUi } from '../../lib/ui-store'
 import { createProject, errorText } from './api'
 import { DialogFrame, Field, Problem } from './parts'
@@ -17,6 +19,8 @@ type Props = { dialog: Extract<ProjectDialog, { kind: 'new' }> }
 export function NewProjectDialog(_props: Props) {
   const close = useUi((s) => s.closeProjectDialog)
   const setProject = useUi((s) => s.setProject)
+  // проект создаётся в текущей команде, а если я в ней гость, в моей первой («Личное»)
+  const teamId = teamForNewProject(useTeams().data, useTeamId())
   const [name, setName] = useState('')
   const [color, setColor] = useState<string>(PROJECT_COLORS[0].value)
   const [key, setKey] = useState('')
@@ -24,13 +28,13 @@ export function NewProjectDialog(_props: Props) {
 
   const cleanKey = normalizeKey(key)
   const keyOk = isValidKey(cleanKey)
-  const canCreate = name.trim() !== '' && keyOk && !state.saving
+  const canCreate = name.trim() !== '' && keyOk && teamId !== null && !state.saving
 
   const submit = async () => {
-    if (!canCreate) return
+    if (!canCreate || teamId === null) return
     setState({ saving: true, error: null })
     try {
-      const project = await createProject({ name: name.trim(), color, key: cleanKey })
+      const project = await createProject({ team_id: teamId, name: name.trim(), color, key: cleanKey })
       setProject(project.id)
       close()
     } catch (e) {

@@ -3,6 +3,7 @@
 
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { api } from './client'
+import { teamPath, useTeamId } from '../team'
 import type {
   ActivityPage,
   Board,
@@ -13,6 +14,7 @@ import type {
   Invite,
   NotificationList,
   SearchResult,
+  Team,
   LinkGroup,
   Members,
   Project,
@@ -24,6 +26,8 @@ import type {
 } from './types'
 
 export const keys = {
+  /** Мои команды: те, где я член, и те, где я гость */
+  teams: ['teams'] as const,
   projects: ['projects'] as const,
   invites: ['invites'] as const,
   /** Архивные проекты, которыми я управляю; лежит под началом ключа проектов, поэтому `['projects']` затрагивает и его */
@@ -54,6 +58,8 @@ export const keys = {
   linkGroups: ['link-groups'] as const,
   projectLinkGroups: (projectId: string) => ['link-groups', projectId] as const,
 }
+
+export const useTeams = () => useQuery({ queryKey: keys.teams, queryFn: () => api.get<Team[]>('/teams') })
 
 export const useProjects = () => useQuery({ queryKey: keys.projects, queryFn: () => api.get<Project[]>('/projects') })
 
@@ -95,8 +101,11 @@ export const useTask = (taskId: string | null) =>
     enabled: taskId !== null,
   })
 
-/** Дерево страниц вики без текста */
-export const useWiki = () => useQuery({ queryKey: keys.wiki, queryFn: () => api.get<WikiNode[]>('/wiki') })
+/** Дерево страниц вики текущей команды без текста */
+export const useWiki = () => {
+  const teamId = useTeamId()
+  return useQuery({ queryKey: keys.wiki, queryFn: () => api.get<WikiNode[]>(teamPath('/wiki')), enabled: teamId !== null })
+}
 
 /** Страница с текстом. Правки идут через `usePageDraft`, который сам держит кэш страницы в порядке. */
 export const useWikiPage = (id: string | null) =>
@@ -107,9 +116,15 @@ export const useWikiPage = (id: string | null) =>
   })
 
 /** Вся библиотека файлов сразу: поиск, тип и папки отбираются на экране, так они откликаются мгновенно */
-export const useLibrary = () => useQuery({ queryKey: keys.files, queryFn: () => api.get<FileList>('/files') })
+export const useLibrary = () => {
+  const teamId = useTeamId()
+  return useQuery({ queryKey: keys.files, queryFn: () => api.get<FileList>(teamPath('/files')), enabled: teamId !== null })
+}
 
-export const useFolders = () => useQuery({ queryKey: keys.folders, queryFn: () => api.get<Folder[]>('/folders') })
+export const useFolders = () => {
+  const teamId = useTeamId()
+  return useQuery({ queryKey: keys.folders, queryFn: () => api.get<Folder[]>(teamPath('/folders')), enabled: teamId !== null })
+}
 
 /** Документы проекта без текста: карточки списка. Порядок общий для участников проекта. */
 export const useDocs = (projectId: string) =>
@@ -119,14 +134,16 @@ export const useDocs = (projectId: string) =>
  * Поиск по названиям задач (и их id), документов, страниц вики и файлов (окно «Поиск»). Пока идёт новый запрос, остаётся
  * прошлый ответ. Пустой запрос не ходит на сервер.
  */
-export const useSearch = (q: string) =>
-  useQuery({
-    queryKey: ['search', q] as const,
-    queryFn: () => api.get<SearchResult>(`/search?q=${encodeURIComponent(q)}`),
-    enabled: q !== '',
+export const useSearch = (q: string) => {
+  const teamId = useTeamId()
+  return useQuery({
+    queryKey: ['search', teamId, q] as const,
+    queryFn: () => api.get<SearchResult>(`/search?team=${teamId}&q=${encodeURIComponent(q)}`),
+    enabled: q !== '' && teamId !== null,
     placeholderData: keepPreviousData,
     staleTime: 5_000,
   })
+}
 
 /** Поиск по названию и тексту: ищет сервер, потому что текст в список не приходит. Пока ответа нет, остаётся прошлый. */
 export const useDocSearch = (projectId: string, q: string) =>

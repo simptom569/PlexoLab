@@ -92,9 +92,9 @@ describe('queryKeysFor', () => {
     }
   })
 
-  it('проект изменился: его список, доска и открытые задачи (у них мог смениться ключ); приглашение: приглашения', () => {
-    expect(queryKeysFor(event('project.changed', { project_id: 'p1' }))).toEqual([keys.projects, keys.board('p1'), ['task'], keys.members('p1')])
-    expect(queryKeysFor(event('project.changed'))).toEqual([keys.projects, ['board'], ['task'], ['members']])
+  it('проект изменился: его список, мои команды (гость мог стать или перестать им быть), доска и открытые задачи (у них мог смениться ключ); приглашение: приглашения', () => {
+    expect(queryKeysFor(event('project.changed', { project_id: 'p1' }))).toEqual([keys.projects, keys.teams, keys.board('p1'), ['task'], keys.members('p1')])
+    expect(queryKeysFor(event('project.changed'))).toEqual([keys.projects, keys.teams, ['board'], ['task'], ['members']])
     expect(queryKeysFor(event('invite.changed'))).toEqual([keys.invites])
   })
 

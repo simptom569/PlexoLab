@@ -82,7 +82,7 @@ describe('колонки', () => {
 
   it('removeColumn: задачи уходят в конец выбранной колонки в прежнем порядке', () => {
     const board: Board = {
-      project: { id: 'p', key: 'WEB', name: 'Web', color: 'accent', role: 'admin', archived: false }, columns, milestones: [], modules: [], tags: [],
+      project: { id: 'p', key: 'WEB', name: 'Web', color: 'accent', role: 'admin', archived: false, team_id: 't', visibility: 'members', guest: false }, columns, milestones: [], modules: [], tags: [],
       tasks: [task('t1', 'a', 1024), task('t2', 'a', 2048), task('u1', 'b', 1024), task('u2', 'b', 5000)],
     }
     const next = removeColumn(board, 'a', 'b')

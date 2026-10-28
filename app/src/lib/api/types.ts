@@ -5,6 +5,7 @@ type S = components['schemas']
 
 export type User = S['UserDto']
 export type UpdateProfile = S['UpdateProfile']
+export type Team = S['TeamDto']
 export type Project = S['ProjectDto']
 export type Member = S['MemberDto']
 export type PendingInvite = S['PendingInviteDto']

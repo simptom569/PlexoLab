@@ -161,27 +161,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/files": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Файлы библиотеки (вложения задач сюда не входят), новые первыми */
-        get: operations["list_files"];
-        put?: never;
-        /**
-         * Загрузить файлы в библиотеку (multipart/form-data). Поле `file` можно повторять, `folder_id` и `wiki_page_id`
-         *     необязательны. Файл, прикреплённый к странице без указания папки, попадает в папку «Вложения».
-         */
-        post: operations["upload_files"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/files/{id}": {
         parameters: {
             query?: never;
@@ -210,24 +189,6 @@ export interface paths {
         get: operations["download_file"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/folders": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Папки в порядке создания, с числом файлов */
-        get: operations["list_folders"];
-        put?: never;
-        /** Новая папка. Названия не повторяются. */
-        post: operations["create_folder"];
         delete?: never;
         options?: never;
         head?: never;
@@ -527,8 +488,8 @@ export interface paths {
         };
         /**
          * Лента проекта
-         * @description События проекта и общие события без проекта (вики, файлы библиотеки), новые первыми. Фильтры «Участник» и «Тип
-         *     события» сочетаются. Страница — 50 событий;
+         * @description События проекта и события вики и файлов библиотеки его команды (если человек их читает), новые первыми. Фильтры
+         *     «Участник» и «Тип события» сочетаются. Страница — 50 событий;
          *     пока есть более старые, в ответе приходит `next`, его передают как `before`.
          */
         get: operations["list_activity"];
@@ -701,11 +662,17 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Убрать участника (администратор) или выйти самому (любой участник). Единственный администратор не может выйти. */
+        /**
+         * Убрать участника (администратор) или выйти самому (любой участник). Администратор команды остаётся над проектом и
+         *     после выхода из списка участников.
+         */
         delete: operations["remove_member"];
         options?: never;
         head?: never;
-        /** Сменить роль участника (администратор). Единственного администратора понизить нельзя. */
+        /**
+         * Сменить роль участника (администратор). Проект не остаётся без администратора: над каждым проектом стоит
+         *     администратор его команды (docs/TEAMS.md, 4.4), поэтому запрета «единственный администратор» нет.
+         */
         patch: operations["update_member"];
         trace?: never;
     };
@@ -998,15 +965,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/users": {
+    "/api/v1/teams": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Участники команды */
-        get: operations["list_users"];
+        /** Мои команды: те, где я член («Личное» первой), и те, где я только гость. Архивные не показываются. */
+        get: operations["list_teams"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1015,18 +982,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/wiki": {
+    "/api/v1/teams/{id}/files": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Дерево страниц без текста, соседи в порядке `position` */
+        /** Файлы библиотеки команды (вложения задач сюда не входят), новые первыми */
+        get: operations["list_files"];
+        put?: never;
+        /**
+         * Загрузить файлы в библиотеку (multipart/form-data). Поле `file` можно повторять, `folder_id` и `wiki_page_id`
+         *     необязательны. Файл, прикреплённый к странице без указания папки, попадает в папку «Вложения».
+         */
+        post: operations["upload_files"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Папки команды в порядке создания, с числом файлов */
+        get: operations["list_folders"];
+        put?: never;
+        /** Новая папка. Названия в команде не повторяются. */
+        post: operations["create_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/wiki": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Дерево страниц команды без текста, соседи в порядке `position` */
         get: operations["list_pages"];
         put?: never;
         /** Новая страница в конец списка вложенных в `parent_id` (или в корень). В ленту пишется «создана». */
         post: operations["create_page"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Люди, которых я вижу
+         * @description Я сам, члены моих команд, участники проектов, к которым у меня есть доступ, и те, чьи имена остались на видимых мне
+         *     данных (комментарии, задачи, события, страницы вики, файлы), хоть бы они уже ушли. Нужен клиенту как «книга имён и
+         *     аватарок». E-mail у человека пуст, если мне его видеть не положено (docs/TEAMS.md, раздел 8); `is_admin` другим
+         *     людям не отдаётся (у всех кроме меня `false`).
+         */
+        get: operations["list_users"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1082,7 +1111,7 @@ export interface components {
             id: string;
             /**
              * Format: uuid
-             * @description Проект события; у вики и файлов библиотеки проекта нет, они видны в ленте любого проекта
+             * @description Проект события; у вики и файлов библиотеки проекта нет, их видят в ленте проектов команды те, кто читает вики
              */
             project_id?: string | null;
             /** @description Объект действия: «WEB-141 Тёмная тема для страницы настроек» */
@@ -1242,6 +1271,16 @@ export interface components {
             key?: string | null;
             /** @example Сайт */
             name: string;
+            /**
+             * Format: uuid
+             * @description Команда, в которой создаётся проект; создать может любой её член
+             */
+            team_id: string;
+            /**
+             * @description members (только участники) | team (вся команда); без него members
+             * @example members
+             */
+            visibility?: string | null;
         };
         CreateRelease: {
             /** Format: date */
@@ -1653,6 +1692,8 @@ export interface components {
              * @example accent
              */
             color: string;
+            /** @description Текущий человек здесь гость: он явный участник проекта, но не член его команды */
+            guest: boolean;
             /** Format: uuid */
             id: string;
             /**
@@ -1663,10 +1704,21 @@ export interface components {
             /** @example Web-приложение */
             name: string;
             /**
-             * @description Роль текущего человека в проекте: admin | member (у глобального админа всегда admin)
+             * @description Роль текущего человека в проекте: admin | member. Администратор: явный админ проекта, администратор его команды
+             *     или администратор сервера.
              * @example member
              */
             role: string;
+            /**
+             * Format: uuid
+             * @description Команда, которой принадлежит проект
+             */
+            team_id: string;
+            /**
+             * @description Кто видит проект: members (явные участники и администраторы команды) | team (ещё и все члены команды)
+             * @example members
+             */
+            visibility: string;
         };
         RefreshRequest: {
             refresh_token: string;
@@ -1863,6 +1915,26 @@ export interface components {
         TaskUploadForm: {
             /** @description Файлы; поле `file` можно повторять */
             file: string[];
+        };
+        /** @description Команда глазами текущего человека */
+        TeamDto: {
+            /** @description Я здесь гость: участник проекта этой команды без членства в ней */
+            guest: boolean;
+            /** @description Гости проектов команды могут читать её вики. Видят только члены команды. */
+            guests_read_wiki?: boolean | null;
+            /** Format: uuid */
+            id: string;
+            /** @example Dream Team */
+            name: string;
+            /** @description Личная команда «Личное»: её нельзя архивировать и покинуть */
+            personal: boolean;
+            /**
+             * @description Моя роль в команде: admin | member. Пусто, если я здесь гость.
+             * @example member
+             */
+            role?: string | null;
+            /** @description Я могу читать вики и библиотеку файлов команды */
+            wiki: boolean;
         };
         /** @description Объект холста для миниатюры в списке: без текста */
         ThumbObjectDto: {
@@ -2674,104 +2746,6 @@ export interface operations {
             };
         };
     };
-    list_files: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description `root` — только файлы вне папок, идентификатор папки — файлы в ней, не передано — везде */
-                folder: string | null;
-                /** @description img | pdf | doc | sheet | zip | other */
-                kind: string | null;
-                /** @description Часть имени файла */
-                q: string | null;
-                /** @description Только вложения этой страницы */
-                wiki_page_id: string | null;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Файлы и общее число файлов в библиотеке */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileListDto"];
-                };
-            };
-            /** @description Некорректные условия отбора */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    upload_files: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["UploadForm"];
-            };
-        };
-        responses: {
-            /** @description Файлы сохранены */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileDto"][];
-                };
-            };
-            /** @description Некорректная форма, нет такой папки или страницы */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Файл больше лимита */
-            413: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     delete_file: {
         parameters: {
             query?: never;
@@ -2793,6 +2767,15 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Библиотеку команды можно только читать (гость) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2852,86 +2835,6 @@ export interface operations {
             };
         };
     };
-    list_folders: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Папки библиотеки */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FolderDto"][];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
-    create_folder: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateFolder"];
-            };
-        };
-        responses: {
-            /** @description Папка создана */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FolderDto"];
-                };
-            };
-            /** @description Некорректное название */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Нет действительного токена */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Папка с таким названием уже есть */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-        };
-    };
     delete_folder: {
         parameters: {
             query?: never;
@@ -2953,6 +2856,15 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Библиотеку команды можно только читать (гость) */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3781,6 +3693,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Нет такой команды или человек в ней не состоит */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     update_project: {
@@ -4461,15 +4382,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Это единственный администратор проекта */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
         };
     };
     update_member: {
@@ -4526,15 +4438,6 @@ export interface operations {
             };
             /** @description Нет такого проекта или участника */
             404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorBody"];
-                };
-            };
-            /** @description Это единственный администратор проекта */
-            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5200,6 +5103,8 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Команда, по которой ищем */
+                team: string;
                 /** @description Что искать: часть названия или id задачи (`WEB-141`), без учёта регистра. Пустой запрос ничего не находит. */
                 q: string | null;
             };
@@ -5227,6 +5132,15 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5754,7 +5668,7 @@ export interface operations {
             };
         };
     };
-    list_users: {
+    list_teams: {
         parameters: {
             query?: never;
             header?: never;
@@ -5763,13 +5677,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Все участники в порядке добавления в команду */
+            /** @description Команды человека */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserDto"][];
+                    "application/json": components["schemas"]["TeamDto"][];
                 };
             };
             /** @description Нет действительного токена */
@@ -5783,16 +5697,262 @@ export interface operations {
             };
         };
     };
-    list_pages: {
+    list_files: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+                /** @description `root` — только файлы вне папок, идентификатор папки — файлы в ней, не передано — везде */
+                folder: string | null;
+                /** @description img | pdf | doc | sheet | zip | other */
+                kind: string | null;
+                /** @description Часть имени файла */
+                q: string | null;
+                /** @description Только вложения этой страницы */
+                wiki_page_id: string | null;
+            };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Все страницы вики */
+            /** @description Файлы и общее число файлов в библиотеке */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileListDto"];
+                };
+            };
+            /** @description Некорректные условия отбора */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или библиотеку её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    upload_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["UploadForm"];
+            };
+        };
+        responses: {
+            /** @description Файлы сохранены */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileDto"][];
+                };
+            };
+            /** @description Некорректная форма, нет такой папки или страницы */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Библиотеку команды можно только читать (гость) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или библиотеку её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Файл больше лимита */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_folders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Папки библиотеки */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или библиотеку её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_folder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFolder"];
+            };
+        };
+        responses: {
+            /** @description Папка создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderDto"];
+                };
+            };
+            /** @description Некорректное название */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Библиотеку команды можно только читать (гость) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или библиотеку её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Папка с таким названием уже есть */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Все страницы вики команды */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -5810,13 +5970,25 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Нет такой команды или вики её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     create_page: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
             cookie?: never;
         };
         requestBody: {
@@ -5841,6 +6013,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Вики команды можно только читать (гость) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или вики её не читать */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_users: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Видимые мне люди в порядке добавления */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserDto"][];
                 };
             };
             /** @description Нет действительного токена */
@@ -5884,7 +6103,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Нет такой страницы */
+            /** @description Нет такой страницы или вики её команды не читать */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5923,7 +6142,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Нет такой страницы */
+            /** @description Вики команды можно только читать (гость) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой страницы или вики её команды не читать */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -5977,7 +6205,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Нет такой страницы */
+            /** @description Вики команды можно только читать (гость) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой страницы или вики её команды не читать */
             404: {
                 headers: {
                     [name: string]: unknown;

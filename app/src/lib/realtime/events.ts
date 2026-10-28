@@ -137,7 +137,7 @@ export function queryKeysFor(e: ServerEvent): QueryKey[] {
       return [keys.linkGroups]
     // проект, его настройки или состав участников изменились: список проектов (боковое меню) и его доска
     case 'project.changed':
-      return [keys.projects, ...board, ALL_TASKS, e.project_id ? keys.members(e.project_id) : ALL_MEMBERS]
+      return [keys.projects, keys.teams, ...board, ALL_TASKS, e.project_id ? keys.members(e.project_id) : ALL_MEMBERS]
     // чьё-то приглашение в проект появилось, принято или отозвано
     case 'invite.changed':
       return [keys.invites]

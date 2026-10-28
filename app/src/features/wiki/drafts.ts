@@ -6,6 +6,7 @@ import { copyTitle } from '../../lib/copyTitle'
 import { keys } from '../../lib/api/queries'
 import type { WikiNode, WikiPage } from '../../lib/api/types'
 import { queryClient } from '../../lib/query'
+import { teamPath } from '../../lib/team'
 import { useSession } from '../../lib/session'
 import { useToast } from '../../lib/toast'
 import { trackUnsent, untrackUnsent } from '../../lib/unsent'
@@ -32,10 +33,10 @@ export function cachePage(page: WikiPage): void {
 async function saveCopy(original: WikiPage, mine: { title: string; md: string }): Promise<string> {
   const title = copyTitle(mine.title, useSession.getState().user?.name ?? '', new Date())
   const parent = original.parent_id ?? null
-  const created = await api.post<WikiPage>('/wiki', { title, md: mine.md, parent_id: parent })
+  const created = await api.post<WikiPage>(teamPath('/wiki'), { title, md: mine.md, parent_id: parent })
   try {
     // сервер кладёт новую страницу в конец; переставляем её перед той, что шла за оригиналом
-    const siblings = await api.get<WikiNode[]>('/wiki')
+    const siblings = await api.get<WikiNode[]>(teamPath('/wiki'))
     const next = siblings
       .filter((n) => n.id !== created.id && (n.parent_id ?? null) === parent && n.position > original.position)
       .sort((a, b) => a.position - b.position)[0]

@@ -5,7 +5,8 @@ import { OfflineBar } from '../../components/OfflineBar'
 import { Toast } from '../../components/Toast'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/Surfaces'
-import { useBoard, useMyInvites, useNotifications, useProjects, useUsers } from '../../lib/api/queries'
+import { useBoard, useMyInvites, useNotifications, useProjects, useTeams, useUsers } from '../../lib/api/queries'
+import { useCurrentTeam } from '../../lib/useCurrentTeam'
 import { queryClient } from '../../lib/query'
 import { useRealtime } from '../../lib/realtime/useRealtime'
 import type { PageId } from '../../lib/pages'
@@ -94,6 +95,10 @@ export function Workspace() {
   useEffect(() => {
     if (projectId && projectId !== project) setProject(projectId)
   }, [projectId, project, setProject])
+
+  // вики, файлы и поиск идут по команде открытого проекта (переключатель команд появится позже)
+  const teams = useTeams()
+  useCurrentTeam(teams.data, list?.find((p) => p.id === projectId)?.team_id)
 
   const board = useBoard(projectId)
   const backlogCount = board.data?.tasks.filter((t) => t.column_id === null || t.column_id === undefined).length ?? 0
