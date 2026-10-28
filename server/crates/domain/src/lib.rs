@@ -10,6 +10,7 @@ pub mod mentions;
 pub mod position;
 pub mod projects;
 pub mod search;
+pub mod teams;
 pub mod users;
 pub mod wiki;
 pub mod work;

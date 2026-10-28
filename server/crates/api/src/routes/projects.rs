@@ -10,7 +10,10 @@ use uuid::Uuid;
 
 use super::{
     dto::{BoardDto, ProjectDto, TaskCardDto},
-    project_dto::{CreateProject, MemberDto, MembersDto, ProjectsQuery, UpdateMember, UpdateProject},
+    project_dto::{
+        CreateProject, MemberDto, MembersDto, ProjectsQuery, UpdateMember, UpdateProject, VisibilityImpactDto,
+        VisibilityQuery,
+    },
 };
 use crate::{
     access,
@@ -29,6 +32,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(unarchive_project))
         .routes(routes!(list_members))
         .routes(routes!(update_member, remove_member))
+        .routes(routes!(visibility_impact))
 }
 
 fn bad(message: impl Into<String>) -> ApiError {
@@ -121,7 +125,10 @@ async fn create_project(
     Ok((StatusCode::CREATED, Json(ProjectDto::new(project, Role::Admin.as_str(), false))))
 }
 
-/// Название, цвет и ключ проекта (администратор). Смена ключа меняет только подпись id задач.
+/// Название, цвет, ключ и видимость проекта (администратор). Смена ключа меняет только подпись id задач. Смена видимости
+/// действует сразу: «Вся команда» открывает проект всем членам команды, «Только участники» закрывает его от тех, кого нет
+/// в списке участников (администраторы команды остаются). Сколько людей это затронет, заранее считает
+/// `GET /projects/{id}/visibility-impact`.
 #[utoipa::path(
     patch,
     path = "/projects/{id}",
@@ -153,6 +160,11 @@ async fn update_project(
         patch.color = Some(color.clone());
     }
     patch.key = req.key.as_ref().map(|k| k.as_deref().map(clean_key).transpose().map(Option::flatten)).transpose()?;
+    patch.visibility = req
+        .visibility
+        .as_deref()
+        .map(|raw| Visibility::parse(raw).map(|v| v.as_str().to_owned()).ok_or_else(|| bad("Видимость: members или team")))
+        .transpose()?;
 
     let mut tx = state.pool.begin().await?;
     let access = access::admin_locked(&mut tx, auth, id).await?;
@@ -161,6 +173,12 @@ async fn update_project(
         let effective = key.as_deref().unwrap_or(board::DEFAULT_KEY);
         if db::projects::module_has_key(&mut *tx, id, effective).await? {
             return Err(ApiError::Conflict("Такой ключ уже есть в этом проекте".into()));
+        }
+    }
+    // кто потеряет доступ, закрыв проект: им уходит личное событие, ведь в аудиторию проекта они уже не войдут
+    if patch.visibility.as_deref() == Some(Visibility::Members.as_str()) && access.project.visibility != "members" {
+        for user in db::projects::visibility_dependents(&mut *tx, id).await? {
+            events::note_user(user);
         }
     }
     let project = db::projects::update(&mut tx, id, &patch).await?;
@@ -260,7 +278,41 @@ async fn board(
 
 // ===== Участники =====
 
-/// Участники проекта; ожидающие приглашения видит только администратор
+/// Сколько людей затронет смена видимости проекта (администратор проекта): число для окна подтверждения
+#[utoipa::path(
+    get,
+    path = "/projects/{id}/visibility-impact",
+    tag = "projects",
+    security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Проект"), VisibilityQuery),
+    responses(
+        (status = 200, description = "Сколько человек затронет смена", body = VisibilityImpactDto),
+        (status = 400, description = "Незнакомая видимость", body = ErrorBody),
+        (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Нужны права администратора проекта", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта", body = ErrorBody),
+    )
+)]
+async fn visibility_impact(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiPath(id): ApiPath<Uuid>,
+    ApiQuery(query): ApiQuery<VisibilityQuery>,
+) -> ApiResult<Json<VisibilityImpactDto>> {
+    let to = Visibility::parse(&query.to).ok_or_else(|| bad("Видимость: members или team"))?;
+    let mut conn = state.pool.acquire().await?;
+    let access = access::admin(&mut *conn, auth, id).await?;
+    let people = if access.project.visibility == to.as_str() {
+        0
+    } else {
+        db::projects::visibility_dependents(&mut *conn, id).await?.len() as i64
+    };
+    Ok(Json(VisibilityImpactDto { to: to.as_str().to_owned(), people }))
+}
+
+/// Участники проекта; ожидающие приглашения видит только администратор. Кроме явных участников в списке администраторы
+/// команды (`team_admin`) и при видимости «Вся команда» все члены команды (`implicit`): их нет в списке участников, но
+/// они в проекте. E-mail явных участников видит администратор проекта, неявных администратор команды; каждый видит свой.
 #[utoipa::path(
     get,
     path = "/projects/{id}/members",
@@ -280,13 +332,62 @@ async fn list_members(
 ) -> ApiResult<Json<MembersDto>> {
     let mut conn = state.pool.acquire().await?;
     let access = access::project(&mut *conn, auth, id).await?;
-    let members = db::members::list(&mut *conn, id).await?;
+    let team = access::team(&mut *conn, auth, access.project.team_id).await?;
+    let explicit = db::members::list(&mut *conn, id).await?;
+    let team_members = db::teams::members(&mut *conn, access.project.team_id).await?;
     let invites =
         if access.is_admin() { db::invites::list_pending_for_project(&mut *conn, id).await? } else { Vec::new() };
-    Ok(Json(MembersDto {
-        members: members.into_iter().map(MemberDto::from).collect(),
-        invites: invites.into_iter().map(Into::into).collect(),
-    }))
+    let members = member_rows(&access, &team, auth.id, explicit, team_members);
+    Ok(Json(MembersDto { members, invites: invites.into_iter().map(Into::into).collect() }))
+}
+
+/// Явные участники, администраторы команды и (при «Вся команда») члены команды одним списком: сначала администраторы,
+/// потом по порядку. Тот, кто и явный, и неявный, остаётся одной строкой с высшей ролью.
+fn member_rows(
+    access: &access::Access,
+    team: &access::TeamAccess,
+    viewer: Uuid,
+    explicit: Vec<db::members::Member>,
+    team_members: Vec<db::teams::TeamMember>,
+) -> Vec<MemberDto> {
+    let team_role = |user: Uuid| team_members.iter().find(|m| m.user_id == user).map(|m| m.role.as_str());
+    let mut rows: Vec<MemberDto> = Vec::new();
+    for m in &explicit {
+        let team_admin = team_role(m.user_id) == Some(Role::Admin.as_str());
+        let mut row = MemberDto::from(m.clone());
+        row.team_admin = team_admin;
+        if team_admin {
+            row.role = Role::Admin.as_str().to_owned();
+        }
+        if !(access.is_admin() || m.user_id == viewer) {
+            row.email = String::new();
+        }
+        rows.push(row);
+    }
+    let everyone = access.project.visibility == Visibility::Team.as_str();
+    for m in &team_members {
+        if explicit.iter().any(|e| e.user_id == m.user_id) {
+            continue;
+        }
+        let team_admin = m.role == Role::Admin.as_str();
+        if !team_admin && !everyone {
+            continue;
+        }
+        rows.push(MemberDto {
+            user_id: m.user_id,
+            email: if team.is_admin() || m.user_id == viewer { m.email.clone() } else { String::new() },
+            name: m.name.clone(),
+            job: m.job.clone(),
+            tone: m.tone,
+            is_admin: false,
+            role: m.role.clone(),
+            joined_at: m.joined_at,
+            team_admin,
+            implicit: true,
+        });
+    }
+    rows.sort_by_key(|r| r.role != Role::Admin.as_str());
+    rows
 }
 
 /// Сменить роль участника (администратор). Проект не остаётся без администратора: над каждым проектом стоит
@@ -303,7 +404,8 @@ async fn list_members(
         (status = 400, description = "Некорректная роль", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 403, description = "Нужны права администратора проекта", body = ErrorBody),
-        (status = 404, description = "Нет такого проекта или участника", body = ErrorBody),
+        (status = 404, description = "Нет такого проекта или человека в нём", body = ErrorBody),
+        (status = 409, description = "Администратора команды понизить нельзя", body = ErrorBody),
     )
 )]
 async fn update_member(
@@ -314,9 +416,25 @@ async fn update_member(
 ) -> ApiResult<StatusCode> {
     let role = Role::parse(&req.role).ok_or_else(|| bad("Роль: admin или member"))?;
     let mut tx = state.pool.begin().await?;
-    access::admin_locked(&mut tx, auth, id).await?;
-    db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
-    db::members::set_role(&mut tx, id, user_id, role.as_str()).await?;
+    let access = access::admin_locked(&mut tx, auth, id).await?;
+    if db::members::role_of(&mut *tx, id, user_id).await?.is_some() {
+        db::members::set_role(&mut tx, id, user_id, role.as_str()).await?;
+    } else {
+        // человека нет в списке: он здесь по команде. Администратор команды уже администратор проекта; члену команды
+        // при «Вся команда» повышение создаёт явную запись без приглашения (docs/TEAMS.md, 3.4).
+        match db::teams::member_role(&mut *tx, access.project.team_id, user_id).await?.as_deref() {
+            Some("admin") if role == Role::Admin => {}
+            Some("admin") => {
+                return Err(ApiError::Conflict("Администратор команды всегда администратор её проектов".into()));
+            }
+            Some(_) if access.project.visibility == Visibility::Team.as_str() => {
+                if role == Role::Admin {
+                    db::members::add(&mut tx, id, user_id, role.as_str()).await?;
+                }
+            }
+            _ => return Err(ApiError::NotFound),
+        }
+    }
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -334,6 +452,7 @@ async fn update_member(
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 403, description = "Убрать другого может только администратор проекта", body = ErrorBody),
         (status = 404, description = "Нет такого проекта или участника", body = ErrorBody),
+        (status = 409, description = "Человек в проекте по команде: убрать его из списка нельзя", body = ErrorBody),
     )
 )]
 async fn remove_member(
@@ -342,12 +461,21 @@ async fn remove_member(
     ApiPath((id, user_id)): ApiPath<(Uuid, Uuid)>,
 ) -> ApiResult<StatusCode> {
     let mut tx = state.pool.begin().await?;
-    if user_id == auth.id {
-        access::project_locked(&mut tx, auth, id).await?;
+    let access = if user_id == auth.id {
+        access::project_locked(&mut tx, auth, id).await?
     } else {
-        access::admin_locked(&mut tx, auth, id).await?;
+        access::admin_locked(&mut tx, auth, id).await?
+    };
+    if db::members::role_of(&mut *tx, id, user_id).await?.is_none() {
+        // нет в списке участников: человек здесь по команде, и «убрать» его нельзя
+        return Err(match db::teams::member_role(&mut *tx, access.project.team_id, user_id).await?.as_deref() {
+            Some("admin") => ApiError::Conflict("Администратор команды видит все проекты команды".into()),
+            Some(_) if access.project.visibility == Visibility::Team.as_str() => ApiError::Conflict(
+                "Доступ у всей команды. Чтобы убрать, выберите «Только участники»".into(),
+            ),
+            _ => ApiError::NotFound,
+        });
     }
-    db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
     db::members::remove(&mut tx, id, user_id).await?;
     tx.commit().await?;
     // убранный человек уже не участник, но должен узнать об этом

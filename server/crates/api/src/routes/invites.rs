@@ -58,7 +58,8 @@ async fn create_invite(
     let user = db::users::find_by_email(&state.pool, &email)
         .await?
         .ok_or_else(|| ApiError::BadRequest("Аккаунта с таким адресом нет".into()))?;
-    if db::members::role_of(&mut *tx, project_id, user.id).await?.is_some() {
+    // «в проекте» и тот, кто видит его по команде (администратор команды, член при «Вся команда»): звать его незачем
+    if db::members::can_see(&mut *tx, project_id, user.id).await? {
         return Err(ApiError::Conflict("Уже в проекте".into()));
     }
     if db::invites::pending(&mut *tx, project_id, user.id).await?.is_some() {

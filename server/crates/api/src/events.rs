@@ -188,6 +188,19 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("DELETE", "/invites/{id}",             &[all("project.changed"), users("invite.changed")]),
     ("POST",   "/invites/{id}/accept",      &[all("project.changed"), users("invite.changed")]),
     ("POST",   "/invites/{id}/decline",     &[all("project.changed"), users("invite.changed")]),
+    // команды: состав, настройки, архив или чьё-то приглашение изменились (аудитория: те, кто читает вики команды; названные
+    // люди получают то же лично: приглашённый, убранный, гости при смене настройки)
+    ("POST",   "/teams",                    &[all("team.changed")]),
+    ("PATCH",  "/teams/{id}",               &[all("team.changed")]),
+    ("POST",   "/teams/{id}/archive",       &[all("team.changed"), all("project.changed")]),
+    ("POST",   "/teams/{id}/restore",       &[all("team.changed"), all("project.changed")]),
+    ("PATCH",  "/teams/{id}/members/{user_id}", &[all("team.changed")]),
+    ("DELETE", "/teams/{id}/members/{user_id}", &[all("team.changed"), all("project.changed")]),
+    ("POST",   "/teams/{id}/leave",         &[all("team.changed"), all("project.changed")]),
+    ("POST",   "/teams/{id}/invites",       &[all("team.changed"), users("team-invite.changed")]),
+    ("DELETE", "/team-invites/{id}",        &[all("team.changed"), users("team-invite.changed")]),
+    ("POST",   "/team-invites/{id}/accept", &[all("team.changed"), all("project.changed"), users("team-invite.changed")]),
+    ("POST",   "/team-invites/{id}/decline", &[all("team.changed"), users("team-invite.changed")]),
     // уведомления: прочитал в одном окне, счётчик обновится в других окнах этого же человека
     ("POST",   "/notifications/read-all",   &[users("notification.changed")]),
     ("POST",   "/notifications/{id}/read",  &[users("notification.changed")]),

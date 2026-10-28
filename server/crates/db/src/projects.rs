@@ -159,12 +159,15 @@ pub struct ProjectPatch {
     pub name: Option<String>,
     pub color: Option<String>,
     pub key: Option<Option<String>>,
+    /// `members` | `team`
+    pub visibility: Option<String>,
 }
 
 pub async fn update(conn: &mut PgConnection, id: Uuid, p: &ProjectPatch) -> Result<Project, sqlx::Error> {
     sqlx::query_as(concat!(
         "update projects set name = coalesce($2, name), color = coalesce($3, color), \
-                key = case when $4 then $5 else key end \
+                key = case when $4 then $5 else key end, \
+                visibility = coalesce($6::project_visibility, visibility) \
          where id = $1 returning ",
         bare_cols!()
     ))
@@ -173,7 +176,22 @@ pub async fn update(conn: &mut PgConnection, id: Uuid, p: &ProjectPatch) -> Resu
     .bind(p.color.as_deref())
     .bind(p.key.is_some())
     .bind(p.key.as_ref().and_then(|k| k.as_deref()))
+    .bind(p.visibility.as_deref())
     .fetch_one(conn)
+    .await
+}
+
+/// Члены команды проекта (не администраторы), которых нет в списке участников проекта. Это те, чей доступ зависит только
+/// от видимости: при «Вся команда» они видят проект, при «Только участники» нет. Их число показывает окно подтверждения
+/// смены видимости, а лишившимся доступа уходит личное событие (docs/TEAMS.md, 3.4).
+pub async fn visibility_dependents<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
+    sqlx::query_scalar(
+        "select tm.user_id from projects p join team_members tm on tm.team_id = p.team_id \
+         where p.id = $1 and tm.role = 'member' \
+           and not exists (select 1 from project_members m where m.project_id = p.id and m.user_id = tm.user_id)",
+    )
+    .bind(project_id)
+    .fetch_all(ex)
     .await
 }
 

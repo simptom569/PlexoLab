@@ -6,7 +6,7 @@ use db::{
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::serde_helpers::present;
@@ -41,6 +41,24 @@ pub struct UpdateProject {
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<String>)]
     pub key: Option<Option<String>>,
+    /// members (только участники) | team (вся команда). Меняет администратор проекта; число людей, которых это затронет,
+    /// заранее считает `GET /projects/{id}/visibility-impact`.
+    pub visibility: Option<String>,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct VisibilityQuery {
+    /// Какую видимость собираются включить: members | team
+    pub to: String,
+}
+
+/// Сколько людей затронет смена видимости проекта (окно подтверждения)
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VisibilityImpactDto {
+    pub to: String,
+    /// При `team`: сколько членов команды увидят проект. При `members`: сколько членов команды потеряют доступ, потому
+    /// что их нет в списке участников. Администраторы команды сохраняют доступ и в счёт не входят.
+    pub people: i64,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -91,11 +109,16 @@ pub struct MemberDto {
     pub tone: i16,
     /// Глобальный администратор приложения
     pub is_admin: bool,
-    /// Роль в проекте: admin | member
+    /// Роль в проекте: admin | member. Для администратора команды всегда admin.
     #[schema(example = "member")]
     pub role: String,
     #[serde(with = "time::serde::rfc3339")]
     pub joined_at: OffsetDateTime,
+    /// Администратор команды проекта: он администратор во всех её проектах, «убрать» у него нет
+    pub team_admin: bool,
+    /// Человека нет в списке участников: он здесь по видимости «Вся команда» (член) или как администратор команды. «Убрать»
+    /// не работает, роль можно повысить: повышение создаёт явную запись без приглашения.
+    pub implicit: bool,
 }
 
 impl From<Member> for MemberDto {
@@ -109,6 +132,8 @@ impl From<Member> for MemberDto {
             is_admin: m.is_admin,
             role: m.role,
             joined_at: m.joined_at,
+            team_admin: false,
+            implicit: false,
         }
     }
 }

@@ -124,6 +124,11 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::E
     sqlx::query_as::<_, User>(select_user!("where id = $1")).bind(id).fetch_optional(pool).await
 }
 
+/// Администратор ли сервера
+pub async fn is_admin<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("select coalesce((select is_admin from users where id = $1), false)").bind(id).fetch_one(ex).await
+}
+
 /// Есть ли такой пользователь. Работает и внутри транзакции.
 pub async fn exists<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar("select exists (select 1 from users where id = $1)").bind(id).fetch_one(ex).await

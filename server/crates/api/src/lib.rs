@@ -82,7 +82,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let state = AppState::new(pool, &config.jwt_secret)
         .with_openapi(config.expose_openapi)
         .with_data_dir(config.data_dir.clone())
-        .with_max_upload_bytes(config.max_upload_bytes);
+        .with_max_upload_bytes(config.max_upload_bytes)
+        .with_max_teams_per_user(config.max_teams_per_user);
     let app = router(state.clone()).layer(cors::layer(&config.cors_origins));
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await

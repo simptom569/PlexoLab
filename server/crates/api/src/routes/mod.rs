@@ -20,6 +20,7 @@ pub mod releases;
 pub mod search;
 pub mod tags;
 pub mod tasks;
+pub mod team_invites;
 pub mod teams;
 pub mod users;
 pub mod wiki;
@@ -36,6 +37,7 @@ pub fn v1() -> OpenApiRouter<AppState> {
         .merge(tasks::router())
         .merge(tags::router())
         .merge(teams::router())
+        .merge(team_invites::router())
         .merge(modules::router())
         .merge(releases::router())
         .merge(wiki::router())

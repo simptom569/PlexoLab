@@ -100,6 +100,16 @@ impl TeamAccess {
     pub fn can_write_wiki(&self) -> bool {
         self.server_admin || self.role.is_some()
     }
+
+    /// Член команды или администратор сервера: видит состав и настройки (гостю и постороннему их знать незачем)
+    pub fn is_member(&self) -> bool {
+        self.server_admin || self.role.is_some()
+    }
+
+    /// Управляет командой: её администратор или администратор сервера
+    pub fn is_admin(&self) -> bool {
+        self.server_admin || self.role == Some(Role::Admin)
+    }
 }
 
 impl From<db::teams::TeamForUser> for TeamAccess {
@@ -114,6 +124,39 @@ pub async fn team<'e>(ex: impl PgExecutor<'e>, user: AuthUser, team_id: Uuid) ->
     let found = db::teams::for_user(ex, team_id, user.id).await?.ok_or(ApiError::NotFound)?;
     events::note_team(team_id);
     Ok(found.into())
+}
+
+/// Команда для члена: гость и посторонний её «не видят» (состав команды им не показывают)
+pub async fn team_member<'e>(ex: impl PgExecutor<'e>, user: AuthUser, team_id: Uuid) -> ApiResult<TeamAccess> {
+    let access = team(ex, user, team_id).await?;
+    if access.is_member() { Ok(access) } else { Err(ApiError::NotFound) }
+}
+
+/// Команда для действия администратора команды: член без прав получает 403, гость и посторонний 404
+pub async fn team_admin<'e>(ex: impl PgExecutor<'e>, user: AuthUser, team_id: Uuid) -> ApiResult<TeamAccess> {
+    let access = team_member(ex, user, team_id).await?;
+    if access.is_admin() { Ok(access) } else { Err(ApiError::Forbidden) }
+}
+
+/// То же, но находит и архивную команду: администратор может вернуть её из архива
+pub async fn team_admin_incl_archived<'e>(
+    ex: impl PgExecutor<'e>,
+    user: AuthUser,
+    team_id: Uuid,
+) -> ApiResult<TeamAccess> {
+    let found = db::teams::for_admin_incl_archived(ex, team_id, user.id).await?.ok_or(ApiError::NotFound)?;
+    events::note_team(team_id);
+    let access = TeamAccess::from(found);
+    if !access.is_member() {
+        return Err(ApiError::NotFound);
+    }
+    if access.is_admin() { Ok(access) } else { Err(ApiError::Forbidden) }
+}
+
+/// Администратор сервера. Остальным 403: адрес есть, но он не для них.
+pub async fn server_admin<'e>(ex: impl PgExecutor<'e>, user: AuthUser) -> ApiResult<()> {
+    let found = db::users::is_admin(ex, user.id).await?;
+    if found { Ok(()) } else { Err(ApiError::Forbidden) }
 }
 
 /// Команда для чтения вики и файлов
