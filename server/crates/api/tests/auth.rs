@@ -157,9 +157,12 @@ async fn me_for_a_deleted_user_is_401(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn users_lists_the_team_in_the_order_they_were_added_without_secrets(pool: PgPool) {
-    let (app, _) = setup(pool.clone()).await; // Лена добавлена первой
-    make_user(&pool, "artem@example.com", "Артём К.", "pass-pass-pass").await;
-    make_user(&pool, "daniil@example.com", "Даниил С.", "pass-pass-pass").await;
+    let (app, lena) = setup(pool.clone()).await; // Лена добавлена первой
+    let artem = make_user(&pool, "artem@example.com", "Артём К.", "pass-pass-pass").await;
+    let daniil = make_user(&pool, "daniil@example.com", "Даниил С.", "pass-pass-pass").await;
+    // видны только люди из общих команд: все трое в одной
+    let team = make_team(&pool, "Команда", &[(lena.id, "admin"), (artem.id, "member"), (daniil.id, "member")]).await;
+    let _ = team;
     let tokens = login_ok(&app, EMAIL, PASSWORD).await;
 
     let r = get(&app, "/api/v1/users", Some(str_field(&tokens, "access_token"))).await;

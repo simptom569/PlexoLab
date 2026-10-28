@@ -7,7 +7,9 @@ use std::{net::SocketAddr, time::Duration};
 
 use api::{AppState, Event, Realtime, router};
 use axum::{body::Body, http::Request};
-use common::{SECRET, id_of, join, login_ok, make_project, make_project_with, make_user, str_field};
+use common::{
+    SECRET, id_of, join, join_team, login_ok, make_project, make_project_with, make_user, personal_team, str_field,
+};
 use db::{PgPool, users::User};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
@@ -52,6 +54,13 @@ fn quick() -> Realtime {
 
 async fn start(pool: PgPool, configure: impl FnOnce(AppState) -> AppState) -> Rt {
     let user = make_user(&pool, "tester@example.com", "Тестер Т.", "test-password").await;
+    // страница вики в «Личном» первого человека: на неё в тестах присутствия «наводят» блоки (`PAGE`)
+    db::sqlx::query("insert into wiki_pages (id, team_id, title, position) values ($1, $2, 'Страница', 1024)")
+        .bind(PAGE)
+        .bind(personal_team(&pool, user.id).await)
+        .execute(&pool)
+        .await
+        .unwrap();
     let state = configure(AppState::new(pool.clone(), SECRET));
     let app = router(state.clone());
     let token = {
@@ -126,7 +135,7 @@ async fn quiet(ws: &mut Client, wait: Duration) {
 }
 
 fn event(kind: &'static str) -> Event {
-    Event { kind, id: None, project_id: None, origin: None, audience: api::events::Audience::Everyone }
+    Event { kind, id: None, project_id: None, team_id: None, origin: None, audience: api::events::Audience::Everyone }
 }
 
 /// Запрос к API напрямую (минуя сокет), с меткой клиента
@@ -373,9 +382,10 @@ async fn connections_over_the_limit_get_503_and_places_are_freed(pool: PgPool) {
 // ===== Присутствие: кто в каком блоке =====
 
 impl Rt {
-    /// Второй человек: пользователь и его токен
+    /// Второй человек: пользователь и его токен. Он член команды первого человека и потому видит его вики.
     async fn person(&self, email: &str, name: &str) -> (User, String) {
         let user = make_user(&self.pool, email, name, "test-password").await;
+        join_team(&self.pool, personal_team(&self.pool, self.user.id).await, user.id, "member").await;
         let tokens = login_ok(&router(self.state.clone()), email, "test-password").await;
         (user, str_field(&tokens, "access_token").to_owned())
     }
@@ -655,4 +665,72 @@ async fn a_mark_that_moves_to_a_hidden_document_is_withdrawn(pool: PgPool) {
         json!({ "type": "presence.gone", "client": client }),
         "прежняя метка у наблюдателя не должна зависнуть"
     );
+}
+
+// ===== Команды: вики и присутствие только тем, кто читает вики команды =====
+
+impl Rt {
+    /// Человек, который не член команды первого человека и не гость в ней
+    async fn outsider(&self, email: &str) -> String {
+        make_user(&self.pool, email, "Посторонний", "test-password").await;
+        let tokens = login_ok(&router(self.state.clone()), email, "test-password").await;
+        str_field(&tokens, "access_token").to_owned()
+    }
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn wiki_events_reach_only_those_who_read_the_teams_wiki(pool: PgPool) {
+    let rt = start(pool.clone(), |s| s).await;
+    let team = personal_team(&pool, rt.user.id).await;
+    let (_, mate_token) = rt.person("mate@example.com", "Член команды").await;
+    let out_token = rt.outsider("out@example.com").await;
+    let mut owner = rt.ready().await;
+    let mut mate = rt.ready_as(&mate_token).await;
+    let mut out = rt.ready_as(&out_token).await;
+
+    rest(&rt, "client-A", "POST", &format!("/api/v1/teams/{team}/wiki"), json!({ "title": "П" })).await;
+    for ws in [&mut owner, &mut mate] {
+        assert_eq!(
+            next_json(ws).await,
+            json!({ "type": "wiki.updated", "id": null, "project_id": null, "team_id": team.to_string(), "origin": "client-A" })
+        );
+        assert_eq!(next_json(ws).await["type"], "activity.created");
+    }
+    quiet(&mut out, Duration::from_millis(200)).await;
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_guest_gets_wiki_events_only_when_connected_after_the_team_allowed_it(pool: PgPool) {
+    let rt = start(pool.clone(), |s| s).await;
+    let team = personal_team(&pool, rt.user.id).await;
+    let project = make_project_with(&pool, "WEB", "Web", "accent").await;
+    let guest_token = rt.outsider("guest@example.com").await;
+    let guest: Uuid = db::sqlx::query_scalar("select id from users where email = 'guest@example.com'").fetch_one(&pool).await.unwrap();
+    join(&pool, project, guest, "member").await;
+
+    let mut before = rt.ready_as(&guest_token).await;
+    db::sqlx::query("update teams set guests_read_wiki = true where id = $1").bind(team).execute(&pool).await.unwrap();
+    let mut after = rt.ready_as(&guest_token).await;
+
+    rest(&rt, "c", "POST", &format!("/api/v1/teams/{team}/wiki"), json!({ "title": "П" })).await;
+    assert_eq!(next_json(&mut after).await["type"], "wiki.updated");
+    quiet(&mut before, Duration::from_millis(200)).await;
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_block_on_a_wiki_page_is_seen_only_by_those_who_read_the_wiki(pool: PgPool) {
+    let rt = start(pool, |s| s).await;
+    let (_, mate_token) = rt.person("mate@example.com", "Член команды").await;
+    let out_token = rt.outsider("out@example.com").await;
+    let mut owner = rt.ready().await;
+    let mut mate = rt.ready_as(&mate_token).await;
+    let mut out = rt.ready_as(&out_token).await;
+
+    send(&mut owner, focus("wiki", PAGE, 1, 0, 2)).await;
+    assert_eq!(next_json(&mut mate).await["type"], "presence.set");
+    quiet(&mut out, Duration::from_millis(200)).await;
+
+    // чужой человек не может отметиться на странице, которой не читает
+    send(&mut out, focus("wiki", PAGE, 1, 3, 4)).await;
+    quiet(&mut owner, Duration::from_millis(200)).await;
 }

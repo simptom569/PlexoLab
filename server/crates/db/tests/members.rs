@@ -132,6 +132,8 @@ async fn an_empty_database_migrates_and_unused_tags_without_any_project_are_drop
 }
 
 const DOWN: &str = include_str!("../../../migrations_down/0013_project_members.down.sql");
+/// Откат идёт с конца: сначала команды (в них общий с приглашениями в проекты тип `invite_status`)
+const DOWN_TEAMS: &str = include_str!("../../../migrations_down/0018_teams.down.sql");
 
 #[sqlx::test]
 async fn down_migration_makes_tags_shared_again_and_drops_membership(pool: PgPool) {
@@ -141,6 +143,7 @@ async fn down_migration_makes_tags_shared_again_and_drops_membership(pool: PgPoo
     exec(&pool, "insert into tags (project_id, label, tone) select id, 'Срочно', 5 from projects").await;
     exec(&pool, "insert into task_tags select t.id, g.id from tasks t join tags g on g.project_id = t.project_id where g.label = 'Срочно' and t.title = 'API-1'").await;
 
+    sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN_TEAMS.to_owned())).execute(&pool).await.expect("откат команд выполняется");
     sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN.to_owned())).execute(&pool).await.expect("обратная миграция выполняется");
 
     // метки общие: по одной на название, задачи ничего не потеряли
@@ -168,10 +171,10 @@ async fn down_migration_makes_tags_shared_again_and_drops_membership(pool: PgPoo
 
 // ===== Выборки доступа =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn access_queries_know_members_admins_global_admins_and_strangers(pool: PgPool) {
     exec(&pool, "insert into users (email, name, password_hash, is_admin) values ('root@example.com', 'Root', 'h', true), ('lead@example.com', 'Lead', 'h', false), ('dev@example.com', 'Dev', 'h', false), ('out@example.com', 'Out', 'h', false)").await;
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent'), ('API', 'Api', 'warn')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent'), ((select id from teams where name = 'Тест'), 'API', 'Api', 'warn')")
         .await;
     exec(&pool, "update projects set archived_at = now() where key = 'API'").await;
     exec(&pool, "insert into project_members (project_id, user_id, role) select p.id, u.id, case when u.email = 'lead@example.com' then 'admin'::project_role else 'member'::project_role end from projects p, users u where u.email in ('lead@example.com', 'dev@example.com')").await;

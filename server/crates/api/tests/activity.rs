@@ -9,9 +9,10 @@ use db::PgPool;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-/// Событие напрямую в базе, с заданным временем (так проще получить сотню событий и одинаковые времена)
+/// Событие вики или библиотеки (без проекта) напрямую в базе, в первой команде, с заданным временем (так проще получить
+/// сотню событий и одинаковые времена)
 async fn event(pool: &PgPool, actor: Uuid, kind: &str, target: &str, text: &str, at: &str) {
-    db::sqlx::query("insert into activity (actor_id, kind, target, text, created_at) values ($1, $2::act_kind, $3, $4, $5::timestamptz)")
+    db::sqlx::query("insert into activity (actor_id, team_id, kind, target, text, created_at) values ($1, (select id from teams order by seq limit 1), $2::act_kind, $3, $4, $5::timestamptz)")
         .bind(actor)
         .bind(kind)
         .bind(target)
@@ -25,8 +26,8 @@ async fn event(pool: &PgPool, actor: Uuid, kind: &str, target: &str, text: &str,
 /// `n` событий подряд с интервалом в минуту, самое раннее первым: «Событие 1» старше «Событие n»
 async fn many(pool: &PgPool, actor: Uuid, n: usize) {
     db::sqlx::query(
-        "insert into activity (actor_id, kind, target, text, created_at) \
-         select $1, 'comment', 'Событие ' || i, 'тест', timestamptz '2026-10-01 00:00:00+00' + i * interval '1 minute' \
+        "insert into activity (actor_id, team_id, kind, target, text, created_at) \
+         select $1, (select id from teams order by seq limit 1), 'comment', 'Событие ' || i, 'тест', timestamptz '2026-10-01 00:00:00+00' + i * interval '1 minute' \
          from generate_series(1, $2::int) as i",
     )
     .bind(actor)
@@ -333,7 +334,8 @@ async fn feed_has_the_events_of_its_project_and_the_common_ones_but_not_another_
         (None, "Страница «Архитектура»", "2026-10-18 10:02:00+00"),
     ] {
         db::sqlx::query(
-            "insert into activity (actor_id, project_id, kind, target, text, created_at) values ($1, $2, 'create', $3, 'создана', $4::timestamptz)",
+            "insert into activity (actor_id, project_id, team_id, kind, target, text, created_at) \
+             values ($1, $2, case when $2::uuid is null then (select id from teams order by seq limit 1) end, 'create', $3, 'создана', $4::timestamptz)",
         )
         .bind(c.user.id)
         .bind(project)

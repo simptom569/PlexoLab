@@ -16,7 +16,7 @@ fn ev(kind: &str, target: &str, text: &str) -> (String, String, String) {
 impl Ctx {
     /// Загрузка в библиотеку с проверкой успеха: тела созданных файлов
     async fn put_files(&self, parts: &[Part]) -> Vec<Value> {
-        let r = self.upload("/api/v1/files", parts).await;
+        let r = self.upload(&self.files_url(), parts).await;
         self.ok(r, StatusCode::CREATED).await.as_array().unwrap().clone()
     }
 
@@ -25,7 +25,7 @@ impl Ctx {
     }
 
     async fn library(&self, query: &str) -> Value {
-        let r = self.get(&format!("/api/v1/files{query}")).await;
+        let r = self.get(&format!("{}{query}", self.files_url())).await;
         self.ok(r, StatusCode::OK).await
     }
 
@@ -34,12 +34,12 @@ impl Ctx {
     }
 
     async fn folder(&self, name: &str) -> Value {
-        let r = self.post("/api/v1/folders", json!({ "name": name })).await;
+        let r = self.post(&self.folders_url(), json!({ "name": name })).await;
         self.ok(r, StatusCode::CREATED).await
     }
 
     async fn page(&self, title: &str) -> Value {
-        let r = self.post("/api/v1/wiki", json!({ "title": title })).await;
+        let r = self.post(&self.wiki_url(), json!({ "title": title })).await;
         self.ok(r, StatusCode::CREATED).await
     }
 
@@ -56,13 +56,13 @@ async fn files_and_folders_need_a_token(pool: PgPool) {
     let app = app(pool);
     let id = Uuid::new_v4();
     for (method, uri) in [
-        (axum::http::Method::GET, "/api/v1/files".to_owned()),
-        (axum::http::Method::POST, "/api/v1/files".to_owned()),
+        (axum::http::Method::GET, format!("/api/v1/teams/{id}/files")),
+        (axum::http::Method::POST, format!("/api/v1/teams/{id}/files")),
         (axum::http::Method::GET, format!("/api/v1/files/{id}/download")),
         (axum::http::Method::DELETE, format!("/api/v1/files/{id}")),
         (axum::http::Method::POST, format!("/api/v1/tasks/{id}/files")),
-        (axum::http::Method::GET, "/api/v1/folders".to_owned()),
-        (axum::http::Method::POST, "/api/v1/folders".to_owned()),
+        (axum::http::Method::GET, format!("/api/v1/teams/{id}/folders")),
+        (axum::http::Method::POST, format!("/api/v1/teams/{id}/folders")),
         (axum::http::Method::DELETE, format!("/api/v1/folders/{id}")),
     ] {
         let r = send(&app, method.clone(), &uri, None, None).await;
@@ -115,7 +115,7 @@ async fn several_files_make_one_feed_entry_and_go_to_the_folder(pool: PgPool) {
     assert_eq!(c.feed().await, [ev("file", "3 файла", "загружено в вики")]);
     assert_eq!(c.dir.stored().len(), 3);
 
-    let r = c.get("/api/v1/folders").await;
+    let r = c.get(&c.folders_url()).await;
     assert_eq!(c.ok(r, StatusCode::OK).await[0]["file_count"], 3);
 }
 
@@ -131,7 +131,7 @@ async fn page_attachments_go_to_the_attachments_folder(pool: PgPool) {
 
     assert_eq!(first[0]["wiki_page_id"], page["id"]);
     assert_eq!(first[0]["folder_id"], second[0]["folder_id"], "папка «Вложения» создаётся один раз");
-    let r = c.get("/api/v1/folders").await;
+    let r = c.get(&c.folders_url()).await;
     let folders = c.ok(r, StatusCode::OK).await;
     assert_eq!(folders.as_array().unwrap().len(), 1);
     assert_eq!(folders[0]["name"], "Вложения");
@@ -154,7 +154,7 @@ async fn explicit_folder_wins_over_the_attachments_folder(pool: PgPool) {
         .await;
     assert_eq!(f[0]["folder_id"], folder["id"]);
     assert_eq!(f[0]["wiki_page_id"], page["id"]);
-    let r = c.get("/api/v1/folders").await;
+    let r = c.get(&c.folders_url()).await;
     assert_eq!(c.ok(r, StatusCode::OK).await.as_array().unwrap().len(), 1, "«Вложения» не появилась");
 }
 
@@ -162,10 +162,10 @@ async fn explicit_folder_wins_over_the_attachments_folder(pool: PgPool) {
 async fn wrong_folder_or_page_rejects_the_upload_and_leaves_no_files(pool: PgPool) {
     let c = Ctx::new(pool).await;
     for part in [text_part("folder_id", Uuid::new_v4()), text_part("wiki_page_id", Uuid::new_v4())] {
-        let r = c.upload("/api/v1/files", &[file_part("a.txt", b"1"), part]).await;
+        let r = c.upload(&c.files_url(), &[file_part("a.txt", b"1"), part]).await;
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
     }
-    let r = c.upload("/api/v1/files", &[file_part("a.txt", b"1"), text_part("folder_id", "не-uuid")]).await;
+    let r = c.upload(&c.files_url(), &[file_part("a.txt", b"1"), text_part("folder_id", "не-uuid")]).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
 
     assert!(c.dir.stored().is_empty(), "записанное на диск убрано");
@@ -176,13 +176,13 @@ async fn wrong_folder_or_page_rejects_the_upload_and_leaves_no_files(pool: PgPoo
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn form_without_a_file_or_a_name_is_refused(pool: PgPool) {
     let c = Ctx::new(pool).await;
-    let r = c.upload("/api/v1/files", &[text_part("folder_id", "")]).await;
+    let r = c.upload(&c.files_url(), &[text_part("folder_id", "")]).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
-    let r = c.upload("/api/v1/files", &[nameless_file_part(b"1")]).await;
+    let r = c.upload(&c.files_url(), &[nameless_file_part(b"1")]).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = c.upload("/api/v1/files", &[file_part("..", b"1")]).await;
+    let r = c.upload(&c.files_url(), &[file_part("..", b"1")]).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = c.upload("/api/v1/files", &[]).await;
+    let r = c.upload(&c.files_url(), &[]).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     assert!(c.dir.stored().is_empty());
 }
@@ -201,7 +201,7 @@ async fn file_over_the_limit_gets_413_and_nothing_is_kept(pool: PgPool) {
     let exact = c.put("ровно.bin", &[7; 10]).await;
     assert_eq!(exact["size_bytes"], 10, "ровно по лимиту проходит");
 
-    let r = c.upload("/api/v1/files", &[file_part("мелкий.bin", b"1"), file_part("огромный.bin", &[7; 11])]).await;
+    let r = c.upload(&c.files_url(), &[file_part("мелкий.bin", b"1"), file_part("огромный.bin", &[7; 11])]).await;
     assert_eq!(r.status, StatusCode::PAYLOAD_TOO_LARGE, "{}", r.body);
     assert_eq!(r.body["code"], "payload_too_large");
     assert!(str_field(&r.body, "message").contains("огромный.bin"));
@@ -215,7 +215,7 @@ async fn file_over_the_limit_gets_413_and_nothing_is_kept(pool: PgPool) {
 async fn too_many_files_in_one_request_are_refused(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let parts: Vec<Part> = (0..51).map(|i| file_part(&format!("{i}.txt"), b"x")).collect();
-    let r = c.upload("/api/v1/files", &parts).await;
+    let r = c.upload(&c.files_url(), &parts).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
     assert!(c.dir.stored().is_empty());
 }
@@ -249,8 +249,9 @@ async fn download_of_unknown_or_contentless_file_is_404(pool: PgPool) {
 
     // запись из сида: содержимого на диске у неё нет
     let seeded: Uuid = db::sqlx::query_scalar(
-        "insert into files (name, size_bytes, kind, storage_key) values ('демо.png', 5, 'img', 'seed:демо.png') returning id",
+        "insert into files (team_id, name, size_bytes, kind, storage_key) values ($1, 'демо.png', 5, 'img', 'seed:демо.png') returning id",
     )
+    .bind(c.team)
     .fetch_one(&c.pool)
     .await
     .unwrap();
@@ -294,10 +295,10 @@ async fn library_filters_by_folder_kind_and_name(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn bad_filters_are_refused(pool: PgPool) {
     let c = Ctx::new(pool).await;
-    assert_eq!(c.get("/api/v1/files?kind=video").await.status, StatusCode::BAD_REQUEST);
-    assert_eq!(c.get("/api/v1/files?folder=нет").await.status, StatusCode::BAD_REQUEST);
-    assert_eq!(c.get("/api/v1/files?wiki_page_id=нет").await.status, StatusCode::BAD_REQUEST);
-    assert_eq!(c.get("/api/v1/files?q=&kind=&folder=").await.status, StatusCode::OK, "пустые условия не ограничивают");
+    assert_eq!(c.get(&format!("{}?kind=video", c.files_url())).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.get(&format!("{}?folder=нет", c.files_url())).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.get(&format!("{}?wiki_page_id=нет", c.files_url())).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.get(&format!("{}?q=&kind=&folder=", c.files_url())).await.status, StatusCode::OK, "пустые условия не ограничивают");
 }
 
 // ===== Удаление =====
@@ -322,8 +323,9 @@ async fn deleting_a_file_removes_the_record_and_the_content(pool: PgPool) {
 async fn deleting_a_record_without_content_still_works(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let seeded: Uuid = db::sqlx::query_scalar(
-        "insert into files (name, size_bytes, kind, storage_key) values ('демо.png', 5, 'img', 'seed:демо.png') returning id",
+        "insert into files (team_id, name, size_bytes, kind, storage_key) values ($1, 'демо.png', 5, 'img', 'seed:демо.png') returning id",
     )
+    .bind(c.team)
     .fetch_one(&c.pool)
     .await
     .unwrap();
@@ -339,15 +341,15 @@ async fn folders_keep_creation_order_and_unique_names(pool: PgPool) {
         let f = c.folder(name).await;
         assert_eq!(f["file_count"], 0);
     }
-    let r = c.get("/api/v1/folders").await;
+    let r = c.get(&c.folders_url()).await;
     let names: Vec<String> =
         c.ok(r, StatusCode::OK).await.as_array().unwrap().iter().map(|f| str_field(f, "name").to_owned()).collect();
     assert_eq!(names, ["Дизайн", "Договорённости", "Скриншоты"], "не по алфавиту, а по порядку создания");
 
-    let r = c.post("/api/v1/folders", json!({ "name": "  Дизайн " })).await;
+    let r = c.post(&c.folders_url(), json!({ "name": "  Дизайн " })).await;
     assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.body);
-    assert_eq!(c.post("/api/v1/folders", json!({ "name": "   " })).await.status, StatusCode::BAD_REQUEST);
-    assert_eq!(c.post("/api/v1/folders", json!({ "name": "я".repeat(101) })).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.post(&c.folders_url(), json!({ "name": "   " })).await.status, StatusCode::BAD_REQUEST);
+    assert_eq!(c.post(&c.folders_url(), json!({ "name": "я".repeat(101) })).await.status, StatusCode::BAD_REQUEST);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

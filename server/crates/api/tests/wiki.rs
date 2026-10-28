@@ -14,7 +14,7 @@ fn ev(kind: &str, target: &str, text: &str) -> (String, String, String) {
 
 impl Ctx {
     async fn page(&self, parent: Option<Uuid>, title: &str) -> Value {
-        let r = self.post("/api/v1/wiki", json!({ "parent_id": parent, "title": title })).await;
+        let r = self.post(&self.wiki_url(), json!({ "parent_id": parent, "title": title })).await;
         self.ok(r, StatusCode::CREATED).await
     }
 
@@ -25,7 +25,7 @@ impl Ctx {
     }
 
     async fn tree(&self) -> Value {
-        let r = self.get("/api/v1/wiki").await;
+        let r = self.get(&self.wiki_url()).await;
         self.ok(r, StatusCode::OK).await
     }
 
@@ -46,8 +46,8 @@ async fn wiki_needs_a_token(pool: PgPool) {
     let app = app(pool);
     let id = Uuid::new_v4();
     for (method, uri) in [
-        (axum::http::Method::GET, "/api/v1/wiki".to_owned()),
-        (axum::http::Method::POST, "/api/v1/wiki".to_owned()),
+        (axum::http::Method::GET, format!("/api/v1/teams/{id}/wiki")),
+        (axum::http::Method::POST, format!("/api/v1/teams/{id}/wiki")),
         (axum::http::Method::GET, format!("/api/v1/wiki/{id}")),
         (axum::http::Method::PATCH, format!("/api/v1/wiki/{id}")),
         (axum::http::Method::DELETE, format!("/api/v1/wiki/{id}")),
@@ -60,7 +60,7 @@ async fn wiki_needs_a_token(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn new_page_is_empty_at_revision_one_and_goes_to_the_feed(pool: PgPool) {
     let c = Ctx::new(pool).await;
-    let r = c.post("/api/v1/wiki", json!({})).await;
+    let r = c.post(&c.wiki_url(), json!({})).await;
     let page = c.ok(r, StatusCode::CREATED).await;
 
     assert_eq!(page["title"], "");
@@ -119,13 +119,13 @@ async fn page_comes_with_text_and_unknown_page_is_404(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn page_needs_an_existing_parent_and_sane_fields(pool: PgPool) {
     let c = Ctx::new(pool).await;
-    let r = c.post("/api/v1/wiki", json!({ "parent_id": Uuid::new_v4() })).await;
+    let r = c.post(&c.wiki_url(), json!({ "parent_id": Uuid::new_v4() })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.body);
-    let r = c.post("/api/v1/wiki", json!({ "title": "я".repeat(201) })).await;
+    let r = c.post(&c.wiki_url(), json!({ "title": "я".repeat(201) })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = c.post("/api/v1/wiki", json!({ "md": "я".repeat(500_001) })).await;
+    let r = c.post(&c.wiki_url(), json!({ "md": "я".repeat(500_001) })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
-    let r = c.post("/api/v1/wiki", json!({ "color": "red" })).await;
+    let r = c.post(&c.wiki_url(), json!({ "color": "red" })).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "лишнее поле запроса");
     assert!(c.titles().await.is_empty());
 }
@@ -439,7 +439,7 @@ async fn deleting_a_page_takes_nested_pages_and_keeps_their_files(pool: PgPool) 
     let a1 = c.page(Some(id_of(&a)), "Ребёнок").await;
     let other = c.page(None, "Соседняя").await;
 
-    let r = c.upload("/api/v1/files", &[file_part("схема.png", b"png"), text_part("wiki_page_id", id_of(&a1))]).await;
+    let r = c.upload(&c.files_url(), &[file_part("схема.png", b"png"), text_part("wiki_page_id", id_of(&a1))]).await;
     let file = c.ok(r, StatusCode::CREATED).await[0].clone();
 
     let r = c.delete(&format!("/api/v1/wiki/{}", id_of(&a))).await;
@@ -449,7 +449,7 @@ async fn deleting_a_page_takes_nested_pages_and_keeps_their_files(pool: PgPool) 
     assert_eq!(c.get(&format!("/api/v1/wiki/{}", id_of(&other))).await.status, StatusCode::OK);
 
     // файл остался в библиотеке, но уже не привязан к странице
-    let r = c.get("/api/v1/files").await;
+    let r = c.get(&c.files_url()).await;
     let list = c.ok(r, StatusCode::OK).await;
     assert_eq!(list["files"][0]["id"], file["id"]);
     assert_eq!(list["files"][0]["wiki_page_id"], Value::Null);

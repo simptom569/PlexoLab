@@ -166,6 +166,8 @@ pub struct Ctx {
     pub pool: PgPool,
     pub token: String,
     pub user: User,
+    /// Личная команда этого человека: вики и файлы в тестах лежат в ней, если не сказано иное
+    pub team: Uuid,
     pub dir: TestDir,
 }
 
@@ -182,7 +184,8 @@ impl Ctx {
         let app = router(state);
         let tokens = login_ok(&app, "tester@example.com", "test-password").await;
         let token = str_field(&tokens, "access_token").to_owned();
-        Ctx { app, events, pool, token, user, dir }
+        let team = personal_team(&pool, user.id).await;
+        Ctx { app, events, pool, token, user, team, dir }
     }
 
     /// Ещё один человек на том же сервере и в той же базе (пароль `test-password`). Ни в каких проектах он не состоит.
@@ -204,6 +207,7 @@ impl Ctx {
             events: self.events.clone(),
             pool: self.pool.clone(),
             token: str_field(&tokens, "access_token").to_owned(),
+            team: personal_team(&self.pool, user.id).await,
             user,
             // папку данных хозяин не отдаёт: эта удаляется отдельно и ничему не мешает
             dir: TestDir(self.dir.0.join("another")),
@@ -225,6 +229,21 @@ impl Ctx {
             None => Body::empty(),
         };
         reply(self.app.clone().oneshot(req.body(body).unwrap()).await.unwrap()).await
+    }
+
+    /// Вики его личной команды
+    pub fn wiki_url(&self) -> String {
+        format!("/api/v1/teams/{}/wiki", self.team)
+    }
+
+    /// Библиотека файлов его личной команды
+    pub fn files_url(&self) -> String {
+        format!("/api/v1/teams/{}/files", self.team)
+    }
+
+    /// Папки его личной команды
+    pub fn folders_url(&self) -> String {
+        format!("/api/v1/teams/{}/folders", self.team)
     }
 
     pub async fn get(&self, uri: &str) -> Reply {
@@ -307,15 +326,60 @@ pub async fn make_project(pool: &PgPool, key: &str, name: &str, color: &str) -> 
     id
 }
 
-/// Проект напрямую в базе, в нём никого нет
+/// Проект напрямую в базе, в нём никого нет. Он лежит в первой команде базы: у первого созданного человека это его
+/// «Личное». Проект в другой команде делает `make_project_in`.
 pub async fn make_project_with(pool: &PgPool, key: &str, name: &str, color: &str) -> Uuid {
-    db::sqlx::query_scalar("insert into projects (key, name, color) values ($1, $2, $3) returning id")
-        .bind(key)
+    make_project_in(pool, first_team(pool).await, "members", key, name, color).await
+}
+
+/// Первая команда базы: в ней лежат проекты, созданные `make_project`
+pub async fn first_team(pool: &PgPool) -> Uuid {
+    db::sqlx::query_scalar("select id from teams order by seq limit 1").fetch_one(pool).await.unwrap()
+}
+
+/// Проект напрямую в базе, в этой команде и с этой видимостью (`members` | `team`), в нём никого нет
+pub async fn make_project_in(pool: &PgPool, team: Uuid, visibility: &str, key: &str, name: &str, color: &str) -> Uuid {
+    db::sqlx::query_scalar(
+        "insert into projects (team_id, visibility, key, name, color) values ($1, $2::project_visibility, $3, $4, $5) \
+         returning id",
+    )
+    .bind(team)
+    .bind(visibility)
+    .bind(key)
+    .bind(name)
+    .bind(color)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Личная команда «Личное» этого человека (её создаёт база вместе с аккаунтом)
+pub async fn personal_team(pool: &PgPool, user: Uuid) -> Uuid {
+    db::sqlx::query_scalar("select id from teams where personal_for = $1").bind(user).fetch_one(pool).await.unwrap()
+}
+
+/// Обычная команда напрямую в базе; люди из `members` становятся её членами с ролью `admin` или `member`
+pub async fn make_team(pool: &PgPool, name: &str, members: &[(Uuid, &str)]) -> Uuid {
+    let team: Uuid = db::sqlx::query_scalar("insert into teams (name) values ($1) returning id")
         .bind(name)
-        .bind(color)
         .fetch_one(pool)
         .await
-        .unwrap()
+        .unwrap();
+    for (user, role) in members {
+        join_team(pool, team, *user, role).await;
+    }
+    team
+}
+
+/// Человек становится членом команды с этой ролью (`admin` | `member`)
+pub async fn join_team(pool: &PgPool, team: Uuid, user: Uuid, role: &str) {
+    db::sqlx::query("insert into team_members (team_id, user_id, role) values ($1, $2, $3::team_role)")
+        .bind(team)
+        .bind(user)
+        .bind(role)
+        .execute(pool)
+        .await
+        .unwrap();
 }
 
 /// Человек становится участником проекта с этой ролью (`admin` | `member`)

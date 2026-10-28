@@ -17,7 +17,14 @@ fn enc(q: &str) -> String {
 }
 
 async fn find(who: &Ctx, q: &str) -> Value {
-    who.ok(who.get(&format!("/api/v1/search?q={}", enc(q))).await, StatusCode::OK).await
+    let team = first_team(&who.pool).await;
+    who.ok(who.get(&format!("/api/v1/search?team={team}&q={}", enc(q))).await, StatusCode::OK).await
+}
+
+/// Статус поиска по команде проектов: чужому команда не видна совсем
+async fn find_status(who: &Ctx, q: &str) -> StatusCode {
+    let team = first_team(&who.pool).await;
+    who.get(&format!("/api/v1/search?team={team}&q={}", enc(q))).await.status
 }
 
 fn titles(hits: &Value, kind: &str, field: &str) -> Vec<String> {
@@ -34,11 +41,11 @@ async fn doc(f: &Fx, title: &str, md: &str) -> Uuid {
 }
 
 async fn wiki_page(f: &Fx, title: &str, md: &str) -> Uuid {
-    id_of(&f.c.ok(f.c.post("/api/v1/wiki", json!({ "title": title, "md": md })).await, StatusCode::CREATED).await)
+    id_of(&f.c.ok(f.c.post(&f.c.wiki_url(), json!({ "title": title, "md": md })).await, StatusCode::CREATED).await)
 }
 
 async fn library_file(f: &Fx, name: &str) -> Uuid {
-    id_of(&f.c.ok(f.c.upload("/api/v1/files", &[file_part(name, b"x")]).await, StatusCode::CREATED).await[0])
+    id_of(&f.c.ok(f.c.upload(&f.c.files_url(), &[file_part(name, b"x")]).await, StatusCode::CREATED).await[0])
 }
 
 // ===== Что находит =====
@@ -185,9 +192,11 @@ async fn an_untitled_document_matches_nothing(pool: PgPool) {
 // ===== Доступ =====
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn tasks_and_documents_of_a_foreign_project_are_not_found_but_shared_things_are(pool: PgPool) {
+async fn tasks_and_documents_of_a_foreign_project_are_not_found_and_wiki_and_files_belong_to_the_team(pool: PgPool) {
     let f = Fx::new(pool).await;
     let stranger = f.c.another("stranger@example.com", "Посторонний").await;
+    let mate = f.c.another("mate@example.com", "Член команды").await;
+    join_team(&f.c.pool, f.c.team, mate.user.id, "member").await;
     f.task(Some(f.todo), "Секретная задача").await;
     doc(&f, "Секретный документ", "").await;
     wiki_page(&f, "Секретная страница вики", "").await;
@@ -197,12 +206,46 @@ async fn tasks_and_documents_of_a_foreign_project_are_not_found_but_shared_thing
     assert_eq!(keys(&mine).len(), 1);
     assert_eq!(titles(&mine, "docs", "title").len(), 1);
 
-    let theirs = find(&stranger, "секрет").await;
+    // посторонний не знает и о команде: искать в ней нельзя
+    assert_eq!(find_status(&stranger, "секрет").await, StatusCode::NOT_FOUND);
+
+    // член команды, которого нет в проекте: задача и документ закрыты, вики и файлы команды открыты
+    let theirs = find(&mate, "секрет").await;
     assert!(keys(&theirs).is_empty(), "чужая задача не видна: {theirs}");
     assert!(titles(&theirs, "docs", "title").is_empty(), "чужой документ не виден: {theirs}");
-    // вики и файлы библиотеки общие для всех вошедших
     assert_eq!(titles(&theirs, "wiki", "title"), ["Секретная страница вики"]);
     assert_eq!(titles(&theirs, "files", "name"), ["секретный-файл.txt"]);
+
+    // проект стал «Вся команда»: его задачи и документы видны всей команде
+    db::sqlx::query("update projects set visibility = 'team' where id = $1").bind(f.project).execute(&f.c.pool).await.unwrap();
+    let open = find(&mate, "секрет").await;
+    assert_eq!(keys(&open).len(), 1);
+    assert_eq!(titles(&open, "docs", "title").len(), 1);
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn a_guest_searches_only_his_projects_and_the_wiki_only_when_the_team_allows_it(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let other = make_project(&f.c.pool, "API", "Api", "warn").await;
+    let guest = f.c.another("guest@example.com", "Гость").await;
+    join(&f.c.pool, f.project, guest.user.id, "member").await;
+    f.task(Some(f.todo), "Видимая задача").await;
+    db::sqlx::query("insert into tasks (project_id, number, title, position) values ($1, 1, 'Закрытая задача', 1)")
+        .bind(other)
+        .execute(&f.c.pool)
+        .await
+        .unwrap();
+    wiki_page(&f, "Страница команды", "").await;
+    library_file(&f, "файл-команды.txt").await;
+
+    let hits = find(&guest, "задача").await;
+    assert_eq!(keys(&hits).len(), 1, "только задача своего проекта: {hits}");
+    assert!(titles(&hits, "wiki", "title").is_empty() && titles(&hits, "files", "name").is_empty(), "вики закрыта: {hits}");
+
+    db::sqlx::query("update teams set guests_read_wiki = true").execute(&f.c.pool).await.unwrap();
+    let hits = find(&guest, "команды").await;
+    assert_eq!(titles(&hits, "wiki", "title"), ["Страница команды"]);
+    assert_eq!(find(&guest, "файл-команды").await["files"].as_array().unwrap().len(), 1);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -216,8 +259,8 @@ async fn a_member_sees_the_project_and_stops_seeing_it_after_leaving(pool: PgPoo
     assert_eq!(titles(&find(&mate, "общий").await, "docs", "title").len(), 1);
 
     f.c.ok(f.c.delete(&format!("/api/v1/projects/{}/members/{}", f.project, mate.user.id)).await, StatusCode::NO_CONTENT).await;
-    assert!(keys(&find(&mate, "общая").await).is_empty());
-    assert!(titles(&find(&mate, "общий").await, "docs", "title").is_empty());
+    // он не член команды, а гостем быть перестал: ни проект, ни сама команда ему больше не видны
+    assert_eq!(find_status(&mate, "общая").await, StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -314,8 +357,9 @@ async fn an_empty_or_missing_query_finds_nothing_without_an_error(pool: PgPool) 
     let f = Fx::new(pool).await;
     f.task(Some(f.todo), "Задача").await;
     let empty = json!({ "tasks": [], "docs": [], "wiki": [], "files": [] });
-    for uri in ["/api/v1/search", "/api/v1/search?q=", "/api/v1/search?q=%20%20", "/api/v1/search?other=1"] {
-        assert_eq!(f.c.ok(f.c.get(uri).await, StatusCode::OK).await, empty, "{uri}");
+    for tail in ["", "&q=", "&q=%20%20", "&other=1"] {
+        let uri = format!("/api/v1/search?team={}{tail}", f.c.team);
+        assert_eq!(f.c.ok(f.c.get(&uri).await, StatusCode::OK).await, empty, "{uri}");
     }
 }
 
@@ -323,10 +367,10 @@ async fn an_empty_or_missing_query_finds_nothing_without_an_error(pool: PgPool) 
 async fn a_too_long_query_is_refused(pool: PgPool) {
     let f = Fx::new(pool).await;
     let long = "я".repeat(domain::search::MAX_QUERY_LEN + 1);
-    let r = f.c.get(&format!("/api/v1/search?q={}", enc(&long))).await;
+    let r = f.c.get(&format!("/api/v1/search?team={}&q={}", f.c.team, enc(&long))).await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
     let ok = "я".repeat(domain::search::MAX_QUERY_LEN);
-    f.c.ok(f.c.get(&format!("/api/v1/search?q={}", enc(&ok))).await, StatusCode::OK).await;
+    f.c.ok(f.c.get(&format!("/api/v1/search?team={}&q={}", f.c.team, enc(&ok))).await, StatusCode::OK).await;
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

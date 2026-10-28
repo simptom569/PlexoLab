@@ -39,8 +39,8 @@ async fn people_see_only_their_projects_and_global_admins_see_all(pool: PgPool) 
     let c = Ctx::new(pool).await;
     let other = c.another("other@example.com", "Другой").await;
     let admin = c.another_admin("admin@example.com", "Админ").await;
-    c.ok(c.post("/api/v1/projects", json!({ "name": "Мой" })).await, StatusCode::CREATED).await;
-    other.ok(other.post("/api/v1/projects", json!({ "name": "Чужой" })).await, StatusCode::CREATED).await;
+    c.ok(c.post("/api/v1/projects", json!({ "team_id": c.team, "name": "Мой" })).await, StatusCode::CREATED).await;
+    other.ok(other.post("/api/v1/projects", json!({ "team_id": other.team, "name": "Чужой" })).await, StatusCode::CREATED).await;
 
     assert_eq!(names(&c.ok(c.get("/api/v1/projects").await, StatusCode::OK).await), ["Мой"]);
     assert_eq!(names(&other.ok(other.get("/api/v1/projects").await, StatusCode::OK).await), ["Чужой"]);
@@ -54,7 +54,7 @@ async fn creating_a_project_makes_the_creator_admin_and_gives_the_default_board(
     let c = Ctx::new(pool).await;
     let project = c
         .ok(
-            c.post("/api/v1/projects", json!({ "name": "  Сайт ", "color": "warn", "key": " plx " })).await,
+            c.post("/api/v1/projects", json!({ "team_id": c.team, "name": "  Сайт ", "color": "warn", "key": " plx " })).await,
             StatusCode::CREATED,
         )
         .await;
@@ -82,7 +82,7 @@ async fn creating_a_project_makes_the_creator_admin_and_gives_the_default_board(
 async fn a_project_without_a_key_gives_tasks_the_default_key(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let project =
-        c.ok(c.post("/api/v1/projects", json!({ "name": "Без ключа", "key": "" })).await, StatusCode::CREATED).await;
+        c.ok(c.post("/api/v1/projects", json!({ "team_id": c.team, "name": "Без ключа", "key": "" })).await, StatusCode::CREATED).await;
     assert_eq!(project["key"], Value::Null);
     assert_eq!(project["color"], "accent", "цвет по умолчанию");
     let task = c
@@ -107,11 +107,17 @@ async fn project_input_is_validated(pool: PgPool) {
         json!({ "name": "Ок", "key": "1AB" }),
         json!({ "name": "Ок", "key": "A-B" }),
         json!({ "name": "Ок", "key": "ПЛЕКС" }),
+        json!({ "name": "Ок", "visibility": "everyone" }),
         json!({}),
         json!({ "name": "Ок", "extra": 1 }),
     ] {
+        // команда указана верно: отказ должен быть из-за самого тела
+        let mut body = body;
+        body.as_object_mut().unwrap().insert("team_id".to_owned(), json!(c.team));
         assert_eq!(c.post("/api/v1/projects", body.clone()).await.status, StatusCode::BAD_REQUEST, "{body}");
     }
+    // без команды проект не создать
+    assert_eq!(c.post("/api/v1/projects", json!({ "name": "Ок" })).await.status, StatusCode::BAD_REQUEST);
     assert_eq!(names(&c.ok(c.get("/api/v1/projects").await, StatusCode::OK).await), Vec::<String>::new());
 }
 
@@ -233,34 +239,28 @@ async fn the_member_list_shows_pending_invites_only_to_admins(pool: PgPool) {
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn the_last_admin_cannot_leave_demote_himself_or_be_removed(pool: PgPool) {
+async fn a_project_is_never_left_without_an_admin_because_the_team_admin_stands_above_it(pool: PgPool) {
+    // проект лежит в «Личном» первого человека: он администратор команды и потому администратор проекта
     let f = Fx::new(pool).await;
     let me = f.c.user.id;
     let p = project_uri(f.project);
     let mate = member(&f, "mate@example.com", "member").await;
 
-    assert_eq!(f.c.patch(&format!("{p}/members/{me}"), json!({ "role": "member" })).await.status, StatusCode::CONFLICT);
-    assert_eq!(f.c.delete(&format!("{p}/members/{me}")).await.status, StatusCode::CONFLICT, "выйти нельзя");
+    // блокировки «единственный администратор» нет: можно понизить себя и выйти
+    assert_eq!(f.c.patch(&format!("{p}/members/{me}"), json!({ "role": "member" })).await.status, StatusCode::NO_CONTENT);
+    let projects = f.c.ok(f.c.get("/api/v1/projects").await, StatusCode::OK).await;
+    assert_eq!(projects[0]["role"], "admin", "роль в проекте высшая из оснований: администратор команды");
 
-    // второй администратор снимает ограничение
     assert_eq!(
         f.c.patch(&format!("{p}/members/{}", mate.user.id), json!({ "role": "admin" })).await.status,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(
-        mate.patch(&format!("{p}/members/{me}"), json!({ "role": "member" })).await.status,
-        StatusCode::NO_CONTENT
-    );
-    // теперь единственный администратор — mate
-    assert_eq!(mate.delete(&format!("{p}/members/{}", mate.user.id)).await.status, StatusCode::CONFLICT);
-    assert_eq!(
-        f.c.delete(&format!("{p}/members/{}", mate.user.id)).await.status,
-        StatusCode::FORBIDDEN,
-        "я уже обычный участник"
-    );
-    // обычный участник выходит свободно
+    assert_eq!(mate.delete(&format!("{p}/members/{}", mate.user.id)).await.status, StatusCode::NO_CONTENT, "гость выходит");
+    assert_eq!(mate.get(&format!("{p}/board")).await.status, StatusCode::NOT_FOUND, "после выхода проекта «нет»");
+
+    // администратор команды выходит из списка участников, но остаётся над проектом
     assert_eq!(f.c.delete(&format!("{p}/members/{me}")).await.status, StatusCode::NO_CONTENT);
-    assert_eq!(f.c.get(&format!("{p}/board")).await.status, StatusCode::NOT_FOUND, "после выхода проекта «нет»");
+    assert_eq!(f.c.get(&format!("{p}/board")).await.status, StatusCode::OK);
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -477,7 +477,7 @@ async fn an_invitation_to_an_archived_project_is_hidden_and_cannot_be_accepted(p
 async fn people_added_to_a_project_via_the_project_creator_flow_see_it_in_their_list(pool: PgPool) {
     let c = Ctx::new(pool).await;
     let guest = c.another("guest@example.com", "Гость").await;
-    let project = c.ok(c.post("/api/v1/projects", json!({ "name": "Командный" })).await, StatusCode::CREATED).await;
+    let project = c.ok(c.post("/api/v1/projects", json!({ "team_id": c.team, "name": "Командный" })).await, StatusCode::CREATED).await;
     let invite = c
         .ok(
             c.post(&format!("{}/invites", project_uri(id_of(&project))), json!({ "email": "guest@example.com" })).await,

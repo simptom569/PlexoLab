@@ -1,5 +1,5 @@
-//! Доступ к проектам (docs/PROJECTS.md, раздел 5): чужого проекта «нет», права администратора, события и лента
-//! только для участников. Главная проверка здесь — обход всех адресов из схемы OpenAPI: у каждого адреса должна быть
+//! Доступ к проектам и к вики команд (docs/PROJECTS.md, раздел 5; docs/TEAMS.md, раздел 3): чужого проекта «нет», права
+//! администратора, события и лента только для тех, кто их видит. Главная проверка здесь — обход всех адресов из схемы OpenAPI: у каждого адреса должна быть
 //! пометка, и каждый адрес с проектом отказывает постороннему. Новый адрес без пометки сразу роняет тест.
 
 mod common;
@@ -20,7 +20,7 @@ use uuid::Uuid;
 enum Kind {
     /// Без токена: вход и обновление токена
     Public,
-    /// Любому вошедшему: свои данные и общие данные приложения (вики и библиотека файлов)
+    /// Любому вошедшему: свои данные
     Open,
     /// Приглашение: действует только приглашённый
     Invitee,
@@ -30,6 +30,10 @@ enum Kind {
     AdminOnly,
     /// Запись, принадлежащая одному человеку (уведомление): чужую не видно никому, даже администратору проекта
     Own,
+    /// Вики и библиотека команды, чтение: член команды и гость при включённой настройке; остальным 404
+    WikiRead,
+    /// Вики и библиотека команды, запись: член команды; гость получает 403, посторонний 404
+    WikiWrite,
 }
 
 use Kind::*;
@@ -53,6 +57,10 @@ enum Of {
     Group,
     Link,
     Notif,
+    /// Команда, которой принадлежит тестовый проект
+    Team,
+    Page,
+    Folder,
 }
 
 use Of::*;
@@ -69,6 +77,7 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("GET",    "/me",                                  Nothing,      Open),
     ("PATCH",  "/me",                                  Nothing,      Open),
     ("GET",    "/users",                               Nothing,      Open),
+    ("GET",    "/teams",                               Nothing,      Open),
     // проекты, участники, приглашения
     ("GET",    "/projects",                            Nothing,      Open),
     ("POST",   "/projects",                            Nothing,      Open),
@@ -121,17 +130,17 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     // вложения задач: скачать и удалить вложение — как и сама задача, только для участников её проекта
     ("GET",    "/files/{id}/download",                 File,      Scoped),
     ("DELETE", "/files/{id}",                          File,      Scoped),
-    // вики и библиотека файлов: общие для всех вошедших (`access::wiki`)
-    ("GET",    "/wiki",                                Nothing,      Open),
-    ("POST",   "/wiki",                                Nothing,      Open),
-    ("GET",    "/wiki/{id}",                           Nothing,      Open),
-    ("PATCH",  "/wiki/{id}",                           Nothing,      Open),
-    ("DELETE", "/wiki/{id}",                           Nothing,      Open),
-    ("GET",    "/files",                               Nothing,      Open),
-    ("POST",   "/files",                               Nothing,      Open),
-    ("GET",    "/folders",                             Nothing,      Open),
-    ("POST",   "/folders",                             Nothing,      Open),
-    ("DELETE", "/folders/{id}",                        Nothing,      Open),
+    // вики и библиотека файлов принадлежат команде (`access::wiki_read`, `access::wiki_write`)
+    ("GET",    "/teams/{id}/wiki",                     Team,   WikiRead),
+    ("POST",   "/teams/{id}/wiki",                     Team,   WikiWrite),
+    ("GET",    "/wiki/{id}",                           Page,   WikiRead),
+    ("PATCH",  "/wiki/{id}",                           Page,   WikiWrite),
+    ("DELETE", "/wiki/{id}",                           Page,   WikiWrite),
+    ("GET",    "/teams/{id}/files",                    Team,   WikiRead),
+    ("POST",   "/teams/{id}/files",                    Team,   WikiWrite),
+    ("GET",    "/teams/{id}/folders",                  Team,   WikiRead),
+    ("POST",   "/teams/{id}/folders",                  Team,   WikiWrite),
+    ("DELETE", "/folders/{id}",                        Folder, WikiWrite),
     // документы и ссылки принадлежат проекту: только его участники
     ("GET",    "/projects/{id}/docs",                  Proj,   Scoped),
     ("POST",   "/projects/{id}/docs",                  Proj,   Scoped),
@@ -149,7 +158,7 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     // уведомления: список свой по определению, отметка действует только для владельца записи
     ("GET",    "/notifications",                       Nothing,      Open),
     ("POST",   "/notifications/read-all",              Nothing,      Open),
-    // поиск по названиям: проекты в нём отбираются по человеку внутри запроса, вики и файлы общие
+    // поиск по названиям: по одной команде; проекты в нём отбираются по человеку внутри запроса
     ("GET",    "/search",                              Nothing,      Open),
     ("POST",   "/notifications/{id}/read",             Notif,        Own),
 ];
@@ -220,6 +229,9 @@ struct World {
     link: Uuid,
     /// Уведомление приглашённого (он не участник, но отметка прочитанным касается только владельца записи)
     notification: Uuid,
+    team: Uuid,
+    page: Uuid,
+    folder: Uuid,
 }
 
 impl World {
@@ -305,7 +317,18 @@ impl World {
                 .unwrap()
                 .id
         };
+        let page = id_of(
+            &c.ok(c.post(&c.wiki_url(), json!({ "title": format!("Страница {}", Uuid::new_v4()) })).await, StatusCode::CREATED)
+                .await,
+        );
+        let folder = id_of(
+            &c.ok(c.post(&c.folders_url(), json!({ "name": format!("Папка {}", Uuid::new_v4()) })).await, StatusCode::CREATED)
+                .await,
+        );
         World {
+            team: c.team,
+            page,
+            folder,
             project: f.project,
             column,
             task: id_of(&task),
@@ -342,6 +365,9 @@ impl World {
             Group => self.group,
             Link => self.link,
             Notif => self.notification,
+            Team => self.team,
+            Page => self.page,
+            Folder => self.folder,
         }
     }
 }
@@ -375,6 +401,9 @@ fn body(method: &str, path: &str, w: &World) -> Option<Value> {
             json!({ "note": { "x": 24.0, "y": 28.0, "w": 400.0 }, "objects": [], "links": [] })
         }
         ("PUT", "/docs/{id}/star") => json!({ "starred": true }),
+        ("POST", "/teams/{id}/wiki") => json!({ "title": "Ещё страница" }),
+        ("PATCH", "/wiki/{id}") => json!({ "title": "Другая страница", "rev": 1 }),
+        ("POST", "/teams/{id}/folders") => json!({ "name": format!("Ещё папка {}", Uuid::new_v4()) }),
         ("POST", "/projects/{id}/link-groups") => json!({ "title": "Ещё группа" }),
         ("PATCH", "/link-groups/{id}") => json!({ "title": "Другая" }),
         ("POST", "/link-groups/{id}/links") => json!({ "title": "Ещё ссылка", "url": "example.org" }),
@@ -392,7 +421,7 @@ fn uri(path: &str, of: Of, w: &World, other_member: Uuid) -> String {
 
 async fn call(who: &Ctx, method: &str, path: &str, of: Of, w: &World, other_member: Uuid) -> StatusCode {
     let uri = uri(path, of, w, other_member);
-    if (method, path) == ("POST", "/tasks/{id}/files") {
+    if (method, path) == ("POST", "/tasks/{id}/files") || (method, path) == ("POST", "/teams/{id}/files") {
         return who.upload(&uri, &[file_part("ещё.txt", b"2")]).await.status;
     }
     if path == "/files/{id}/download" {
@@ -492,6 +521,56 @@ async fn every_address_except_login_and_refresh_requires_a_token(pool: PgPool) {
     }
 }
 
+/// Вики и библиотека команды: член читает и пишет, посторонний не знает о них (404), гость читает только при включённой
+/// настройке команды и не пишет никогда (403)
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn every_address_with_team_data_follows_the_team_rules(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let stranger = f.c.another("stranger@example.com", "Посторонний").await;
+    let mate = f.c.another("mate@example.com", "Член команды").await;
+    join_team(&f.c.pool, f.c.team, mate.user.id, "member").await;
+    let guest = f.c.another("guest@example.com", "Гость").await;
+    join(&f.c.pool, f.project, guest.user.id, "member").await;
+    let invitee = f.c.another("invitee@example.com", "Приглашённый").await;
+    let set_guests_read = |on: bool| {
+        let pool = f.c.pool.clone();
+        let team = f.c.team;
+        async move {
+            db::sqlx::query("update teams set guests_read_wiki = $2 where id = $1").bind(team).bind(on).execute(&pool).await.unwrap();
+        }
+    };
+
+    let mut checked = 0;
+    for (method, path, of, kind) in ROUTES {
+        if !matches!(kind, WikiRead | WikiWrite) {
+            continue;
+        }
+        let w = World::build(&f, &invitee).await;
+        let other = f.c.user.id;
+        let label = format!("{method} {path}");
+        let open = |s: StatusCode| s != StatusCode::NOT_FOUND && s != StatusCode::FORBIDDEN;
+
+        assert_eq!(call(&stranger, method, path, *of, &w, other).await, StatusCode::NOT_FOUND, "посторонний: {label}");
+        set_guests_read(false).await;
+        assert_eq!(call(&guest, method, path, *of, &w, other).await, StatusCode::NOT_FOUND, "гость без разрешения: {label}");
+        set_guests_read(true).await;
+        let s = call(&guest, method, path, *of, &w, other).await;
+        match kind {
+            WikiRead => assert!(open(s), "гость при разрешении читает: {label} → {s}"),
+            _ => assert_eq!(s, StatusCode::FORBIDDEN, "гость не пишет никогда: {label}"),
+        }
+        set_guests_read(false).await;
+        let s = call(&mate, method, path, *of, &w, other).await;
+        assert!(open(s), "член команды: {label} → {s}");
+        // запись члена команды (например, удаление страницы) могла её изменить: администратору свежий набор
+        let w = World::build(&f, &invitee).await;
+        let s = call(&f.c, method, path, *of, &w, other).await;
+        assert!(open(s), "администратор команды: {label} → {s}");
+        checked += 1;
+    }
+    assert!(checked >= 10, "проверено подозрительно мало адресов: {checked}");
+}
+
 // ===== Глобальный администратор =====
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -540,19 +619,26 @@ async fn the_activity_feed_of_a_project_shows_its_events_and_shared_ones_only_to
     let f = Fx::new(pool).await;
     let stranger = f.c.another("stranger@example.com", "Посторонний").await;
     f.task(Some(f.todo), "Секретная задача").await;
-    f.c.ok(f.c.post("/api/v1/wiki", json!({ "title": "Общая страница" })).await, StatusCode::CREATED).await;
+    f.c.ok(f.c.post(&f.c.wiki_url(), json!({ "title": "Общая страница" })).await, StatusCode::CREATED).await;
 
     let targets = |feed: &Value| -> Vec<String> {
         feed["items"].as_array().unwrap().iter().map(|e| str_field(e, "target").to_owned()).collect()
     };
     let own =
-        stranger.ok(stranger.post("/api/v1/projects", json!({ "name": "Свой" })).await, StatusCode::CREATED).await;
+        stranger.ok(stranger.post("/api/v1/projects", json!({ "team_id": stranger.team, "name": "Свой" })).await, StatusCode::CREATED).await;
     let mine = f.c.ok(f.c.get(&format!("/api/v1/projects/{}/activity", f.project)).await, StatusCode::OK).await;
     assert!(targets(&mine).iter().any(|t| t.contains("Секретная задача")));
     let theirs =
         stranger.ok(stranger.get(&format!("/api/v1/projects/{}/activity", id_of(&own))).await, StatusCode::OK).await;
     assert!(!targets(&theirs).iter().any(|t| t.contains("Секретная задача")), "события чужого проекта не видны");
-    assert!(targets(&theirs).iter().any(|t| t.contains("Общая страница")), "события вики видны в ленте любого проекта");
+    assert!(
+        !targets(&theirs).iter().any(|t| t.contains("Общая страница")),
+        "вики чужой команды в ленте проекта другой команды нет"
+    );
+    assert!(
+        targets(&mine).iter().any(|t| t.contains("Общая страница")),
+        "события вики своей команды видны в ленте проекта этой команды"
+    );
     let foreign = stranger.get(&format!("/api/v1/projects/{}/activity", f.project)).await;
     assert_eq!(foreign.status, StatusCode::NOT_FOUND, "ленту чужого проекта не прочитать");
 }
@@ -560,7 +646,7 @@ async fn the_activity_feed_of_a_project_shows_its_events_and_shared_ones_only_to
 // ===== Вложения =====
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
-async fn an_attachment_of_a_task_is_downloaded_only_by_project_members_while_library_files_are_shared(pool: PgPool) {
+async fn an_attachment_of_a_task_is_downloaded_only_by_project_viewers_while_library_files_belong_to_the_team(pool: PgPool) {
     let f = Fx::new(pool).await;
     let stranger = f.c.another("stranger@example.com", "Посторонний").await;
     let task = f.task(Some(f.todo), "Задача").await;
@@ -571,13 +657,17 @@ async fn an_attachment_of_a_task_is_downloaded_only_by_project_members_while_lib
         )
         .await;
     let shared =
-        f.c.ok(f.c.upload("/api/v1/files", &[file_part("общий.txt", b"xyz")]).await, StatusCode::CREATED).await;
+        f.c.ok(f.c.upload(&f.c.files_url(), &[file_part("общий.txt", b"xyz")]).await, StatusCode::CREATED).await;
 
     let attachment = format!("/api/v1/files/{}/download", id_of(&attached[0]));
     assert_eq!(f.c.download(&attachment).await.status, StatusCode::OK);
     assert_eq!(stranger.download(&attachment).await.status, StatusCode::NOT_FOUND);
     let library = format!("/api/v1/files/{}/download", id_of(&shared[0]));
-    assert_eq!(stranger.download(&library).await.status, StatusCode::OK, "файл вики общий");
+    assert_eq!(stranger.download(&library).await.status, StatusCode::NOT_FOUND, "файл библиотеки чужой команды закрыт");
+    let mate = f.c.another("mate@example.com", "Член команды").await;
+    join_team(&f.c.pool, f.c.team, mate.user.id, "member").await;
+    assert_eq!(mate.download(&library).await.status, StatusCode::OK, "член команды скачивает файл библиотеки");
+    assert_eq!(mate.download(&attachment).await.status, StatusCode::NOT_FOUND, "вложение задачи члену команды не видно");
 }
 
 // ===== События =====
@@ -606,9 +696,12 @@ async fn events_name_their_audience(pool: PgPool) {
         audiences(&mut rx),
         [("task.updated", Audience::Project(f.project)), ("activity.created", Audience::Project(f.project))]
     );
-    // общие данные: вики идёт всем
-    f.c.ok(f.c.post("/api/v1/wiki", json!({ "title": "Страница" })).await, StatusCode::CREATED).await;
-    assert_eq!(audiences(&mut rx), [("wiki.updated", Audience::Everyone), ("activity.created", Audience::Everyone)]);
+    // вики принадлежит команде: событие только тем, кто её читает
+    f.c.ok(f.c.post(&f.c.wiki_url(), json!({ "title": "Страница" })).await, StatusCode::CREATED).await;
+    assert_eq!(
+        audiences(&mut rx),
+        [("wiki.updated", Audience::Team(f.c.team)), ("activity.created", Audience::Team(f.c.team))]
+    );
 
     // документы и ссылки принадлежат проекту: их события тоже только его участникам
     f.c.ok(f.c.post(&format!("{p}/docs"), json!({ "title": "Документ" })).await, StatusCode::CREATED).await;

@@ -29,6 +29,9 @@ const TABLES: &[&str] = &[
     "task_old_ids",
     "task_tags",
     "tasks",
+    "team_invites",
+    "team_members",
+    "teams",
     "users",
     "wiki_pages",
 ];
@@ -47,12 +50,12 @@ async fn exec(pool: &PgPool, sql: &str) -> Result<(), sqlx::Error> {
     sqlx::query(sqlx::AssertSqlSafe(sql.to_owned())).execute(pool).await.map(|_| ())
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn all_tables_from_data_model_exist(pool: PgPool) {
     assert_eq!(tables(&pool).await, TABLES);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn enums_have_values_from_data_model(pool: PgPool) {
     let values = |name: &'static str| {
         let pool = pool.clone();
@@ -77,13 +80,13 @@ async fn enums_have_values_from_data_model(pool: PgPool) {
     );
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn migrations_can_be_applied_twice(pool: PgPool) {
     db::migrate(&pool).await.unwrap();
     assert_eq!(tables(&pool).await, TABLES);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn user_email_must_be_lowercase_and_unique(pool: PgPool) {
     let insert = |email: &'static str| {
         let pool = pool.clone();
@@ -96,9 +99,9 @@ async fn user_email_must_be_lowercase_and_unique(pool: PgPool) {
     assert!(insert("B@example.com").await.is_err(), "e-mail не в нижнем регистре");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn tag_labels_are_unique_within_a_project_ignoring_case(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent'), ('API', 'Api', 'warn')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent'), ((select id from teams where name = 'Тест'), 'API', 'Api', 'warn')")
         .await
         .unwrap();
     let add = |project: &'static str, label: &'static str, tone: i32| {
@@ -122,9 +125,9 @@ async fn tag_labels_are_unique_within_a_project_ignoring_case(pool: PgPool) {
     assert!(exec(&pool, "insert into tags (label, tone) values ('Orphan', 0)").await.is_err());
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn task_numbers_are_unique_within_project(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent'), ('API', 'Api', 'warn')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent'), ((select id from teams where name = 'Тест'), 'API', 'Api', 'warn')")
         .await
         .unwrap();
     let add = |project: &'static str, n: i32| {
@@ -145,9 +148,9 @@ async fn task_numbers_are_unique_within_project(pool: PgPool) {
     assert!(add("WEB", 1).await.is_err(), "WEB-1 дважды");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_a_project_removes_its_board_and_tasks(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent')").await.unwrap();
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent')").await.unwrap();
     exec(
         &pool,
         "insert into board_columns (project_id, title, color, position) \
@@ -172,9 +175,9 @@ async fn deleting_a_project_removes_its_board_and_tasks(pool: PgPool) {
     }
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_a_column_moves_tasks_to_backlog(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent')").await.unwrap();
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent')").await.unwrap();
     exec(
         &pool,
         "insert into board_columns (project_id, title, color, position) select id, 'Col', 'muted', 1 from projects",

@@ -176,7 +176,7 @@ async fn wiki_and_doc_changes_send_events(pool: PgPool) {
     let mut rx = c.events.subscribe();
     let p = f.project;
 
-    let page = c.ok(c.post(&url("/wiki"), json!({ "title": "Архитектура" })).await, StatusCode::CREATED).await;
+    let page = c.ok(c.post(&c.wiki_url(), json!({ "title": "Архитектура" })).await, StatusCode::CREATED).await;
     assert_eq!(drain(&mut rx), [all("wiki.updated"), all(ACTIVITY)]);
     let w = id_of(&page);
     c.ok(c.patch(&url(&format!("/wiki/{w}")), json!({ "rev": page["rev"], "md": "текст" })).await, StatusCode::OK)
@@ -228,7 +228,7 @@ async fn file_changes_send_events(pool: PgPool) {
     let mut rx = c.events.subscribe();
 
     // загрузка отвечает списком загруженных файлов
-    let uploaded = c.ok(c.upload(&url("/files"), &[file_part("план.txt", b"1")]).await, StatusCode::CREATED).await;
+    let uploaded = c.ok(c.upload(&c.files_url(), &[file_part("план.txt", b"1")]).await, StatusCode::CREATED).await;
     let file = uploaded[0].clone();
     assert_eq!(drain(&mut rx), [all("file.changed"), all(ACTIVITY)]);
     assert_eq!(c.delete(&url(&format!("/files/{}", id_of(&file)))).await.status, StatusCode::NO_CONTENT);
@@ -238,7 +238,7 @@ async fn file_changes_send_events(pool: PgPool) {
     c.ok(c.upload(&url(&format!("/tasks/{t}/files")), &[file_part("a.txt", b"1")]).await, StatusCode::CREATED).await;
     assert_eq!(drain(&mut rx), [pon(p, "task.updated", t), pall(p, "file.changed"), pall(p, ACTIVITY)]);
 
-    let folder = c.ok(c.post(&url("/folders"), json!({ "name": "Договоры" })).await, StatusCode::CREATED).await;
+    let folder = c.ok(c.post(&c.folders_url(), json!({ "name": "Договоры" })).await, StatusCode::CREATED).await;
     assert_eq!(drain(&mut rx), [all("file.changed")]);
     assert_eq!(c.delete(&url(&format!("/folders/{}", id_of(&folder)))).await.status, StatusCode::NO_CONTENT);
     assert_eq!(drain(&mut rx), [all("file.changed")]);
@@ -290,7 +290,7 @@ async fn reads_and_failed_requests_send_nothing(pool: PgPool) {
         format!("/projects/{}/activity", f.project),
         format!("/projects/{}/link-groups", f.project),
         format!("/projects/{}/docs", f.project),
-        "/wiki".into(),
+        format!("/teams/{}/wiki", c.team),
     ] {
         c.ok(c.get(&url(&path)).await, StatusCode::OK).await;
     }
@@ -306,7 +306,7 @@ async fn reads_and_failed_requests_send_nothing(pool: PgPool) {
         StatusCode::NOT_FOUND
     );
     assert_eq!(c.delete(&url(&format!("/links/{}", Uuid::new_v4()))).await.status, StatusCode::NOT_FOUND);
-    let page = c.ok(c.post(&url("/wiki"), json!({ "title": "П" })).await, StatusCode::CREATED).await;
+    let page = c.ok(c.post(&c.wiki_url(), json!({ "title": "П" })).await, StatusCode::CREATED).await;
     drain(&mut rx);
     let stale = c.patch(&url(&format!("/wiki/{}", id_of(&page))), json!({ "rev": 99, "md": "x" })).await;
     assert_eq!(stale.status, StatusCode::CONFLICT);

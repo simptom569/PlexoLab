@@ -20,31 +20,31 @@ where
 
 /// Проект WEB с модулем SEO (ключ SEO) и модулем «Дизайн» (без ключа)
 async fn project_with_modules(pool: &PgPool) {
-    exec(pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent')").await.unwrap();
+    exec(pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent')").await.unwrap();
     exec(pool, "insert into modules (project_id, title, key) select id, 'SEO', 'SEO' from projects").await.unwrap();
     exec(pool, "insert into modules (project_id, title) select id, 'Дизайн' from projects").await.unwrap();
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn project_keys_are_optional_repeatable_and_checked(pool: PgPool) {
     // без ключа и с одинаковым ключом у разных проектов можно
-    exec(&pool, "insert into projects (key, name, color) values (null, 'A', 'accent'), (null, 'B', 'warn')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), null, 'A', 'accent'), ((select id from teams where name = 'Тест'), null, 'B', 'warn')")
         .await
         .unwrap();
-    exec(&pool, "insert into projects (key, name, color) values ('PLX', 'C', 'ok'), ('PLX', 'D', 'ok')").await.unwrap();
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'PLX', 'C', 'ok'), ((select id from teams where name = 'Тест'), 'PLX', 'D', 'ok')").await.unwrap();
     // формат: 2–6 символов, латиница в верхнем регистре и цифры, начинается с буквы
     for bad in ["P", "plx", "1AB", "ABCDEFG", "AB-C", "ПЛЕКС"] {
-        let sql = format!("insert into projects (key, name, color) values ('{bad}', 'X', 'ok')");
+        let sql = format!("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), '{bad}', 'X', 'ok')");
         assert!(exec(&pool, &sql).await.is_err(), "ключ «{bad}» должен быть отвергнут");
     }
-    exec(&pool, "insert into projects (key, name, color) values ('A1', 'E', 'ok'), ('ABCDE1', 'F', 'ok')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'A1', 'E', 'ok'), ((select id from teams where name = 'Тест'), 'ABCDE1', 'F', 'ok')")
         .await
         .unwrap();
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn module_keys_are_unique_within_project_only(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent'), ('API', 'Api', 'warn')")
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent'), ((select id from teams where name = 'Тест'), 'API', 'Api', 'warn')")
         .await
         .unwrap();
     let add = |project: &'static str, key: &'static str| {
@@ -69,7 +69,7 @@ async fn module_keys_are_unique_within_project_only(pool: PgPool) {
     assert!(add("WEB", "s").await.is_err(), "формат ключа модуля проверяется");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn task_numbers_are_unique_within_series(pool: PgPool) {
     project_with_modules(&pool).await;
     let add = |module: Option<&'static str>, n: i32| {
@@ -99,7 +99,7 @@ async fn task_numbers_are_unique_within_series(pool: PgPool) {
     add(Some("SEO"), 2).await.unwrap();
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn task_series_must_be_the_assigned_module(pool: PgPool) {
     project_with_modules(&pool).await;
     let insert = |module: &'static str, series: &'static str| {
@@ -120,7 +120,7 @@ async fn task_series_must_be_the_assigned_module(pool: PgPool) {
     insert("SEO", "SEO").await.unwrap();
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn module_with_a_series_cannot_be_deleted_but_a_plain_one_can(pool: PgPool) {
     project_with_modules(&pool).await;
     exec(
@@ -147,9 +147,9 @@ async fn module_with_a_series_cannot_be_deleted_but_a_plain_one_can(pool: PgPool
     assert_eq!(module, None, "у задачи пропал модуль (on delete set null)");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn old_ids_go_with_their_task(pool: PgPool) {
-    exec(&pool, "insert into projects (key, name, color) values ('WEB', 'Web', 'accent')").await.unwrap();
+    exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent')").await.unwrap();
     exec(&pool, "insert into tasks (project_id, number, title, position) select id, 1, 'T', 1024 from projects")
         .await
         .unwrap();
@@ -163,7 +163,7 @@ async fn old_ids_go_with_their_task(pool: PgPool) {
     assert_eq!(one::<i64>(&pool, "select count(*) from task_old_ids").await, 0);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn series_counters_are_independent_and_only_grow(pool: PgPool) {
     project_with_modules(&pool).await;
     let project: Uuid = one(&pool, "select id from projects").await;
@@ -179,7 +179,7 @@ async fn series_counters_are_independent_and_only_grow(pool: PgPool) {
     assert_eq!(tasks::next_number(&mut conn, Series::Project(project)).await.unwrap(), 3, "ряд проекта не тронут");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn a_task_knows_its_series_and_the_series_key(pool: PgPool) {
     project_with_modules(&pool).await;
     exec(
@@ -214,7 +214,7 @@ async fn a_task_knows_its_series_and_the_series_key(pool: PgPool) {
 
 const DOWN: &str = include_str!("../../../migrations_down/0012_task_series.down.sql");
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn down_migration_restores_the_old_schema_and_keeps_every_task(pool: PgPool) {
     project_with_modules(&pool).await;
     exec(&pool, "update projects set key = null").await.unwrap();
@@ -263,9 +263,9 @@ async fn down_migration_restores_the_old_schema_and_keeps_every_task(pool: PgPoo
     assert!(exec(&pool, "select 1 from task_old_ids").await.is_err());
     let key: String = one(&pool, "select key from projects").await;
     assert_eq!(key.len(), 4, "проекту без ключа временный ключ из его id: ключ снова обязателен");
-    assert!(exec(&pool, "insert into projects (key, name, color) values (null, 'N', 'ok')").await.is_err());
+    assert!(exec(&pool, "insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), null, 'N', 'ok')").await.is_err());
     assert!(
-        exec(&pool, &format!("insert into projects (key, name, color) values ('{key}', 'Дубль', 'ok')")).await.is_err(),
+        exec(&pool, &format!("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), '{key}', 'Дубль', 'ok')")).await.is_err(),
         "ключ проекта снова уникален"
     );
     assert!(

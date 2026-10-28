@@ -36,7 +36,7 @@ struct World {
 async fn world(pool: &PgPool) -> World {
     let lena = user(pool, "lena@example.com", "Лена М.").await;
     let artem = user(pool, "artem@example.com", "Артём К.").await;
-    let project: Uuid = sqlx::query_scalar("insert into projects (key, name, color) values ('WEB', 'Web', 'accent') returning id")
+    let project: Uuid = sqlx::query_scalar("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent') returning id")
         .fetch_one(pool)
         .await
         .unwrap();
@@ -85,7 +85,7 @@ async fn mentioned(pool: &PgPool, w: &World, comment: Uuid) -> notifications::No
 
 // ===== Таблица =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn the_kind_and_the_comment_go_together(pool: PgPool) {
     let w = world(&pool).await;
     // «упомянули» без комментария и «назначили» с комментарием не бывают
@@ -112,7 +112,7 @@ async fn the_kind_and_the_comment_go_together(pool: PgPool) {
     assert_eq!(count(&pool, "select count(*) from notifications").await, 2);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn unknown_kind_is_refused(pool: PgPool) {
     let w = world(&pool).await;
     let r = sqlx::query("insert into notifications (user_id, kind, project_id, task_id) values ($1, 'other', $2, $3)")
@@ -126,7 +126,7 @@ async fn unknown_kind_is_refused(pool: PgPool) {
 
 // ===== Комментарий и упомянутые =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn a_comment_keeps_the_list_of_mentioned_people(pool: PgPool) {
     let w = world(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -145,7 +145,7 @@ async fn a_comment_keeps_the_list_of_mentioned_people(pool: PgPool) {
 
 // ===== Назначили =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn a_repeated_unread_assignment_of_the_same_task_replaces_the_old_one(pool: PgPool) {
     let w = world(&pool).await;
     let first = assigned(&pool, &w, w.task).await;
@@ -155,7 +155,7 @@ async fn a_repeated_unread_assignment_of_the_same_task_replaces_the_old_one(pool
     assert_eq!(count(&pool, &format!("select count(*) from notifications where id = '{}'", second.id)).await, 1);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn a_read_assignment_stays_and_a_new_one_is_added(pool: PgPool) {
     let w = world(&pool).await;
     let first = assigned(&pool, &w, w.task).await;
@@ -164,7 +164,7 @@ async fn a_read_assignment_stays_and_a_new_one_is_added(pool: PgPool) {
     assert_eq!(count(&pool, "select count(*) from notifications").await, 2);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn assignments_of_different_tasks_or_people_do_not_replace_each_other(pool: PgPool) {
     let w = world(&pool).await;
     let other_task = add_task(&pool, w.project, 2, "Другая").await;
@@ -175,7 +175,7 @@ async fn assignments_of_different_tasks_or_people_do_not_replace_each_other(pool
     assert_eq!(count(&pool, "select count(*) from notifications").await, 3);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn every_mention_is_its_own_notification(pool: PgPool) {
     let w = world(&pool).await;
     let second = add_comment(&pool, w.task, w.artem, "Ещё раз").await;
@@ -186,7 +186,7 @@ async fn every_mention_is_its_own_notification(pool: PgPool) {
 
 // ===== Очистка =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn creating_a_new_one_removes_old_read_ones_only(pool: PgPool) {
     let w = world(&pool).await;
     let other_task = add_task(&pool, w.project, 2, "Другая").await;
@@ -210,7 +210,7 @@ async fn creating_a_new_one_removes_old_read_ones_only(pool: PgPool) {
     assert_eq!(left.len(), 3);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn only_the_newest_ones_are_kept_per_person(pool: PgPool) {
     let w = world(&pool).await;
     // 250 старых упоминаний одного человека и одно упоминание другого
@@ -257,7 +257,7 @@ async fn only_the_newest_ones_are_kept_per_person(pool: PgPool) {
 
 // ===== Список =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn the_list_carries_task_project_actor_and_the_comment(pool: PgPool) {
     let w = world(&pool).await;
     assigned(&pool, &w, w.task).await;
@@ -275,7 +275,7 @@ async fn the_list_carries_task_project_actor_and_the_comment(pool: PgPool) {
     assert!(list[1].comment_body.is_none());
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn a_task_in_a_module_with_a_key_carries_the_key_of_its_series(pool: PgPool) {
     let w = world(&pool).await;
     let module: Uuid = sqlx::query_scalar("insert into modules (project_id, title, key) values ($1, 'SEO', 'SEO') returning id")
@@ -291,7 +291,7 @@ async fn a_task_in_a_module_with_a_key_carries_the_key_of_its_series(pool: PgPoo
     assert_eq!(list[0].series_key.as_deref(), Some("SEO"));
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn the_limit_cuts_the_list_but_not_the_counter(pool: PgPool) {
     let w = world(&pool).await;
     for n in 0..5 {
@@ -302,7 +302,7 @@ async fn the_limit_cuts_the_list_but_not_the_counter(pool: PgPool) {
     assert_eq!(notifications::unread_count(&pool, w.lena).await.unwrap(), 5);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn leaving_the_project_hides_its_notifications_and_returning_shows_them_again(pool: PgPool) {
     let w = world(&pool).await;
     assigned(&pool, &w, w.task).await;
@@ -315,7 +315,7 @@ async fn leaving_the_project_hides_its_notifications_and_returning_shows_them_ag
     assert_eq!(notifications::unread_count(&pool, w.lena).await.unwrap(), 1);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn notifications_of_an_archived_project_are_hidden(pool: PgPool) {
     let w = world(&pool).await;
     assigned(&pool, &w, w.task).await;
@@ -326,7 +326,7 @@ async fn notifications_of_an_archived_project_are_hidden(pool: PgPool) {
     assert_eq!(notifications::list(&pool, w.lena, 50).await.unwrap().len(), 1);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn the_list_and_the_counter_belong_to_their_owner(pool: PgPool) {
     let w = world(&pool).await;
     assigned(&pool, &w, w.task).await;
@@ -336,7 +336,7 @@ async fn the_list_and_the_counter_belong_to_their_owner(pool: PgPool) {
 
 // ===== Прочитано =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn marking_read_works_for_the_owner_only_and_is_repeatable(pool: PgPool) {
     let w = world(&pool).await;
     let n = assigned(&pool, &w, w.task).await;
@@ -352,7 +352,7 @@ async fn marking_read_works_for_the_owner_only_and_is_repeatable(pool: PgPool) {
     assert_eq!(first, again, "повторная отметка не двигает время");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn mark_all_read_touches_only_my_unread_ones(pool: PgPool) {
     let w = world(&pool).await;
     let other_task = add_task(&pool, w.project, 2, "Другая").await;
@@ -369,7 +369,7 @@ async fn mark_all_read_touches_only_my_unread_ones(pool: PgPool) {
 
 // ===== Каскады =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_the_task_the_project_or_the_recipient_removes_notifications(pool: PgPool) {
     let w = world(&pool).await;
     let other_task = add_task(&pool, w.project, 2, "Другая").await;
@@ -391,7 +391,7 @@ async fn deleting_the_task_the_project_or_the_recipient_removes_notifications(po
 async fn world_again(pool: &PgPool) -> World {
     let lena = user(pool, "lena2@example.com", "Лена Вторая").await;
     let artem = user(pool, "artem2@example.com", "Артём Второй").await;
-    let project: Uuid = sqlx::query_scalar("insert into projects (key, name, color) values ('API', 'Api', 'warn') returning id")
+    let project: Uuid = sqlx::query_scalar("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'API', 'Api', 'warn') returning id")
         .fetch_one(pool)
         .await
         .unwrap();
@@ -400,7 +400,7 @@ async fn world_again(pool: &PgPool) -> World {
     World { lena, artem, project, task, comment }
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_the_author_keeps_the_notification_without_a_name(pool: PgPool) {
     let w = world(&pool).await;
     let task = add_task(&pool, w.project, 2, "Без автора").await;
@@ -414,7 +414,7 @@ async fn deleting_the_author_keeps_the_notification_without_a_name(pool: PgPool)
     assert!(list[0].actor_name.is_none());
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_the_comment_removes_the_mention_notification(pool: PgPool) {
     let w = world(&pool).await;
     mentioned(&pool, &w, w.comment).await;
@@ -424,7 +424,7 @@ async fn deleting_the_comment_removes_the_mention_notification(pool: PgPool) {
 
 // ===== Обратная миграция =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn down_migration_drops_notifications_but_keeps_comment_texts(pool: PgPool) {
     let w = world(&pool).await;
     let mut conn = pool.acquire().await.unwrap();

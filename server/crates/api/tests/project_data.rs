@@ -146,7 +146,7 @@ async fn a_member_who_left_loses_the_documents_and_a_member_who_joined_gets_them
 async fn document_events_go_to_the_feed_of_their_project_only(pool: PgPool) {
     let t = Two::new(pool.clone()).await;
     let doc = t.doc(t.a, "Схема").await;
-    t.c.ok(t.c.post("/api/v1/wiki", json!({ "title": "Общая" })).await, StatusCode::CREATED).await;
+    t.c.ok(t.c.post(&t.c.wiki_url(), json!({ "title": "Общая" })).await, StatusCode::CREATED).await;
     assert_eq!(t.c.delete(&format!("/api/v1/docs/{}", id_of(&doc))).await.status, StatusCode::NO_CONTENT);
 
     let feed = |project: Uuid| {
@@ -270,7 +270,7 @@ async fn task_attachments_stay_out_of_the_library_and_out_of_reach_of_other_proj
 
     // в библиотеке файлов вложения задач нет ни у автора, ни у участника другого проекта
     for who in [&t.c, &t.only_b] {
-        let library = who.ok(who.get("/api/v1/files").await, StatusCode::OK).await;
+        let library = who.ok(who.get(&who.files_url()).await, StatusCode::OK).await;
         assert_eq!(library["total"], 0);
         assert_eq!(library["files"], json!([]));
     }

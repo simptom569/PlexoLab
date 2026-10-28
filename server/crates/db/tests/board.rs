@@ -29,7 +29,7 @@ async fn board(pool: &PgPool) -> Board {
     .await
     .unwrap();
     let project_id: Uuid =
-        db::sqlx::query_scalar("insert into projects (key, name, color) values ('WEB', 'Web', 'accent') returning id")
+        db::sqlx::query_scalar("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), 'WEB', 'Web', 'accent') returning id")
             .fetch_one(pool)
             .await
             .unwrap();
@@ -97,7 +97,7 @@ async fn place(pool: &PgPool, task: &Task, column: Option<Uuid>, before: Option<
 
 // ===== Номера и позиции новых задач =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn new_tasks_get_consecutive_numbers_and_end_positions(pool: PgPool) {
     let b = board(&pool).await;
     let col = Some(b.columns[0].id);
@@ -117,7 +117,7 @@ async fn new_tasks_get_consecutive_numbers_and_end_positions(pool: PgPool) {
     assert_eq!(last, 3);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn concurrent_creation_never_duplicates_numbers(pool: PgPool) {
     let b = std::sync::Arc::new(board(&pool).await);
     let handles: Vec<_> = (0..12)
@@ -139,7 +139,7 @@ async fn concurrent_creation_never_duplicates_numbers(pool: PgPool) {
 
 // ===== Перенос =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn place_reorders_inside_a_column(pool: PgPool) {
     let b = board(&pool).await;
     let col = Some(b.columns[0].id);
@@ -156,7 +156,7 @@ async fn place_reorders_inside_a_column(pool: PgPool) {
     let _ = y;
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn place_moves_between_columns_and_to_backlog(pool: PgPool) {
     let b = board(&pool).await;
     let (todo, doing) = (Some(b.columns[0].id), Some(b.columns[1].id));
@@ -179,7 +179,7 @@ async fn place_moves_between_columns_and_to_backlog(pool: PgPool) {
     assert_eq!(order(&pool, &b, todo).await, ["C"]);
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn place_before_a_task_from_another_column_is_rejected(pool: PgPool) {
     let b = board(&pool).await;
     let a = add(&pool, &b, Some(b.columns[0].id), "A").await;
@@ -192,7 +192,7 @@ async fn place_before_a_task_from_another_column_is_rejected(pool: PgPool) {
     assert_eq!(order(&pool, &b, Some(b.columns[0].id)).await, ["A"], "ничего не изменилось");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn place_recalculates_positions_when_the_gap_runs_out(pool: PgPool) {
     let b = board(&pool).await;
     let col = Some(b.columns[0].id);
@@ -215,7 +215,7 @@ async fn place_recalculates_positions_when_the_gap_runs_out(pool: PgPool) {
     assert_eq!(positions(&pool, &b, col).await, [1024.0, 2048.0, 3072.0, 4096.0], "пересчитано с шагом 1024");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn many_insertions_into_the_same_gap_keep_the_order(pool: PgPool) {
     let b = board(&pool).await;
     let col = Some(b.columns[0].id);
@@ -237,7 +237,7 @@ async fn many_insertions_into_the_same_gap_keep_the_order(pool: PgPool) {
     let _ = head;
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn move_all_appends_to_the_target_column_keeping_order(pool: PgPool) {
     let b = board(&pool).await;
     let (from, to) = (b.columns[0].id, b.columns[1].id);
@@ -257,7 +257,7 @@ async fn move_all_appends_to_the_target_column_keeping_order(pool: PgPool) {
 
 // ===== Колонки =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn columns_are_appended_and_reordered(pool: PgPool) {
     let b = board(&pool).await;
     let titles = |cols: Vec<columns::Column>| cols.into_iter().map(|c| c.title).collect::<Vec<_>>();
@@ -276,7 +276,7 @@ async fn columns_are_appended_and_reordered(pool: PgPool) {
     assert!(matches!(err, columns::PlaceError::BeforeNotFound));
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn column_update_changes_only_given_fields(pool: PgPool) {
     let b = board(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -288,7 +288,7 @@ async fn column_update_changes_only_given_fields(pool: PgPool) {
 
 // ===== Задачи: поля, метки, карточки =====
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn patch_updates_only_given_fields_and_can_clear_optional_ones(pool: PgPool) {
     let b = board(&pool).await;
     let t = add(&pool, &b, Some(b.columns[0].id), "T").await;
@@ -318,14 +318,14 @@ async fn patch_updates_only_given_fields_and_can_clear_optional_ones(pool: PgPoo
 
 /// Проект без доски: достаточно для проверок меток
 async fn bare_project(pool: &PgPool, key: &str) -> Uuid {
-    db::sqlx::query_scalar("insert into projects (key, name, color) values ($1, $1, 'accent') returning id")
+    db::sqlx::query_scalar("insert into projects (team_id, key, name, color) values ((select id from teams where name = 'Тест'), $1, $1, 'accent') returning id")
         .bind(key)
         .fetch_one(pool)
         .await
         .unwrap()
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn tags_come_in_creation_order_and_get_cycling_tones(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     let project = bare_project(&pool, "WEB").await;
@@ -345,7 +345,7 @@ async fn tags_come_in_creation_order_and_get_cycling_tones(pool: PgPool) {
     assert_eq!(ninth.tone, 1, "10-я метка: 9 % 8");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn tag_lookup_ignores_case_and_duplicates_are_rejected(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     let project = bare_project(&pool, "WEB").await;
@@ -362,7 +362,7 @@ async fn tag_lookup_ignores_case_and_duplicates_are_rejected(pool: PgPool) {
     assert!(matches!(&err, db::sqlx::Error::Database(d) if d.is_unique_violation()));
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn cards_carry_tags_in_creation_order_and_subtask_counts(pool: PgPool) {
     let b = board(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -399,7 +399,7 @@ async fn cards_carry_tags_in_creation_order_and_subtask_counts(pool: PgPool) {
     assert!(tasks::tag_ids(&mut *conn, t.id).await.unwrap().is_empty());
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn deleting_a_tag_removes_it_from_tasks(pool: PgPool) {
     let b = board(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
@@ -411,7 +411,7 @@ async fn deleting_a_tag_removes_it_from_tasks(pool: PgPool) {
     assert!(!tags::delete(&mut conn, tag.id).await.unwrap(), "повторное удаление: такой метки уже нет");
 }
 
-#[sqlx::test(migrator = "db::MIGRATOR")]
+#[sqlx::test(migrator = "db::MIGRATOR", fixtures("team"))]
 async fn subtasks_are_appended_in_order(pool: PgPool) {
     let b = board(&pool).await;
     let t = add(&pool, &b, None, "T").await;
