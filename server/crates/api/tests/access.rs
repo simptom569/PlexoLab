@@ -34,6 +34,12 @@ enum Kind {
     WikiRead,
     /// Вики и библиотека команды, запись: член команды; гость получает 403, посторонний 404
     WikiWrite,
+    /// Состав и настройки команды: только члены; гость и посторонний команды «не видят» (404)
+    TeamMember,
+    /// Действие администратора команды: член получает 403, гость и посторонний 404
+    TeamAdmin,
+    /// Только администратор сервера: остальным 403
+    ServerAdmin,
 }
 
 use Kind::*;
@@ -61,6 +67,8 @@ enum Of {
     Team,
     Page,
     Folder,
+    /// Приглашение в команду, которое ждёт приглашённого
+    TInv,
 }
 
 use Of::*;
@@ -78,6 +86,23 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("PATCH",  "/me",                                  Nothing,      Open),
     ("GET",    "/users",                               Nothing,      Open),
     ("GET",    "/teams",                               Nothing,      Open),
+    ("POST",   "/teams",                               Nothing,      Open),
+    ("GET",    "/team-invites",                        Nothing,      Open),
+    ("GET",    "/admin/teams",                         Nothing,      ServerAdmin),
+    // команды: состав, настройки, архив, приглашения
+    ("GET",    "/teams/{id}",                          Team,   TeamMember),
+    ("PATCH",  "/teams/{id}",                          Team,   TeamAdmin),
+    ("POST",   "/teams/{id}/archive",                  Team,   TeamAdmin),
+    ("POST",   "/teams/{id}/restore",                  Team,   TeamAdmin),
+    ("GET",    "/teams/{id}/members",                  Team,   TeamMember),
+    ("PATCH",  "/teams/{id}/members/{user_id}",        Team,   TeamAdmin),
+    ("DELETE", "/teams/{id}/members/{user_id}",        Team,   TeamAdmin),
+    ("POST",   "/teams/{id}/leave",                    Team,   TeamMember),
+    ("POST",   "/teams/{id}/invites",                  Team,   TeamAdmin),
+    ("DELETE", "/team-invites/{id}",                   TInv,   TeamAdmin),
+    ("POST",   "/team-invites/{id}/accept",            TInv,   Invitee),
+    ("POST",   "/team-invites/{id}/decline",           TInv,   Invitee),
+    ("GET",    "/projects/{id}/visibility-impact",     Proj,   AdminOnly),
     // проекты, участники, приглашения
     ("GET",    "/projects",                            Nothing,      Open),
     ("POST",   "/projects",                            Nothing,      Open),
@@ -232,6 +257,8 @@ struct World {
     team: Uuid,
     page: Uuid,
     folder: Uuid,
+    /// Приглашение в команду для приглашённого (он не её член)
+    team_invite: Uuid,
 }
 
 impl World {
@@ -292,6 +319,25 @@ impl World {
             &c.ok(c.post(&format!("{p}/invites"), json!({ "email": invitee.user.email })).await, StatusCode::CREATED)
                 .await,
         );
+        // и приглашение в команду: после прошлого обхода приглашённый мог принять его и войти в команду
+        db::sqlx::query("delete from team_members where team_id = $1 and user_id = $2")
+            .bind(c.team)
+            .bind(invitee.user.id)
+            .execute(&c.pool)
+            .await
+            .unwrap();
+        db::sqlx::query("update team_invites set status = 'revoked' where user_id = $1 and status = 'pending'")
+            .bind(invitee.user.id)
+            .execute(&c.pool)
+            .await
+            .unwrap();
+        let team_invite = id_of(
+            &c.ok(
+                c.post(&format!("/api/v1/teams/{}/invites", c.team), json!({ "email": invitee.user.email })).await,
+                StatusCode::CREATED,
+            )
+            .await,
+        );
         let files =
             c.ok(c.upload(&format!("{t}/files"), &[file_part("вложение.txt", b"1")]).await, StatusCode::CREATED).await;
         let doc =
@@ -329,6 +375,7 @@ impl World {
             team: c.team,
             page,
             folder,
+            team_invite,
             project: f.project,
             column,
             task: id_of(&task),
@@ -368,6 +415,7 @@ impl World {
             Team => self.team,
             Page => self.page,
             Folder => self.folder,
+            TInv => self.team_invite,
         }
     }
 }
@@ -401,6 +449,10 @@ fn body(method: &str, path: &str, w: &World) -> Option<Value> {
             json!({ "note": { "x": 24.0, "y": 28.0, "w": 400.0 }, "objects": [], "links": [] })
         }
         ("PUT", "/docs/{id}/star") => json!({ "starred": true }),
+        ("POST", "/teams") => json!({ "name": "Ещё команда" }),
+        ("PATCH", "/teams/{id}") => json!({ "name": "Новое название" }),
+        ("PATCH", "/teams/{id}/members/{user_id}") => json!({ "role": "member" }),
+        ("POST", "/teams/{id}/invites") => json!({ "email": "nobody-at-all@example.com" }),
         ("POST", "/teams/{id}/wiki") => json!({ "title": "Ещё страница" }),
         ("PATCH", "/wiki/{id}") => json!({ "title": "Другая страница", "rev": 1 }),
         ("POST", "/teams/{id}/folders") => json!({ "name": format!("Ещё папка {}", Uuid::new_v4()) }),
@@ -416,7 +468,10 @@ fn body(method: &str, path: &str, w: &World) -> Option<Value> {
 
 /// Подставляет записи мира в адрес из схемы; `{user_id}` — другой участник проекта
 fn uri(path: &str, of: Of, w: &World, other_member: Uuid) -> String {
-    format!("/api/v1{}", path.replace("{user_id}", &other_member.to_string()).replace("{id}", &w.id(of).to_string()))
+    let base =
+        format!("/api/v1{}", path.replace("{user_id}", &other_member.to_string()).replace("{id}", &w.id(of).to_string()));
+    // у этого адреса обязательный параметр: без него ответ был бы 400 раньше проверки доступа
+    if path.ends_with("/visibility-impact") { format!("{base}?to=team") } else { base }
 }
 
 async fn call(who: &Ctx, method: &str, path: &str, of: Of, w: &World, other_member: Uuid) -> StatusCode {
@@ -519,6 +574,87 @@ async fn every_address_except_login_and_refresh_requires_a_token(pool: PgPool) {
             assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{method} {path}");
         }
     }
+}
+
+/// Состав, настройки, архив и приглашения команды: член видит состав, администратор управляет; гость и посторонний команды
+/// «не видят» (404), член без прав получает 403, а приглашённый, пока не принял приглашение, ещё посторонний
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn every_address_with_team_administration_follows_the_team_rules(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let stranger = f.c.another("stranger@example.com", "Посторонний").await;
+    let mate = f.c.another("mate@example.com", "Член команды").await;
+    let guest = f.c.another("guest@example.com", "Гость").await;
+    join(&f.c.pool, f.project, guest.user.id, "member").await;
+    let invitee = f.c.another("invitee@example.com", "Приглашённый").await;
+
+    // исходное положение перед каждым адресом: прошлый мог убрать члена, заархивировать команду, принять приглашение
+    let reset = || {
+        let pool = f.c.pool.clone();
+        let (team, mate, guest) = (f.c.team, mate.user.id, guest.user.id);
+        let project = f.project;
+        async move {
+            db::sqlx::query("update teams set archived_at = null, guests_read_wiki = false where id = $1")
+                .bind(team)
+                .execute(&pool)
+                .await
+                .unwrap();
+            db::sqlx::query(
+                "insert into team_members (team_id, user_id, role) values ($1, $2, 'member') \
+                 on conflict (team_id, user_id) do update set role = 'member'",
+            )
+            .bind(team)
+            .bind(mate)
+            .execute(&pool)
+            .await
+            .unwrap();
+            db::sqlx::query(
+                "insert into project_members (project_id, user_id, role) values ($1, $2, 'member') on conflict do nothing",
+            )
+            .bind(project)
+            .bind(guest)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+
+    let open = |s: StatusCode| s != StatusCode::NOT_FOUND && s != StatusCode::FORBIDDEN;
+    let mut checked = 0;
+    for (method, path, of, kind) in ROUTES {
+        if !matches!(kind, TeamMember | TeamAdmin) {
+            continue;
+        }
+        reset().await;
+        let w = World::build(&f, &invitee).await;
+        let other = mate.user.id;
+        let label = format!("{method} {path}");
+
+        for (who, name) in [(&stranger, "посторонний"), (&guest, "гость"), (&invitee, "приглашённый, но не принявший")] {
+            assert_eq!(call(who, method, path, *of, &w, other).await, StatusCode::NOT_FOUND, "{name}: {label}");
+        }
+        if *kind == TeamAdmin {
+            assert_eq!(call(&mate, method, path, *of, &w, other).await, StatusCode::FORBIDDEN, "член команды: {label}");
+        } else {
+            let s = call(&mate, method, path, *of, &w, other).await;
+            assert!(open(s), "член команды: {label} → {s}");
+            reset().await;
+        }
+        let s = call(&f.c, method, path, *of, &w, other).await;
+        assert!(open(s), "администратор команды: {label} → {s}");
+        checked += 1;
+    }
+    assert!(checked >= 10, "проверено подозрительно мало адресов: {checked}");
+}
+
+/// Список всех команд сервера: только для администратора сервера
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn the_list_of_all_teams_is_for_the_server_admin_only(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let root = f.c.another_admin("root@example.com", "Админ сервера").await;
+    for (who, name) in [(&f.c, "администратор команды")] {
+        assert_eq!(who.get("/api/v1/admin/teams").await.status, StatusCode::FORBIDDEN, "{name}");
+    }
+    assert_eq!(root.get("/api/v1/admin/teams").await.status, StatusCode::OK);
 }
 
 /// Вики и библиотека команды: член читает и пишет, посторонний не знает о них (404), гость читает только при включённой

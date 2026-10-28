@@ -140,11 +140,16 @@ fn event(kind: &'static str) -> Event {
 
 /// Запрос к API напрямую (минуя сокет), с меткой клиента
 async fn rest(rt: &Rt, client: &str, method: &str, uri: &str, body: Value) -> Value {
+    rest_with(rt, &rt.token, client, method, uri, body).await
+}
+
+/// То же от имени человека с этим токеном
+async fn rest_with(rt: &Rt, token: &str, client: &str, method: &str, uri: &str, body: Value) -> Value {
     let app = router(rt.state.clone());
     let req = Request::builder()
         .method(method)
         .uri(uri)
-        .header("authorization", format!("Bearer {}", rt.token))
+        .header("authorization", format!("Bearer {token}"))
         .header("content-type", "application/json")
         .header("x-client-id", client)
         .body(Body::from(body.to_string()))
@@ -733,4 +738,43 @@ async fn a_block_on_a_wiki_page_is_seen_only_by_those_who_read_the_wiki(pool: Pg
     // чужой человек не может отметиться на странице, которой не читает
     send(&mut out, focus("wiki", PAGE, 1, 3, 4)).await;
     quiet(&mut owner, Duration::from_millis(200)).await;
+}
+
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn an_invited_person_starts_getting_team_events_after_accepting_and_stops_after_being_removed(pool: PgPool) {
+    let rt = start(pool.clone(), |s| s).await;
+    let guest_token = rt.outsider("guest@example.com").await;
+    let guest: Uuid = db::sqlx::query_scalar("select id from users where email = 'guest@example.com'").fetch_one(&pool).await.unwrap();
+    let team = id_of(&rest(&rt, "a", "POST", "/api/v1/teams", json!({ "name": "Веб" })).await);
+    let mut owner = rt.ready().await;
+    let mut ws = rt.ready_as(&guest_token).await;
+
+    // приглашение: приглашённый узнаёт о нём лично; команды он ещё не видит, вики до него не доходит
+    let invite = rest(&rt, "a", "POST", &format!("/api/v1/teams/{team}/invites"), json!({ "email": "guest@example.com" })).await;
+    assert_eq!(next_json(&mut ws).await["type"], "team.changed");
+    assert_eq!(next_json(&mut ws).await["type"], "team-invite.changed");
+    rest(&rt, "a", "POST", &format!("/api/v1/teams/{team}/wiki"), json!({ "title": "П" })).await;
+    quiet(&mut ws, Duration::from_millis(200)).await;
+    while let Some(Incoming::Json(_)) = recv(&mut owner, Duration::from_millis(100)).await {}
+
+    // принял: вики команды доходит и до него
+    rest_with(&rt, &guest_token, "b", "POST", &format!("/api/v1/team-invites/{}/accept", id_of(&invite)), json!({})).await;
+    let mut kinds = Vec::new();
+    while let Some(Incoming::Json(m)) = recv(&mut ws, Duration::from_millis(200)).await {
+        kinds.push(m["type"].as_str().unwrap().to_owned());
+    }
+    assert!(kinds.contains(&"team.changed".to_owned()), "{kinds:?}");
+    rest(&rt, "a", "POST", &format!("/api/v1/teams/{team}/wiki"), json!({ "title": "Вторая" })).await;
+    assert_eq!(next_json(&mut ws).await["type"], "wiki.updated");
+    assert_eq!(next_json(&mut ws).await["type"], "activity.created");
+
+    // исключили: о самом исключении он узнаёт, а вики больше не получает
+    rest(&rt, "a", "DELETE", &format!("/api/v1/teams/{team}/members/{guest}"), json!({})).await;
+    let mut removed = Vec::new();
+    while let Some(Incoming::Json(m)) = recv(&mut ws, Duration::from_millis(200)).await {
+        removed.push(m["type"].as_str().unwrap().to_owned());
+    }
+    assert!(removed.contains(&"team.changed".to_owned()), "{removed:?}");
+    rest(&rt, "a", "POST", &format!("/api/v1/teams/{team}/wiki"), json!({ "title": "Третья" })).await;
+    quiet(&mut ws, Duration::from_millis(300)).await;
 }

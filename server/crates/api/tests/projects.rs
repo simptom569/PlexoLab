@@ -233,9 +233,11 @@ async fn the_member_list_shows_pending_invites_only_to_admins(pool: PgPool) {
     assert_eq!(for_member["invites"], json!([]), "приглашения видит только администратор");
     assert_eq!(
         roles_by_email(&for_member),
-        [("tester@example.com".to_owned(), "admin".to_owned()), ("mate@example.com".to_owned(), "member".to_owned())],
-        "сначала администраторы"
+        [(String::new(), "admin".to_owned()), ("mate@example.com".to_owned(), "member".to_owned())],
+        "сначала администраторы; e-mail чужих участнику не показывают, свой виден"
     );
+    let seen_by_admin = roles_by_email(&for_admin);
+    assert_eq!(seen_by_admin[1].0, "mate@example.com", "администратор проекта видит e-mail участников");
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
