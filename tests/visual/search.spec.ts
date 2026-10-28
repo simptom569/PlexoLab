@@ -13,7 +13,7 @@ const dialog = (page: Page) => page.getByRole('dialog', { name: 'Поиск' })
 const box = (page: Page) => dialog(page).getByRole('combobox', { name: 'Поиск по названиям' })
 const options = (page: Page) => dialog(page).getByRole('option')
 const drawer = (page: Page) => page.getByRole('dialog', { name: /^Задача / })
-const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]')
+const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]').last()
 
 type Project = { id: string; key: string | null; name: string }
 const projectByKey = async (page: Page, key: string) => (await api<Project[]>(page, '/projects')).find((p) => p.key === key)!

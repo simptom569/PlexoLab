@@ -2,7 +2,7 @@
 // что человек видит в обычных экранах: у кого какая вики и как ведёт себя гость чужой команды.
 
 import { expect, test } from '@playwright/test'
-import { openApp, resetData } from './fixtures'
+import { DEMO_TEAM, openApp, resetData } from './fixtures'
 import { apiAs, statusAs } from './projects-helpers'
 import { editor } from './wiki-helpers'
 
@@ -14,18 +14,18 @@ const ARTEM = 'artem@example.com'
 type Team = { id: string; name: string; personal: boolean; role: string | null; guest: boolean; wiki: boolean }
 type Node = { id: string; title: string }
 
-test('у каждого человека есть «Личное», а общая вики демо-данных лежит в «Dream Team»', async ({ page }) => {
+test('у каждого человека есть «Личное», а общая вики демо-данных лежит в общей команде', async ({ page }) => {
   const teams = await apiAs<Team[]>(page, ARTEM, '/teams')
   expect(teams.map((t) => [t.name, t.personal, t.role])).toEqual([
     ['Личное', true, 'admin'],
-    ['Dream Team', false, 'member'],
+    [DEMO_TEAM, false, 'member'],
   ])
   const dream = teams[1]
   expect((await apiAs<Node[]>(page, ARTEM, `/teams/${dream.id}/wiki`)).length).toBe(7)
   expect(await apiAs<Node[]>(page, ARTEM, `/teams/${teams[0].id}/wiki`)).toEqual([])
 })
 
-test('гость проекта из чужого «Личного» работает с вики своей команды, а чужую вики не видит', async ({ page }) => {
+test('гость проекта из чужого «Личного»: в его команде «Вики» нет, а вики своего «Личного» работает', async ({ page }) => {
   // у Лены закрытый проект в её «Личном», в него приглашён Артём
   const lenaPersonal = (await apiAs<Team[]>(page, LENA, '/teams')).find((t) => t.personal)!
   const project = await apiAs<{ id: string }>(page, LENA, '/projects', {
@@ -41,8 +41,15 @@ test('гость проекта из чужого «Личного» работ�
   const guestTeam = teams.find((t) => t.id === lenaPersonal.id)!
   expect({ guest: guestTeam.guest, role: guestTeam.role, wiki: guestTeam.wiki }).toEqual({ guest: true, role: null, wiki: false })
 
-  // открыл проект гостя и зашёл в вики: она его собственная, а не Ленина
-  await openApp(page, { email: ARTEM, settings: { project: project.id, page: 'wiki' } })
+  // Артём выбрал её команду (он там гость): страница «Вики» открыться не может, вместо неё доска
+  await openApp(page, { email: ARTEM, settings: { team: lenaPersonal.id, project: project.id, page: 'wiki' } })
+  await expect(page.locator('.side .brand-btn .cap > span').first()).toHaveText('Личное · гость')
+  await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Вики' })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Доска' })).toHaveAttribute('aria-current', 'page')
+  // переключился на своё «Личное»: вики там его собственная, а не Ленина
+  await page.locator('.side .brand-btn').click()
+  await page.getByRole('menuitemradio', { name: /^Личное$/ }).first().click()
+  await page.getByRole('button', { name: 'Вики' }).click()
   await expect(page.locator('.doc-main')).toContainText('Страниц нет. Создай первую кнопкой слева')
   await page.getByRole('button', { name: 'Новая страница' }).click()
   await expect(editor(page)).toBeFocused()

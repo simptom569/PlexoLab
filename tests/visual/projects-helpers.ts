@@ -1,5 +1,5 @@
 import { expect, type Browser, type Page } from '@playwright/test'
-import { openApp, SERVER } from './fixtures'
+import { DEMO_TEAM, openApp, SERVER } from './fixtures'
 
 // Общее для проверок проектов и ключей: запросы к серверу от имени любого человека и второй браузер.
 
@@ -21,7 +21,7 @@ export async function apiAs<T>(page: Page, email: string, path: string, init: In
 /** Общая команда демо-данных «Dream Team» глазами этого человека: в ней проекты макета, новые проекты теста создаются тоже в ней */
 export async function dreamTeamAs(page: Page, email: string): Promise<string> {
   const teams = await apiAs<Array<{ id: string; name: string }>>(page, email, '/teams')
-  return teams.find((t) => t.name === 'Dream Team')!.id
+  return teams.find((t) => t.name === DEMO_TEAM)!.id
 }
 
 export type ApiProject = { id: string; name: string; key: string | null; color: string; role: string; archived: boolean }

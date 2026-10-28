@@ -1,7 +1,7 @@
 // Общее для проверок вики: данные сервера напрямую (минуя интерфейс), открытие нужной страницы, ожидание сохранения.
 
 import { expect, type Page } from '@playwright/test'
-import { openApp, SERVER } from './fixtures'
+import { DEMO_TEAM, openApp, SERVER } from './fixtures'
 
 export async function token(page: Page): Promise<string> {
   const res = await page.request.post(`${SERVER}/api/v1/auth/login`, { data: { email: 'lena@example.com', password: 'dev' } })
@@ -20,7 +20,7 @@ export async function api<T>(page: Page, path: string, init: { method?: 'GET' | 
 
 /** Общая команда демо-данных «Dream Team»: в ней вики, файлы, папки и проекты макета */
 export const dreamTeam = async (page: Page): Promise<string> =>
-  (await api<Array<{ id: string; name: string }>>(page, '/teams')).find((t) => t.name === 'Dream Team')!.id
+  (await api<Array<{ id: string; name: string }>>(page, '/teams')).find((t) => t.name === DEMO_TEAM)!.id
 
 /** «Web-приложение»: первый проект, в нём лежат демо-документы, ссылки и лента (документы и ссылки принадлежат проекту) */
 export const webProjectId = async (page: Page): Promise<string> =>

@@ -13,7 +13,7 @@ const card = (page: Page, key: string) => page.locator('[data-card-id]', { hasTe
 const drawer = (page: Page) => page.getByRole('dialog', { name: /^Задача / })
 const composer = (page: Page) => drawer(page).getByLabel('Комментарий')
 const picker = (page: Page) => page.getByRole('listbox', { name: 'Кого упомянуть' })
-const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]')
+const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]').last()
 const dialog = (page: Page) => page.getByRole('dialog', { name: 'Уведомления' })
 const rows = (page: Page) => dialog(page).getByRole('listitem')
 

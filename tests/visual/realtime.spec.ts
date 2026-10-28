@@ -69,7 +69,9 @@ test.describe('точка связи в боковом меню', () => {
           const r = el!.getBoundingClientRect()
           return [r.x, r.y, r.width, r.height]
         }
-        const button = document.querySelector('.side button[aria-haspopup="menu"]')
+        // кнопок с меню две: переключатель команды и карточка человека, нужна последняя
+        const buttons = document.querySelectorAll('.side button[aria-haspopup="menu"]')
+        const button = buttons[buttons.length - 1]
         return { side: rect(document.querySelector('.side')), button: rect(button), avatar: rect(button!.querySelector('.avatar')), name: rect(button!.querySelector('strong')) }
       })
     const withDot = await measure()

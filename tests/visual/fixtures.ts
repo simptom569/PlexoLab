@@ -4,6 +4,9 @@ import { settle } from './helpers'
 
 export const SERVER = E2E_SERVER_URL
 
+/** Общая команда демо-данных: сид называет её как подпись под названием приложения в макете */
+export const DEMO_TEAM = 'Рабочее пространство'
+
 // Ключи localStorage, в которые клиент складывает настройки и токен в браузерном режиме
 // (см. app/src/lib/platform/storage.ts и secrets.ts)
 const SETTINGS_KEY = 'plexolab.settings'
@@ -43,7 +46,13 @@ export async function openApp(page: Page, options: OpenOptions = {}) {
 
   const res = await page.request.post(`${SERVER}/api/v1/auth/login`, { data: { email, password } })
   expect(res.ok(), `вход ${email} не удался: ${res.status()}`).toBeTruthy()
-  const { refresh_token } = (await res.json()) as { refresh_token: string }
+  const { refresh_token, access_token } = (await res.json()) as { refresh_token: string; access_token: string }
+  // человек выбирает команду сам; тесты по умолчанию начинают в общей команде демо-данных, где лежат проекты макета
+  let team: string | null = null
+  if (!('team' in settings)) {
+    const teams = await page.request.get(`${SERVER}/api/v1/teams`, { headers: { Authorization: `Bearer ${access_token}` } })
+    team = ((await teams.json()) as Array<{ id: string; name: string }>).find((x) => x.name === DEMO_TEAM)?.id ?? null
+  }
 
   await page.addInitScript(
     ({ server, refresh, settingsKey, refreshPrefix, saved }) => {
@@ -58,7 +67,7 @@ export async function openApp(page: Page, options: OpenOptions = {}) {
       refresh: refresh_token,
       settingsKey: SETTINGS_KEY,
       refreshPrefix: REFRESH_PREFIX,
-      saved: { serverUrl: SERVER, lastEmail: email, theme, ...settings },
+      saved: { serverUrl: SERVER, lastEmail: email, theme, ...(team ? { team } : {}), ...settings },
     },
   )
   await page.goto(url)

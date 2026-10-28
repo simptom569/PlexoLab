@@ -13,7 +13,7 @@ const ROW = 'xpath=ancestor::div[contains(concat(" ", normalize-space(@class), "
 
 const nav = (page: Page) => page.getByRole('navigation', { name: 'Проекты' })
 const projectButton = (page: Page, name: string) => nav(page).getByRole('button', { name })
-const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]')
+const userButton = (page: Page) => page.locator('.side button[aria-haspopup="menu"]').last()
 
 async function openUserMenuItem(page: Page, name: string) {
   await userButton(page).click()
@@ -115,11 +115,11 @@ test.describe('новый проект', () => {
 // ===== Меню проекта =====
 
 test.describe('меню проекта по правой кнопке', () => {
-  test('администратору: «Настройки проекта» и «Выйти из проекта»', async ({ page }) => {
+  test('администратору команды: «Настройки проекта», а «Выйти из проекта» нет: проект над ним остаётся', async ({ page }) => {
     await openApp(page)
     await projectButton(page, 'Мобильный API').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'Проект «Мобильный API»' })
-    await expect(menu.getByRole('menuitem')).toHaveText(['Настройки проекта', 'Выйти из проекта'])
+    await expect(menu.getByRole('menuitem')).toHaveText(['Настройки проекта'])
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
   })
@@ -184,7 +184,7 @@ test.describe('меню проекта по правой кнопке', () => {
   })
 
   test('закрытое без выбора меню не помнит вопрос «Точно выйти?»', async ({ page }) => {
-    await openApp(page)
+    await openApp(page, { email: 'artem@example.com' })
     const menu = page.getByRole('menu', { name: 'Проект «Мобильный API»' })
     await projectButton(page, 'Мобильный API').click({ button: 'right' })
     await menu.getByRole('menuitem', { name: 'Выйти из проекта' }).click()
@@ -198,17 +198,20 @@ test.describe('меню проекта по правой кнопке', () => {
     await expect(menu.getByRole('menuitem', { name: 'Выйти из проекта' })).toBeVisible()
   })
 
-  test('администратор команды над проектом: уйдя из списка участников, остаётся и видит проект', async ({ page }) => {
+  test('администратор команды над проектом: пункта «Выйти» нет, а убранная из списка остаётся и видит проект', async ({ page }) => {
     // блокировки «единственный администратор проекта» нет: над каждым проектом стоит администратор его команды (TEAMS.md, 4.4)
     await openApp(page)
     await createProjectInUi(page, 'Личный')
     await projectButton(page, 'Личный').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'Проект «Личный»' })
-    await menu.getByRole('menuitem', { name: 'Выйти из проекта' }).click()
-    await menu.getByRole('menuitem', { name: 'Точно выйти?' }).click()
-    await expect(menu).toHaveCount(0)
+    // выходить ей не нужно и незачем: «Выйти из проекта» нет, администратором команды она остаётся над проектом
+    await expect(menu.getByRole('menuitem')).toHaveText(['Настройки проекта'])
     const mine = (await projectsOf(page, 'lena@example.com')).find((p) => p.name === 'Личный')
-    expect(mine?.role, 'Лена администратор Dream Team и потому администратор проекта').toBe('admin')
+    expect(mine?.role, 'Лена администратор общей команды и потому администратор проекта').toBe('admin')
+    // даже убранная из списка участников (сервер это разрешает) проекта она не теряет
+    await page.keyboard.press('Escape')
+    await apiAs(page, 'lena@example.com', `/projects/${mine!.id}/members/${(await apiAs<{ id: string }>(page, 'lena@example.com', '/me')).id}`, { method: 'DELETE' })
+    await page.reload()
     await expect(projectButton(page, 'Личный')).toBeVisible()
   })
 })
@@ -340,7 +343,7 @@ test.describe('участники и приглашения', () => {
       await expect(dialog.getByText('artem@example.com · Участник · ожидает ответа')).toBeVisible()
 
       // у приглашённого без перезагрузки: точка у имени и число в меню
-      await expect(artem.page.getByRole('img', { name: 'Есть приглашения в проекты' })).toBeVisible()
+      await expect(artem.page.getByRole('img', { name: 'Есть приглашения' })).toBeVisible()
       await userButton(artem.page).click()
       await expect(artem.page.getByRole('menuitem', { name: /Приглашения/ })).toContainText('1')
       await artem.page.getByRole('menuitem', { name: /Приглашения/ }).click()
@@ -350,7 +353,7 @@ test.describe('участники и приглашения', () => {
       await invites.getByRole('button', { name: 'Принять' }).click()
       await expect(invites.getByText('Приглашений нет')).toBeVisible()
       await expect(projectButton(artem.page, 'Командный')).toBeVisible()
-      await expect(artem.page.getByRole('img', { name: 'Есть приглашения в проекты' })).toHaveCount(0)
+      await expect(artem.page.getByRole('img', { name: 'Есть приглашения' })).toHaveCount(0)
 
       // у администратора список участников обновился сам
       await expect(dialog.getByRole('group', { name: 'Роль: Артём К.' })).toBeVisible()
@@ -370,11 +373,11 @@ test.describe('участники и приглашения', () => {
       await dialog.getByRole('tab', { name: 'Участники' }).click()
       await dialog.getByLabel('E-mail').fill('daniil@example.com')
       await dialog.getByRole('button', { name: 'Пригласить' }).click()
-      await expect(daniil.page.getByRole('img', { name: 'Есть приглашения в проекты' })).toBeVisible()
+      await expect(daniil.page.getByRole('img', { name: 'Есть приглашения' })).toBeVisible()
 
       // администратор отозвал: точка у приглашённого гаснет сама
       await dialog.getByRole('button', { name: 'Отозвать' }).click()
-      await expect(daniil.page.getByRole('img', { name: 'Есть приглашения в проекты' })).toHaveCount(0)
+      await expect(daniil.page.getByRole('img', { name: 'Есть приглашения' })).toHaveCount(0)
 
       // позвали снова, человек отклонил
       await dialog.getByLabel('E-mail').fill('daniil@example.com')
