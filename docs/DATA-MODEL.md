@@ -4,6 +4,8 @@
 
 > **Проектный уровень (проекты, участники, приглашения, метки по проектам, ключи id задач) описан в `PROJECTS.md` и реализуется этапами П1–П5 из `PLAN.md`.** Схема ниже показывает состояние до этих этапов; после каждого этапа её раздел обновляется.
 
+> **Командный уровень (команды, личная команда «Личное», видимость проектов, вики и файлы по командам) описан в `TEAMS.md` и реализуется этапами К1–К3 из `PLAN.md`.** Этап К1 сделан: схема, правила доступа, вики и файлы по команде, список людей. Миграция `0018_teams.sql` (обратная: `server/migrations_down/0018_teams.down.sql`).
+
 ## Таблицы
 
 ```sql
@@ -37,6 +39,8 @@ create table projects (
   last_number int not null default 0, -- счётчик ряда проекта (WEB-151); только растёт
   archived_at timestamptz,            -- проект в архиве: скрыт из списков, данные целы (П2)
   created_by uuid references users on delete set null,
+  team_id uuid not null references teams on delete restrict,   -- команда проекта (К1)
+  visibility project_visibility not null default 'members',    -- members: явные участники и админы команды; team: ещё и все члены команды (К1)
   check (key is null or key ~ '^[A-Z][A-Z0-9]{1,5}$')   -- 2–6 символов, латиница и цифры, с буквы
 );
 create type project_role as enum ('admin', 'member');
@@ -166,6 +170,7 @@ create table release_items (
 
 create table wiki_pages (
   id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references teams on delete restrict,   -- вики принадлежит команде (К1); родитель и страница в одной команде
   parent_id uuid references wiki_pages on delete cascade,
   title text not null default '',
   md text not null default '',
@@ -204,9 +209,13 @@ create table doc_links (
   unique (doc_id, a, b)
 );
 
-create table folders (id uuid primary key default gen_random_uuid(), name text unique not null, seq bigint generated always as identity);   -- seq: порядок создания
+create table folders (   -- принадлежат команде (К1); название уникально внутри команды: unique (team_id, name)
+  id uuid primary key default gen_random_uuid(), team_id uuid not null references teams on delete restrict,
+  name text not null, seq bigint generated always as identity   -- seq: порядок создания
+);
 create table files (
   id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references teams on delete restrict,   -- команда (К1): у библиотеки и вложений страниц это команда вики, у вложения задачи команда её проекта
   name text not null, size_bytes bigint not null,
   kind text not null,                  -- img | pdf | doc | sheet | zip | other (по расширению)
   storage_key text not null,           -- имя файла на диске
@@ -232,6 +241,7 @@ create table activity (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid not null references users,
   project_id uuid references projects on delete set null,
+  team_id uuid references teams on delete set null,   -- события вики и файлов библиотеки (без проекта) принадлежат команде (К1)
   kind act_kind not null,
   target text not null,                -- «WEB-141 Тёмная тема для страницы настроек»
   text text not null,                  -- «перемещена в «На ревью»»
@@ -240,6 +250,43 @@ create table activity (
 create index on activity (created_at desc);
 create index on tasks (project_id, column_id, position);
 ```
+
+**Команды (этап К1, `TEAMS.md`).**
+
+```sql
+create type team_role as enum ('admin', 'member');
+create type project_visibility as enum ('members', 'team');
+create table teams (
+  id uuid primary key default gen_random_uuid(),
+  seq bigint generated always as identity,          -- порядок создания
+  name text not null,
+  created_by uuid references users on delete set null,
+  personal_for uuid unique references users on delete cascade,   -- чья это личная команда «Личное»; у обычной пусто
+  guests_read_wiki boolean not null default false,  -- гости проектов команды (не члены) читают её вики и библиотеку
+  archived_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create table team_members (
+  team_id uuid not null references teams on delete cascade,
+  user_id uuid not null references users on delete cascade,
+  role team_role not null default 'member',
+  created_at timestamptz not null default now(),
+  primary key (team_id, user_id)
+);
+create table team_invites (   -- как project_invites; ручки приглашений появятся на этапе К2
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references teams on delete cascade,
+  user_id uuid not null references users on delete cascade,
+  invited_by uuid references users on delete set null,
+  role team_role not null default 'member',
+  status invite_status not null default 'pending',
+  created_at timestamptz not null default now(), answered_at timestamptz
+);
+```
+
+Личную команду «Личное» создаёт триггер `users_personal_team` в той же операции, что и аккаунт (CLI, сид, будущая регистрация); создатель в ней администратор. Миграция существующих данных: общая команда «Dream Team» со всеми аккаунтами (`is_admin` администраторами, если таких нет, первый по порядку), проектами, вики, папками, файлами и событиями вики; каждому аккаунту «Личное».
+
+**Правила доступа в базе** (одно место, их зовут все запросы): `can_access_project(проект, человек)`: явный участник ИЛИ администратор команды ИЛИ (видимость `team` И член команды), команда не в архиве, администратор сервера видит всё. `is_project_person(проект, человек)`: «люди проекта» (исполнитель, ответственный, @упоминание): явные участники и при `team` члены команды. `can_read_team(команда, человек)`: вики и библиотеку читает член команды, гость проекта команды (явный участник, не член) при `guests_read_wiki`, администратор сервера. Роль в проекте: высшая из оснований (администратор сервера, администратор команды и явный админ проекта это `admin`). Блокировки «единственный администратор проекта» нет: над каждым проектом стоит администратор его команды.
 
 **Порядок элементов** (`position`) — дробные числа. При вставке между двумя соседями берётся среднее. Если разница стала меньше `1e-6`, сервер пересчитывает позиции всей колонки целыми числами с шагом 1024.
 
@@ -254,9 +301,10 @@ create index on tasks (project_id, column_id, position);
 | `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /me` | вход и профиль |
 | `PATCH /me` | свой профиль: имя (1–60 символов), подпись под именем (до 40, пустая очищает), цвет аватара (0..4); e-mail, права и пароль так не меняются, лишние поля дают 400 |
 | `POST /auth/password` | смена пароля: проверяет текущий (неверный это 400 `wrong_password`, а не 401), завершает все прежние сессии (refresh-токены удаляются, а выданные раньше токены доступа живут до конца срока, до 12 часов) и сразу выдаёт этому устройству новую пару токенов |
-| `GET /users` | участники команды (все аккаунты; ограничить список сможет «команда», см. PROJECTS.md) |
+| `GET /users` | люди, которых я вижу (К1, `TEAMS.md`, раздел 8): я сам, члены моих команд, участники проектов, к которым у меня есть доступ, и те, чьи имена остались на видимых мне данных (комментарии, задачи, события, вики, файлы), хоть бы они уже ушли; администратор сервера видит всех. E-mail пуст, если мне его видеть не положено: виден себе, администратору команды у её членов, администратору проекта у явных участников, администратору сервера у всех. `is_admin` у других `false` |
+| `GET /teams` | мои команды (К1): где я член («Личное» первой) и где я только гость. У каждой `personal`, моя `role` (`admin`/`member`, у гостя пусто), `guest`, `wiki` (могу читать вики) и, только членам, `guests_read_wiki`. Архивные не показываются. Остальные ручки команд будут на этапе К2 |
 | `GET /projects?archived=` | мои проекты (глобальному админу все) с моей ролью `role`; `archived=true`: архивные, которыми я управляю |
-| `POST /projects`, `PATCH /projects/{id}` | создать проект (создатель администратор, доска с четырьмя колонками макета) и изменить название, цвет, ключ (администратор; ключ не должен совпадать с ключом модуля проекта) |
+| `POST /projects`, `PATCH /projects/{id}` | создать проект в команде (`team_id` обязателен, создавать может её член или администратор сервера, иначе 404; `visibility` `members` по умолчанию или `team`; создатель администратор, доска с четырьмя колонками макета) и изменить название, цвет, ключ (администратор; ключ не должен совпадать с ключом модуля проекта). В проекте `team_id`, `visibility` и `guest` (я явный участник, но не член его команды) |
 | `POST /projects/{id}/archive`, `POST /projects/{id}/unarchive` | архив проекта и возврат из него (администратор) |
 | `GET /projects/{id}/members`, `PATCH /projects/{id}/members/{user_id}`, `DELETE /projects/{id}/members/{user_id}` | участники (ожидающие приглашения видит только администратор); смена роли и исключение (администратор); выйти из проекта может любой участник. Единственного администратора нельзя понизить, убрать или дать ему выйти (409) |
 | `POST /projects/{id}/invites`, `DELETE /invites/{id}` | пригласить по e-mail существующего аккаунта с ролью и отозвать приглашение (администратор). Неизвестный адрес: 400 «Аккаунта с таким адресом нет», уже в проекте или уже приглашён: 409 |
@@ -275,17 +323,17 @@ create index on tasks (project_id, column_id, position);
 
 Бэклог отдельных ручек не имеет: это задачи с `column_id = null`. Порядок меняется тем же `PATCH /tasks/{id}` (`before_id`), «На доску» — `PATCH` с `column_id` первой колонки.
 | `GET`/`POST /projects/{id}/tags`, `PATCH`/`DELETE /tags/{id}` | метки проекта: создать может любой участник (одноимённая метка возвращается, а не дублируется), переименовать, перекрасить и удалить только администратор. Метку чужого проекта к задаче привязать нельзя (400) |
-| *доступ* | Проект видят его участники и глобальные админы, остальным он «не найден» (404) на любой ручке; администраторские действия участнику дают 403. Вики, библиотека файлов, документы и ссылки пока общие для всех вошедших (документы и ссылки станут данными проекта на этапе П5); лента отдаёт события моих проектов и общие. Все ручки получают проект только через `api::access`, полный список ручек с пометкой доступа лежит в `server/crates/api/tests/access.rs` |
-| `GET /wiki`, `GET /wiki/{id}`, `POST /wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики. `GET /wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}` |
-| `GET /files?folder=&kind=&q=&wiki_page_id=`, `POST /files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов. `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
-| `GET/POST/DELETE /folders` | папки в порядке создания с числом файлов; `DELETE` только для пустой |
+| *доступ* | Проект видят явные участники, администраторы его команды, при `visibility = team` члены команды (команда не в архиве) и администратор сервера; остальным он «не найден» (404) на любой ручке; администраторские действия участнику дают 403. Вики и библиотека принадлежат команде: читает член и гость при `guests_read_wiki`, пишет только член (гость 403, посторонний 404). Документы и ссылки принадлежат проекту; лента проекта отдаёт его события и события вики команды тем, кто читает её вики. Все ручки получают проект только через `api::access`, полный список ручек с пометкой доступа лежит в `server/crates/api/tests/access.rs` |
+| `GET /teams/{id}/wiki`, `GET /wiki/{id}`, `POST /teams/{id}/wiki`, `PATCH /wiki/{id}` (`md` и `title` с обязательным `rev`; перенос: `parent_id` и `before_id`, без `rev`, версию не меняет), `DELETE /wiki/{id}` | страницы вики команды. `GET /teams/{id}/wiki` отдаёт дерево без текста, текст приходит с `GET /wiki/{id}`; команда находится по странице. Родитель, к которому переносят или под которым создают, должен быть из той же команды |
+| `GET /teams/{id}/files?folder=&kind=&q=&wiki_page_id=`, `POST /teams/{id}/files` (multipart), `GET /files/{id}/download`, `DELETE /files/{id}` | библиотека файлов команды (страница и папка в форме должны быть из этой же команды). `folder` — `root` или id папки; ответ `{ total, files }`, где `total` — всего файлов в библиотеке без вложений задач; новые первыми |
+| `GET/POST /teams/{id}/folders`, `DELETE /folders/{id}` | папки команды в порядке создания с числом файлов; названия уникальны внутри команды (409); `DELETE` только для пустой |
 | `GET /projects/{id}/docs?q=&starred=`, `POST /projects/{id}/docs`, `GET /docs/{id}`, `PATCH /docs/{id}`, `DELETE /docs/{id}`, `PUT /docs/{id}/star` | документы проекта (этап П5): список и создание по проекту, остальное по документу, проект и права находятся по нему (чужой проект и бывший участник получают 404). Список без текста: фрагмент, счётчик объектов, объекты для миниатюры у документов-холстов, в порядке `position`. `PATCH`: `title` и `md` с обязательным `rev` (409 и `current` в теле), `mode` и `before_id` (перенос в списке своего проекта, `null` — в конец; документ другого проекта в `before_id` даёт 400) без `rev` и версию не меняют. `PUT star` с `{ "starred": bool }`: звёздочка у каждого своя |
 | `PUT /docs/{id}/canvas` | сохранить сразу карточку с текстом, объекты и стрелки холста (тело — полный список, идентификаторы объектов выдаёт клиент); в одной транзакции, ответ с новой `canvas_rev` |
 | `GET /projects/{id}/activity/actors` | кто есть в ленте проекта: идентификаторы людей, у которых есть собственные события проекта (авторов общих событий вики и файлов здесь нет), независимо от фильтров; из них и из участников проекта клиент собирает список «Участник» |
 | `GET /projects/{id}/activity?actor=&kind=&before=` | лента проекта (этап П5): его события и события без проекта (вики, файлы библиотеки), постранично по 50. Ответ `{ items, next }`: события от новых к старым (у каждого `category`: `tasks` (перенос, создание, удаление), `comment`, `code`, `doc` (документы проекта), `wiki` (страницы вики), `release`, `file`, `module`), `next` — курсор для `before` или `null`. `kind` — та же категория; `actor` — участник |
 | `GET/POST /projects/{id}/link-groups`, `PATCH/DELETE /link-groups/{id}` | группы ссылок проекта (список сразу со ссылками), переименование, удаление вместе со ссылками; адреса с `{id}` группы ищут проект по ней |
 | `POST /link-groups/{id}/links`, `DELETE /links/{id}` | добавить ссылку в конец группы (`https://` добавляется, если нет схемы), удалить. Правки ссылки нет: в макете её нельзя править |
-| `GET /search?q=` | поиск по названиям (этап Н4): задачи (название и id вида `WEB-141`), документы, страницы вики, файлы библиотеки; по восемь лучших каждого вида в ответе `{ tasks, docs, wiki, files }`. Подстрока без учёта регистра (`lower()` и `position`, поэтому `%`, `_` и `\` в запросе обычные знаки), содержимое не ищется. Сначала точное совпадение с id, потом начало названия или id, потом остальное, внутри группы недавнее выше. Задачи и документы только из проектов человека (глобальный администратор видит все), без архивных; вики и файлы библиотеки общие, вложения задач в файлы не входят. Пустой запрос даёт пустые списки, длиннее 100 символов 400 |
+| `GET /search?team=&q=` | поиск по названиям по одной команде (этап Н4, К1): задачи (название и id вида `WEB-141`), документы, страницы вики, файлы библиотеки; по восемь лучших каждого вида в ответе `{ tasks, docs, wiki, files }`. Подстрока без учёта регистра (`lower()` и `position`, поэтому `%`, `_` и `\` в запросе обычные знаки), содержимое не ищется. Сначала точное совпадение с id, потом начало названия или id, потом остальное, внутри группы недавнее выше. Задачи и документы только из проектов этой команды, которые видит человек, без архивных; вики и файлы библиотеки этой команды, если человек их читает (гость без разрешения команды ищет только по своим проектам); вложения задач в файлы не входят. Команда, которой человек не видит, 404. Пустой запрос даёт пустые списки, длиннее 100 символов 400 |
 | `GET /healthz` | проверка живости (без токена) |
 
 Запись в `activity` делает сервер сам в той же транзакции, что и действие. Клиент её не создаёт.
@@ -313,9 +361,9 @@ create index on tasks (project_id, column_id, position);
 | `column.changed`, `module.changed`, `milestone.changed`, `tag.changed` | колонки, модули, вехи, метки: всё это приходит в ответе доски (ручка `PATCH /modules/{id}` даёт ещё и `task.updated`: от ключа модуля меняются id его задач) | доска проекта |
 | `comment.created` | комментарий | открытая задача |
 | `release.changed` | релизы и шаги чек-листа | релизы проекта |
-| `wiki.updated` | создание, правка, перенос, удаление страницы | дерево и открытая страница |
+| `wiki.updated` | создание, правка, перенос, удаление страницы (приходит тем, кто читает вики команды; в событии `team_id`) | дерево и открытая страница |
 | `doc.updated`, `doc.canvas` | документ, звёздочка, холст (участникам проекта документа) | списки документов и открытый документ |
-| `file.changed` | файлы и папки | библиотека, папки, открытые задачи |
+| `file.changed` | файлы и папки (библиотека приходит тем, кто читает вики команды, вложение задачи участникам проекта) | библиотека, папки, открытые задачи |
 | `link.changed` | ссылки проекта (участникам проекта) | группы ссылок |
 | `project.changed` | проект создан, переименован, заархивирован, поменялся состав участников или чьё-то приглашение | список проектов (боковое меню) и доска |
 | `notification.changed` | человеку пришло уведомление или он прочитал его в другом окне (приходит только ему лично) | мои уведомления |
