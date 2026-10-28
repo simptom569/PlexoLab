@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openApp, resetData } from './fixtures'
-import { apiAs, projectsOf, secondClient } from './projects-helpers'
+import { apiAs, dreamTeamAs, projectsOf, secondClient } from './projects-helpers'
 
 // Ключи задач у модулей и проектов (docs/PROJECTS.md, разделы 3 и 4): поле «Ключ задач» в карточке модуля, окно
 // «У N задач изменятся id. Продолжить?», смена ряда при переносе задачи, сортировка таблицы по ID. Окна не из макета,
@@ -22,7 +22,7 @@ const boardOf = (page: Page, id: string) => apiAs<Board>(page, LENA, `/projects/
 
 /** Проект «Сайт» с ключом PLX (или без него), в нём четыре колонки макета */
 async function newSite(page: Page, key: string | null = 'PLX'): Promise<Site> {
-  const project = await apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { name: 'Сайт', key } })
+  const project = await apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { team_id: await dreamTeamAs(page, LENA), name: 'Сайт', key } })
   const board = await boardOf(page, project.id)
   return { id: project.id, todo: board.columns[0].id }
 }

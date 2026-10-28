@@ -18,6 +18,12 @@ export async function apiAs<T>(page: Page, email: string, path: string, init: In
   return res.status() === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
+/** Общая команда демо-данных «Dream Team» глазами этого человека: в ней проекты макета, новые проекты теста создаются тоже в ней */
+export async function dreamTeamAs(page: Page, email: string): Promise<string> {
+  const teams = await apiAs<Array<{ id: string; name: string }>>(page, email, '/teams')
+  return teams.find((t) => t.name === 'Dream Team')!.id
+}
+
 export type ApiProject = { id: string; name: string; key: string | null; color: string; role: string; archived: boolean }
 export const projectsOf = (page: Page, email: string) => apiAs<ApiProject[]>(page, email, '/projects')
 

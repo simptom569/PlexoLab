@@ -198,14 +198,17 @@ test.describe('меню проекта по правой кнопке', () => {
     await expect(menu.getByRole('menuitem', { name: 'Выйти из проекта' })).toBeVisible()
   })
 
-  test('единственный администратор не выходит: плашка с объяснением, проект остаётся', async ({ page }) => {
+  test('администратор команды над проектом: уйдя из списка участников, остаётся и видит проект', async ({ page }) => {
+    // блокировки «единственный администратор проекта» нет: над каждым проектом стоит администратор его команды (TEAMS.md, 4.4)
     await openApp(page)
     await createProjectInUi(page, 'Личный')
     await projectButton(page, 'Личный').click({ button: 'right' })
     const menu = page.getByRole('menu', { name: 'Проект «Личный»' })
     await menu.getByRole('menuitem', { name: 'Выйти из проекта' }).click()
     await menu.getByRole('menuitem', { name: 'Точно выйти?' }).click()
-    await expect(page.getByText('Единственный администратор проекта')).toBeVisible()
+    await expect(menu).toHaveCount(0)
+    const mine = (await projectsOf(page, 'lena@example.com')).find((p) => p.name === 'Личный')
+    expect(mine?.role, 'Лена администратор Dream Team и потому администратор проекта').toBe('admin')
     await expect(projectButton(page, 'Личный')).toBeVisible()
   })
 })

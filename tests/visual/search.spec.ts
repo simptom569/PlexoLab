@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { cutOffAndWait } from './offline-helpers'
 import { openApp, resetData, SERVER } from './fixtures'
-import { api, token } from './wiki-helpers'
+import { api, dreamTeam, token } from './wiki-helpers'
 
 // Этап Н4 (docs/OFFLINE-NOTIFY-SEARCH.md, раздел 3): окно «Поиск» по Ctrl+K и из меню пользователя. Ищет по названиям
 // задач (и их id), документов, страниц вики и файлов, только в доступном. Содержимое не ищется.
@@ -23,8 +23,8 @@ async function seedFindable(page: Page) {
   const web = await projectByKey(page, 'WEB')
   const task = await api<{ id: string; key: string }>(page, `/projects/${web.id}/tasks`, { method: 'POST', data: { title: 'Поиск-тест: задача' } })
   const doc = await api<{ id: string }>(page, `/projects/${web.id}/docs`, { method: 'POST', data: { title: 'Поиск-тест: документ', md: 'Спрятанное слово' } })
-  const wiki = await api<{ id: string }>(page, '/wiki', { method: 'POST', data: { title: 'Поиск-тест: страница', md: '' } })
-  const res = await page.request.post(`${SERVER}/api/v1/files`, {
+  const wiki = await api<{ id: string }>(page, `/teams/${await dreamTeam(page)}/wiki`, { method: 'POST', data: { title: 'Поиск-тест: страница', md: '' } })
+  const res = await page.request.post(`${SERVER}/api/v1/teams/${await dreamTeam(page)}/files`, {
     headers: { Authorization: `Bearer ${await token(page)}` },
     multipart: { file: { name: 'поиск-тест-файл.txt', mimeType: 'text/plain', buffer: Buffer.from('1') } },
   })
@@ -167,7 +167,7 @@ test.describe('результаты', () => {
 
   test('задачи чужого проекта не находятся (Артём не участник), а в своих проектах находятся', async ({ page, browser }) => {
     await openApp(page) // Лена: глобальный администратор, видит все проекты
-    const secret = await api<{ id: string }>(page, '/projects', { method: 'POST', data: { name: 'Закрытый проект' } })
+    const secret = await api<{ id: string }>(page, '/projects', { method: 'POST', data: { team_id: await dreamTeam(page), name: 'Закрытый проект' } })
     await api(page, `/projects/${secret.id}/tasks`, { method: 'POST', data: { title: 'Тайная задача' } })
     const api2 = await projectByKey(page, 'API')
     await api(page, `/projects/${api2.id}/tasks`, { method: 'POST', data: { title: 'Задача мобильного для поиска' } })

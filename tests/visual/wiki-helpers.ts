@@ -18,6 +18,10 @@ export async function api<T>(page: Page, path: string, init: { method?: 'GET' | 
   return res.status() === 204 ? (undefined as T) : ((await res.json()) as T)
 }
 
+/** Общая команда демо-данных «Dream Team»: в ней вики, файлы, папки и проекты макета */
+export const dreamTeam = async (page: Page): Promise<string> =>
+  (await api<Array<{ id: string; name: string }>>(page, '/teams')).find((t) => t.name === 'Dream Team')!.id
+
 /** «Web-приложение»: первый проект, в нём лежат демо-документы, ссылки и лента (документы и ссылки принадлежат проекту) */
 export const webProjectId = async (page: Page): Promise<string> =>
   (await api<Array<{ id: string; key: string | null }>>(page, '/projects')).find((p) => p.key === 'WEB')!.id
@@ -28,10 +32,10 @@ export type LibraryFile = { id: string; name: string; kind: string; size_bytes: 
 export type Library = { total: number; files: LibraryFile[] }
 export type FolderRow = { id: string; name: string; file_count: number }
 
-export const wikiNodes = (page: Page) => api<WikiNode[]>(page, '/wiki')
+export const wikiNodes = async (page: Page) => api<WikiNode[]>(page, `/teams/${await dreamTeam(page)}/wiki`)
 export const wikiPage = (page: Page, id: string) => api<WikiFull>(page, `/wiki/${id}`)
-export const library = (page: Page) => api<Library>(page, '/files')
-export const folders = (page: Page) => api<FolderRow[]>(page, '/folders')
+export const library = async (page: Page) => api<Library>(page, `/teams/${await dreamTeam(page)}/files`)
+export const folders = async (page: Page) => api<FolderRow[]>(page, `/teams/${await dreamTeam(page)}/folders`)
 
 export async function idOf(page: Page, title: string): Promise<string> {
   const node = (await wikiNodes(page)).find((n) => n.title === title)
@@ -41,7 +45,7 @@ export async function idOf(page: Page, title: string): Promise<string> {
 
 /** Страница с нужным текстом, созданная напрямую в базе: так сценарий не зависит от остальных частей интерфейса */
 export async function makePage(page: Page, title: string, md: string, parent: string | null = null): Promise<string> {
-  return (await api<WikiFull>(page, '/wiki', { method: 'POST', data: { title, md, parent_id: parent } })).id
+  return (await api<WikiFull>(page, `/teams/${await dreamTeam(page)}/wiki`, { method: 'POST', data: { title, md, parent_id: parent } })).id
 }
 
 /** Открывает вики сразу на нужной странице: так человек возвращается к последней открытой */

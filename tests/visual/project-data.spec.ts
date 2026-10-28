@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { cards, cardTitles } from './docs-helpers'
 import { openApp, resetData } from './fixtures'
-import { apiAs, projectsOf, secondClient, statusAs } from './projects-helpers'
+import { apiAs, dreamTeamAs, projectsOf, secondClient, statusAs } from './projects-helpers'
 
 // Документы, ссылки и лента принадлежат проекту (docs/PROJECTS.md, раздел 2): у каждого проекта свои, вики общая.
 // Заодно фильтр «Исполнитель» на доске: участники проекта и те, у кого в нём есть задачи.
@@ -113,7 +113,7 @@ test('создание документа пишется в ленту его п
 
 test('человек не из проекта не получает ни документов, ни ссылок, ни ленты проекта', async ({ page }) => {
   await openApp(page)
-  const created = await apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { name: 'Закрытый' } })
+  const created = await apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { team_id: await dreamTeamAs(page, LENA), name: 'Закрытый' } })
   const doc = await apiAs<{ id: string }>(page, LENA, `/projects/${created.id}/docs`, { method: 'POST', data: { title: 'Секрет' } })
   const group = await apiAs<{ id: string }>(page, LENA, `/projects/${created.id}/link-groups`, { method: 'POST', data: { title: 'Тайные ссылки' } })
 
@@ -147,7 +147,7 @@ test('второй участник видит новый документ пр�
 
 test.describe('фильтр «Исполнитель»: участники проекта и те, у кого в нём есть задачи', () => {
   async function newProject(page: Page) {
-    return apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { name: 'Сайт', key: 'PLX' } })
+    return apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { team_id: await dreamTeamAs(page, LENA), name: 'Сайт', key: 'PLX' } })
   }
 
   async function join(page: Page, project: string, email: string) {
@@ -206,7 +206,7 @@ test.describe('фильтр «Исполнитель»: участники пр�
 
 test.describe('люди из проекта: ответственный модуля и фильтр «Участник» в ленте', () => {
   async function newProject(page: Page) {
-    return apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { name: 'Сайт', key: 'PLX' } })
+    return apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { team_id: await dreamTeamAs(page, LENA), name: 'Сайт', key: 'PLX' } })
   }
 
   async function join(page: Page, project: string, email: string) {
