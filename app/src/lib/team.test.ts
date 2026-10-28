@@ -9,6 +9,7 @@ const team = (id: string, over: Partial<Team> = {}): Team => ({
   role: 'member',
   guest: false,
   wiki: true,
+  archived: false,
   ...over,
 })
 

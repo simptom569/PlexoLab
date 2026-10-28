@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/admin/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Все команды сервера (только администратор сервера): окно «Все команды сервера». Открыть любую можно обычными адресами:
+         *     администратор сервера видит и правит всё.
+         */
+        get: operations["admin_teams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -475,7 +495,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Название, цвет и ключ проекта (администратор). Смена ключа меняет только подпись id задач. */
+        /**
+         * Название, цвет, ключ и видимость проекта (администратор). Смена ключа меняет только подпись id задач. Смена видимости
+         *     действует сразу: «Вся команда» открывает проект всем членам команды, «Только участники» закрывает его от тех, кого нет
+         *     в списке участников (администраторы команды остаются). Сколько людей это затронет, заранее считает
+         *     `GET /projects/{id}/visibility-impact`.
+         */
         patch: operations["update_project"];
         trace?: never;
     };
@@ -642,7 +667,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Участники проекта; ожидающие приглашения видит только администратор */
+        /**
+         * Участники проекта; ожидающие приглашения видит только администратор. Кроме явных участников в списке администраторы
+         *     команды (`team_admin`) и при видимости «Вся команда» все члены команды (`implicit`): их нет в списке участников, но
+         *     они в проекте. E-mail явных участников видит администратор проекта, неявных администратор команды; каждый видит свой.
+         */
         get: operations["list_members"];
         put?: never;
         post?: never;
@@ -774,6 +803,23 @@ export interface paths {
         put?: never;
         /** Вернуть проект из архива (администратор) */
         post: operations["unarchive_project"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{id}/visibility-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Сколько людей затронет смена видимости проекта (администратор проекта): число для окна подтверждения */
+        get: operations["visibility_impact"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -965,6 +1011,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/team-invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Мои приглашения в команды, на которые я ещё не ответил */
+        get: operations["my_invites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/team-invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Отозвать приглашение (администратор команды) */
+        delete: operations["revoke_invite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/team-invites/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Принять приглашение: человек становится членом команды с указанной ролью. Если он был гостем её проекта, гостем
+         *     он быть перестаёт, роль в проекте остаётся.
+         */
+        post: operations["accept_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/team-invites/{id}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Отклонить приглашение */
+        post: operations["decline_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams": {
         parameters: {
             query?: never;
@@ -972,10 +1089,52 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Мои команды: те, где я член («Личное» первой), и те, где я только гость. Архивные не показываются. */
+        /**
+         * Мои команды: те, где я член («Личное» первой), и те, где я только гость. Архивные не показываются; с
+         *     `?archived=true` приходят архивные команды, которыми я управляю.
+         */
         get: operations["list_teams"];
         put?: never;
+        /**
+         * Новая команда. Создатель становится её администратором. Один человек создаёт не больше пяти обычных команд («Личное»
+         *     не считается; число меняет настройка сервера), архивные тоже в счёте.
+         */
+        post: operations["create_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Команда с настройками. Только для членов: гость и посторонний команды «не видят». */
+        get: operations["get_team"];
+        put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Название команды и настройка «Гости проектов могут читать вики команды» (администратор команды) */
+        patch: operations["update_team"];
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Убрать команду из списков, данные остаются (администратор команды). «Личное» архивировать нельзя. */
+        post: operations["archive_team"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1015,6 +1174,95 @@ export interface paths {
         put?: never;
         /** Новая папка. Названия в команде не повторяются. */
         post: operations["create_folder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Пригласить человека в команду по e-mail (администратор команды). Аккаунт должен уже существовать. */
+        post: operations["create_invite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Выйти из команды (член). Единственный администратор и владелец «Личного» выйти не могут. */
+        post: operations["leave_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Состав команды. Только для членов; приглашения, которые ещё ждут ответа, и e-mail членов видит администратор. */
+        get: operations["list_members"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Убрать члена из команды (администратор). Он уходит и из явных участий в её проектах; гостей это не касается.
+         *     Единственного администратора и владельца «Личного» убрать нельзя.
+         */
+        delete: operations["remove_member"];
+        options?: never;
+        head?: never;
+        /** Сменить роль члена команды (администратор). Единственного администратора и владельца «Личного» понизить нельзя. */
+        patch: operations["update_member"];
+        trace?: never;
+    };
+    "/api/v1/teams/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Вернуть команду из архива (администратор команды) */
+        post: operations["restore_team"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1124,6 +1372,23 @@ export interface components {
             items: components["schemas"]["ActivityDto"][];
             /** @description Курсор следующей страницы для `before`; `null`, если больше событий нет */
             next?: string | null;
+        };
+        /** @description Команда в списке «Все команды сервера» */
+        AdminTeamDto: {
+            archived: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: int64 */
+            member_count: number;
+            name: string;
+            /** @description Чьё «Личное» (имя владельца) */
+            owner_name?: string | null;
+            /** @description Личная команда «Личное» */
+            personal: boolean;
+            /** Format: int64 */
+            project_count: number;
         };
         /** @description Всё для первой загрузки доски одним ответом */
         BoardDto: {
@@ -1311,6 +1576,25 @@ export interface components {
             column_id?: string | null;
             title: string;
         };
+        CreateTeam: {
+            /**
+             * @description От 1 до 60 символов; названия команд не уникальны
+             * @example Веб
+             */
+            name: string;
+        };
+        CreateTeamInvite: {
+            /**
+             * @description E-mail существующего аккаунта, регистр не важен
+             * @example artem@example.com
+             */
+            email: string;
+            /**
+             * @description admin | member; без него member
+             * @example member
+             */
+            role?: string | null;
+        };
         CreateWikiPage: {
             md?: string | null;
             /**
@@ -1322,6 +1606,16 @@ export interface components {
         };
         /** @description Приглашение, только что созданное администратором */
         CreatedInviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            role: string;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description Приглашение, только что созданное администратором */
+        CreatedTeamInviteDto: {
             /** Format: date-time */
             created_at: string;
             /** Format: uuid */
@@ -1546,6 +1840,11 @@ export interface components {
         /** @description Участник проекта */
         MemberDto: {
             email: string;
+            /**
+             * @description Человека нет в списке участников: он здесь по видимости «Вся команда» (член) или как администратор команды. «Убрать»
+             *     не работает, роль можно повысить: повышение создаёт явную запись без приглашения.
+             */
+            implicit: boolean;
             /** @description Глобальный администратор приложения */
             is_admin: boolean;
             /** @description Подпись под именем («Frontend») */
@@ -1554,10 +1853,12 @@ export interface components {
             joined_at: string;
             name: string;
             /**
-             * @description Роль в проекте: admin | member
+             * @description Роль в проекте: admin | member. Для администратора команды всегда admin.
              * @example member
              */
             role: string;
+            /** @description Администратор команды проекта: он администратор во всех её проектах, «убрать» у него нет */
+            team_admin: boolean;
             /** Format: int32 */
             tone: number;
             /** Format: uuid */
@@ -1670,6 +1971,22 @@ export interface components {
         ObjectKind: "sticky" | "rect" | "ellipse" | "text";
         /** @description Приглашение, ожидающее ответа, глазами администратора проекта */
         PendingInviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            email: string;
+            /** Format: uuid */
+            id: string;
+            job: string;
+            name: string;
+            /** @description Роль, с которой человек войдёт: admin | member */
+            role: string;
+            /** Format: int32 */
+            tone: number;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description Приглашение в команду, ожидающее ответа, глазами администратора команды */
+        PendingTeamInviteDto: {
             /** Format: date-time */
             created_at: string;
             email: string;
@@ -1918,6 +2235,8 @@ export interface components {
         };
         /** @description Команда глазами текущего человека */
         TeamDto: {
+            /** @description Команда в архиве (такие приходят только в списке `?archived=true`) */
+            archived: boolean;
             /** @description Я здесь гость: участник проекта этой команды без членства в ней */
             guest: boolean;
             /** @description Гости проектов команды могут читать её вики. Видят только члены команды. */
@@ -1935,6 +2254,44 @@ export interface components {
             role?: string | null;
             /** @description Я могу читать вики и библиотеку файлов команды */
             wiki: boolean;
+        };
+        /** @description Приглашение в команду глазами приглашённого */
+        TeamInviteDto: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** @description Кто пригласил; пусто, если он удалён */
+            invited_by_name?: string | null;
+            /** @description Роль, с которой человек войдёт: admin | member */
+            role: string;
+            /** Format: uuid */
+            team_id: string;
+            team_name: string;
+        };
+        /** @description Член команды */
+        TeamMemberDto: {
+            /** @description Пусто, если вам его видеть не положено: e-mail членов команды видит только её администратор (и каждый свой) */
+            email: string;
+            /** @description Подпись под именем («Frontend») */
+            job: string;
+            /** Format: date-time */
+            joined_at: string;
+            name: string;
+            /**
+             * @description Роль в команде: admin | member
+             * @example member
+             */
+            role: string;
+            /** Format: int32 */
+            tone: number;
+            /** Format: uuid */
+            user_id: string;
+        };
+        /** @description Состав команды; ожидающие приглашения видит только администратор (у остальных список пуст) */
+        TeamMembersDto: {
+            invites: components["schemas"]["PendingTeamInviteDto"][];
+            members: components["schemas"]["TeamMemberDto"][];
         };
         /** @description Объект холста для миниатюры в списке: без текста */
         ThumbObjectDto: {
@@ -2055,6 +2412,11 @@ export interface components {
             /** @description Ключ id задач; `null` убирает ключ */
             key?: string | null;
             name?: string | null;
+            /**
+             * @description members (только участники) | team (вся команда). Меняет администратор проекта; число людей, которых это затронет,
+             *     заранее считает `GET /projects/{id}/visibility-impact`.
+             */
+            visibility?: string | null;
         };
         UpdateRelease: {
             notes?: string | null;
@@ -2110,6 +2472,18 @@ export interface components {
             /** @description Полный новый набор меток */
             tag_ids?: string[] | null;
             title?: string | null;
+        };
+        UpdateTeam: {
+            /** @description Гости проектов команды могут читать её вики и библиотеку (по умолчанию нет) */
+            guests_read_wiki?: boolean | null;
+            name?: string | null;
+        };
+        UpdateTeamMember: {
+            /**
+             * @description admin | member
+             * @example admin
+             */
+            role: string;
         };
         /** @description Изменения страницы. Что не передано, не меняется. */
         UpdateWikiPage: {
@@ -2167,6 +2541,16 @@ export interface components {
              * @description Цвет аватара: 0..4 → av-a … av-e
              */
             tone: number;
+        };
+        /** @description Сколько людей затронет смена видимости проекта (окно подтверждения) */
+        VisibilityImpactDto: {
+            /**
+             * Format: int64
+             * @description При `team`: сколько членов команды увидят проект. При `members`: сколько членов команды потеряют доступ, потому
+             *     что их нет в списке участников. Администраторы команды сохраняют доступ и в счёт не входят.
+             */
+            people: number;
+            to: string;
         };
         /** @description Ответ 409: страницу уже изменили. В `current` лежит актуальная версия. */
         WikiConflictDto: {
@@ -2235,6 +2619,47 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    admin_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Часть названия команды или имени, e-mail владельца «Личного»; без неё все команды */
+                q: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Не больше двухсот команд, обычные первыми */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTeamDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Только для администратора сервера */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -4382,6 +4807,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
+            /** @description Человек в проекте по команде: убрать его из списка нельзя */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
         };
     };
     update_member: {
@@ -4436,8 +4870,17 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBody"];
                 };
             };
-            /** @description Нет такого проекта или участника */
+            /** @description Нет такого проекта или человека в нём */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Администратора команды понизить нельзя */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4827,6 +5270,67 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора проекта */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого проекта */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    visibility_impact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Проект */
+                id: string;
+                /** @description Какую видимость собираются включить: members | team */
+                to: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Сколько человек затронет смена */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisibilityImpactDto"];
+                };
+            };
+            /** @description Незнакомая видимость */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
                 };
             };
             /** @description Нет действительного токена */
@@ -5668,11 +6172,196 @@ export interface operations {
             };
         };
     };
-    list_teams: {
+    my_invites: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Ожидающие ответа приглашения от старых к новым */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamInviteDto"][];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    revoke_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение отозвано */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    accept_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение принято */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения среди моих */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    decline_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Приглашение */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Приглашение отклонено */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такого приглашения среди моих */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Приглашение уже закрыто */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `true`: архивные команды, которыми человек управляет (вернуть из архива может только администратор) */
+                archived: boolean;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5688,6 +6377,220 @@ export interface operations {
             };
             /** @description Нет действительного токена */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTeam"];
+            };
+        };
+        responses: {
+            /** @description Команда создана */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDto"];
+                };
+            };
+            /** @description Некорректное название */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Достигнут предел числа команд */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    get_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Команда */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или вы не её член */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTeam"];
+            };
+        };
+        responses: {
+            /** @description Команда после изменений */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDto"];
+                };
+            };
+            /** @description Некорректное название */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    archive_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Команда в архиве */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Личную команду архивировать нельзя */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5931,6 +6834,348 @@ export interface operations {
             };
             /** @description Папка с таким названием уже есть */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    create_invite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTeamInvite"];
+            };
+        };
+        responses: {
+            /** @description Приглашение создано */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedTeamInviteDto"];
+                };
+            };
+            /** @description Аккаунта с таким адресом нет или некорректная роль */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Человек уже в команде или уже приглашён */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    leave_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Вы вышли из команды и из явных участий в её проектах */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или вы не её член */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Вы единственный администратор или владелец «Личного» */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    list_members: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Члены команды и ожидающие приглашения */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamMembersDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или вы не её член */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    remove_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+                /** @description Член команды */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Член убран, его имя остаётся на старых задачах */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или члена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Это единственный администратор или владелец «Личного» */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    update_member: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+                /** @description Член команды */
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTeamMember"];
+            };
+        };
+        responses: {
+            /** @description Роль изменена */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Некорректная роль */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды или члена */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Это единственный администратор или владелец «Личного» */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    restore_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Команда */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Команда возвращена */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamDto"];
+                };
+            };
+            /** @description Нет действительного токена */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нужны права администратора команды */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Нет такой команды */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
