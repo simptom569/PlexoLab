@@ -121,20 +121,19 @@ async fn prune(conn: &mut PgConnection, user_id: Uuid) -> Result<(), sqlx::Error
     Ok(())
 }
 
-/// Уведомления человека, новые первыми. Видны только те, что относятся к проектам, где он всё ещё участник и которые
-/// не в архиве: вышел из проекта, и его уведомления пропали (вернётся, и появятся снова).
+/// Уведомления человека, новые первыми. Видны только те, что относятся к проектам, к которым у него всё ещё есть доступ
+/// и которые не в архиве: вышел из проекта, и его уведомления пропали (вернётся, и появятся снова).
 pub async fn list<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, limit: i64) -> Result<Vec<Entry>, sqlx::Error> {
     sqlx::query_as(sqlx::AssertSqlSafe(format!(
         "select {COLUMNS}, t.number as task_number, t.title as task_title, \
                 (select m.key from modules m where m.id = t.series_module_id) as series_key, \
                 p.key as project_key, p.name as project_name, a.name as actor_name, c.body as comment_body \
          from notifications n \
-         join project_members pm on pm.project_id = n.project_id and pm.user_id = n.user_id \
          join projects p on p.id = n.project_id and p.archived_at is null \
          join tasks t on t.id = n.task_id \
          left join users a on a.id = n.actor_id \
          left join comments c on c.id = n.comment_id \
-         where n.user_id = $1 \
+         where n.user_id = $1 and can_access_project(p.id, n.user_id) \
          order by n.created_at desc, n.id desc limit $2"
     )))
     .bind(user_id)
@@ -147,9 +146,8 @@ pub async fn list<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, limit: i64) -> Res
 pub async fn unread_count<'e>(ex: impl PgExecutor<'e>, user_id: Uuid) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar(
         "select count(*) from notifications n \
-         join project_members pm on pm.project_id = n.project_id and pm.user_id = n.user_id \
          join projects p on p.id = n.project_id and p.archived_at is null \
-         where n.user_id = $1 and n.read_at is null",
+         where n.user_id = $1 and n.read_at is null and can_access_project(p.id, n.user_id)",
     )
     .bind(user_id)
     .fetch_one(ex)

@@ -1,6 +1,6 @@
 //! Поиск по названиям (docs/OFFLINE-NOTIFY-SEARCH.md, раздел 3): задачи и их id, документы, страницы вики, файлы
-//! библиотеки. Содержимое не ищется. Задачи и документы только из проектов, где человек участник (глобальный
-//! администратор видит все), без архивных; вики и файлы библиотеки общие для всех вошедших.
+//! библиотеки. Содержимое не ищется. Ищется по одной команде: задачи и документы её проектов, которые видит человек
+//! (без архивных), вики и файлы библиотеки, если он их читает (docs/TEAMS.md, раздел 7).
 
 use axum::{Json, extract::State};
 use domain::{
@@ -25,6 +25,8 @@ pub fn router() -> OpenApiRouter<AppState> {
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct SearchQuery {
+    /// Команда, по которой ищем
+    pub team: Uuid,
     /// Что искать: часть названия или id задачи (`WEB-141`), без учёта регистра. Пустой запрос ничего не находит.
     pub q: Option<String>,
 }
@@ -97,6 +99,7 @@ impl SearchDto {
         (status = 200, description = "Найденное, по восемь лучших каждого вида", body = SearchDto),
         (status = 400, description = "Запрос длиннее ста символов", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такой команды", body = ErrorBody),
     )
 )]
 async fn search(
@@ -111,14 +114,19 @@ async fn search(
             return Err(ApiError::BadRequest(format!("Поиск: не длиннее {MAX_QUERY_LEN} символов")));
         }
     };
-    // вики и файлы библиотеки общие: доступ проверяется там же, где у их ручек
-    access::wiki(auth)?;
-
     let pool = &state.pool;
-    let tasks = db::search::tasks(pool, auth.id, &q, LIMIT_PER_KIND).await?;
-    let docs = db::search::docs(pool, auth.id, &q, LIMIT_PER_KIND).await?;
-    let wiki = db::search::wiki(pool, &q, LIMIT_PER_KIND).await?;
-    let files = db::search::files(pool, &q, LIMIT_PER_KIND).await?;
+    let team = access::team(pool, auth, req.team).await?;
+    let tasks = db::search::tasks(pool, auth.id, req.team, &q, LIMIT_PER_KIND).await?;
+    let docs = db::search::docs(pool, auth.id, req.team, &q, LIMIT_PER_KIND).await?;
+    // вики и файлы только тем, кто их читает: гость без разрешения команды ищет лишь по своим проектам
+    let (wiki, files) = if team.can_read_wiki() {
+        (
+            db::search::wiki(pool, req.team, &q, LIMIT_PER_KIND).await?,
+            db::search::files(pool, req.team, &q, LIMIT_PER_KIND).await?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     Ok(Json(SearchDto {
         tasks: tasks

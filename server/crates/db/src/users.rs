@@ -134,9 +134,69 @@ pub async fn names<'e>(ex: impl PgExecutor<'e>, ids: &[Uuid]) -> Result<Vec<(Uui
     sqlx::query_as("select id, name from users where id = any($1)").bind(ids).fetch_all(ex).await
 }
 
-/// Участники команды в порядке добавления
+/// Все аккаунты сервера в порядке добавления. Только для служебных нужд (сид, тесты); ручки отдают `list_visible`.
 pub async fn list(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(select_user!("order by seq")).fetch_all(pool).await
+}
+
+/// Человек из списка «кого я вижу» и можно ли показать его e-mail
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct VisibleUser {
+    #[sqlx(flatten)]
+    pub user: User,
+    pub email_visible: bool,
+}
+
+/// Люди, которых видит `viewer` (docs/TEAMS.md, раздел 8): он сам, члены его команд, участники проектов, к которым у него
+/// есть доступ, и те, чьи имена остались на видимых ему данных (комментарии, задачи, события, страницы вики, файлы),
+/// хоть бы они уже ушли. Администратор сервера видит всех. E-mail виден: самому человеку; администратору команды у всех её
+/// членов; администратору проекта (явному, администратору его команды или сервера) у явных участников проекта.
+pub async fn list_visible(pool: &PgPool, viewer: Uuid) -> Result<Vec<VisibleUser>, sqlx::Error> {
+    sqlx::query_as(
+        "with viewer as (select id, is_admin from users where id = $1), \
+              vp as (select p.id from projects p where can_access_project(p.id, $1)), \
+              rt as (select t.id from teams t where can_read_team(t.id, $1)), \
+              my_teams as (select tm.team_id, tm.role from team_members tm join teams t on t.id = tm.team_id \
+                           where tm.user_id = $1 and t.archived_at is null), \
+              seen as ( \
+                select id from viewer \
+                union select user_id from team_members where team_id in (select team_id from my_teams) \
+                union select user_id from project_members where project_id in (select id from vp) \
+                union select actor_id from activity where project_id in (select id from vp) \
+                                                         or team_id in (select id from rt) \
+                union select c.author_id from comments c join tasks k on k.id = c.task_id \
+                      where k.project_id in (select id from vp) \
+                union select assignee_id from tasks where assignee_id is not null and project_id in (select id from vp) \
+                union select created_by from tasks where created_by is not null and project_id in (select id from vp) \
+                union select lead_id from modules where lead_id is not null and project_id in (select id from vp) \
+                union select created_by from docs where created_by is not null and project_id in (select id from vp) \
+                union select updated_by from docs where updated_by is not null and project_id in (select id from vp) \
+                union select updated_by from wiki_pages where updated_by is not null and team_id in (select id from rt) \
+                union select f.uploader_id from files f \
+                      where f.uploader_id is not null \
+                        and (f.team_id in (select id from rt) \
+                             or f.task_id in (select id from tasks where project_id in (select id from vp))) \
+                union select actor_id from notifications where user_id = $1 and actor_id is not null \
+              ), \
+              email_ok as ( \
+                select id from viewer \
+                union select tm.user_id from team_members tm \
+                      where tm.team_id in (select team_id from my_teams where role = 'admin') \
+                union select pm.user_id from project_members pm join projects p on p.id = pm.project_id \
+                      join users v on v.id = $1 \
+                      left join project_members me on me.project_id = p.id and me.user_id = v.id \
+                      left join team_members vt on vt.team_id = p.team_id and vt.user_id = v.id \
+                      where p.id in (select id from vp) and (v.is_admin or vt.role = 'admin' or me.role = 'admin') \
+              ) \
+         select u.id, u.email, u.name, u.role, u.tone, u.is_admin, u.password_hash, u.created_at, \
+                (v.is_admin or u.id in (select id from email_ok)) as email_visible \
+         from users u cross join viewer v \
+         where v.is_admin or u.id in (select id from seen) \
+         order by u.seq",
+    )
+    .bind(viewer)
+    .fetch_all(pool)
+    .await
 }
 
 pub async fn count(pool: &PgPool) -> Result<i64, sqlx::Error> {

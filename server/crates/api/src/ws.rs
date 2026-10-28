@@ -43,7 +43,7 @@ use uuid::Uuid;
 
 use crate::{
     events::{Audience, Event},
-    presence::{Attached, Focus, Kind, MAX_MESSAGE_BYTES, MAX_PER_SECOND, Mark, Presence, Update},
+    presence::{Attached, Focus, Kind, MAX_MESSAGE_BYTES, MAX_PER_SECOND, Mark, Place, Presence, Update},
     state::AppState,
 };
 
@@ -140,8 +140,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
     let mut events = state.events.subscribe();
     let mut presence_updates = state.presence.subscribe();
     let me = state.presence.attach();
-    // проекты, события которых получает этот человек; обновляется, когда меняется состав участников
-    let mut visible = HashSet::new();
+    // проекты и команды, события которых получает этот человек; обновляется, когда меняется состав участников
+    let mut visible = Visible::default();
     refresh(&mut visible, &state, user_id).await;
     if !send_text(&mut socket, READY).await {
         return;
@@ -153,8 +153,8 @@ async fn session(mut socket: WebSocket, state: AppState) {
         return;
     }
     let mut limiter = Limiter::new();
-    // страница, с которой работает этот человек, и проект её документа: чтобы не спрашивать базу на каждое сообщение
-    let mut target: Option<(Uuid, Option<Uuid>)> = None;
+    // страница или документ, с которым работает этот человек, и его место: чтобы не спрашивать базу на каждое сообщение
+    let mut target: Option<(Uuid, Option<Place>)> = None;
 
     // 3. работа
     let mut last_seen = Instant::now();
@@ -221,15 +221,27 @@ async fn session(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Перечитывает, события каких проектов положено получать человеку. Не вышло прочитать: остаётся прежний список.
-async fn refresh(visible: &mut HashSet<Uuid>, state: &AppState, user_id: Uuid) {
+/// Проекты и команды, события которых положено получать человеку
+#[derive(Default)]
+struct Visible {
+    projects: HashSet<Uuid>,
+    /// Команды, вики которых он читает
+    teams: HashSet<Uuid>,
+}
+
+/// Перечитывает, события каких проектов и команд положено получать человеку. Не вышло прочитать: остаётся прежний список.
+async fn refresh(visible: &mut Visible, state: &AppState, user_id: Uuid) {
     if let Ok(ids) = db::members::project_ids(&state.pool, user_id).await {
-        *visible = ids.into_iter().collect();
+        visible.projects = ids.into_iter().collect();
+    }
+    if let Ok(ids) = db::teams::wiki_ids(&state.pool, user_id).await {
+        visible.teams = ids.into_iter().collect();
     }
 }
 
-/// Нужно ли слать событие этому человеку (docs/PROJECTS.md, раздел 5): события проекта получают только его участники
-async fn wanted(event: &Event, user_id: Uuid, visible: &mut HashSet<Uuid>, state: &AppState) -> bool {
+/// Нужно ли слать событие этому человеку (docs/TEAMS.md, раздел 13): события проекта получают те, кто его видит, события
+/// вики и файлов команды те, кто их читает
+async fn wanted(event: &Event, user_id: Uuid, visible: &mut Visible, state: &AppState) -> bool {
     match &event.audience {
         Audience::Everyone => true,
         Audience::Users(users) => {
@@ -245,7 +257,13 @@ async fn wanted(event: &Event, user_id: Uuid, visible: &mut HashSet<Uuid>, state
             if event.kind == "project.changed" {
                 refresh(visible, state, user_id).await;
             }
-            visible.contains(project_id)
+            visible.projects.contains(project_id)
+        }
+        Audience::Team(team_id) => {
+            if event.kind == "team.changed" {
+                refresh(visible, state, user_id).await;
+            }
+            visible.teams.contains(team_id)
         }
     }
 }
@@ -279,9 +297,13 @@ async fn send_presence(socket: &mut WebSocket, message: &PresenceMessage<'_>) ->
     }
 }
 
-/// Видна ли метка этому человеку: не его собственная, а документ из проекта, который ему открыт (страницы вики общие)
-fn shown_to(mark: &Mark, user_id: Uuid, visible: &HashSet<Uuid>) -> bool {
-    mark.user_id != user_id && mark.project_id.is_none_or(|project| visible.contains(&project))
+/// Видна ли метка этому человеку: не его собственная, а в проекте, который ему открыт, или на вики команды, которую он читает
+fn shown_to(mark: &Mark, user_id: Uuid, visible: &Visible) -> bool {
+    mark.user_id != user_id
+        && match mark.place {
+            Place::Project(project) => visible.projects.contains(&project),
+            Place::Team(team) => visible.teams.contains(&team),
+        }
 }
 
 /// Все метки сейчас. Пустой список без просьбы не шлётся: клиент и так начинает с пустого.
@@ -289,7 +311,7 @@ async fn send_presence_snapshot(
     socket: &mut WebSocket,
     presence: &Presence,
     user_id: Uuid,
-    visible: &HashSet<Uuid>,
+    visible: &Visible,
     shown: &mut HashSet<String>,
     always: bool,
 ) -> bool {
@@ -306,7 +328,7 @@ async fn send_presence_update(
     socket: &mut WebSocket,
     update: &Update,
     user_id: Uuid,
-    visible: &HashSet<Uuid>,
+    visible: &Visible,
     shown: &mut HashSet<String>,
 ) -> bool {
     match update {
@@ -355,10 +377,10 @@ async fn on_client_message(
     text: &str,
     me: &Attached,
     user_id: Uuid,
-    visible: &HashSet<Uuid>,
+    visible: &Visible,
     state: &AppState,
     limiter: &mut Limiter,
-    target: &mut Option<(Uuid, Option<Uuid>)>,
+    target: &mut Option<(Uuid, Option<Place>)>,
 ) {
     if text.len() > MAX_MESSAGE_BYTES {
         return;
@@ -368,23 +390,30 @@ async fn on_client_message(
             if !limiter.allow() || !focus.plausible() {
                 return;
             }
-            let project = match focus.kind {
-                Kind::Wiki => None,
-                Kind::Doc => match *target {
-                    Some((id, project)) if id == focus.id => project,
-                    _ => {
-                        let Ok(project) = db::docs::project_of(&state.pool, focus.id).await else { return };
-                        *target = Some((focus.id, project));
-                        project
-                    }
-                },
+            let place = match *target {
+                Some((id, place)) if id == focus.id => place,
+                _ => {
+                    let found = match focus.kind {
+                        Kind::Wiki => db::wiki::team_of(&state.pool, focus.id).await.map(|t| t.map(Place::Team)),
+                        Kind::Doc => db::docs::project_of(&state.pool, focus.id).await.map(|p| p.map(Place::Project)),
+                    };
+                    let Ok(place) = found else { return };
+                    *target = Some((focus.id, place));
+                    place
+                }
             };
-            // документа нет или он в проекте, который этому человеку не открыт: метки у него быть не может
-            if focus.kind == Kind::Doc && !project.is_some_and(|p| visible.contains(&p)) {
+            // страницы или документа нет, либо он в проекте или команде, которые этому человеку не открыты: метки у него
+            // быть не может
+            let allowed = match place {
+                Some(Place::Project(project)) => visible.projects.contains(&project),
+                Some(Place::Team(team)) => visible.teams.contains(&team),
+                None => false,
+            };
+            let Some(place) = place.filter(|_| allowed) else {
                 me.clear();
                 return;
-            }
-            me.set(user_id, project, &focus);
+            };
+            me.set(user_id, place, &focus);
         }
         Ok(ClientMessage::Blur) => me.clear(),
         _ => {}

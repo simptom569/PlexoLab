@@ -244,7 +244,7 @@ async fn update_task(
     // исполнитель должен быть участником проекта; тот, кто уже назначен и вышел из проекта, остаётся
     if let Some(Some(assignee)) = patch.assignee
         && task.assignee_id != Some(assignee)
-        && db::members::role_of(&mut *tx, project.id, assignee).await?.is_none()
+        && !db::members::is_person(&mut *tx, project.id, assignee).await?
     {
         return Err(bad("Исполнитель должен быть участником проекта"));
     }

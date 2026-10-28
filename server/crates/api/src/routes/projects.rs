@@ -3,7 +3,7 @@
 use axum::{Json, extract::State, http::StatusCode};
 use domain::{
     board,
-    projects::{self, MAX_NAME_LEN, Role},
+    projects::{self, MAX_NAME_LEN, Role, Visibility},
 };
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
@@ -88,6 +88,7 @@ async fn list_projects(
         (status = 201, description = "Проект создан", body = ProjectDto),
         (status = 400, description = "Некорректный запрос", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или человек в ней не состоит", body = ErrorBody),
     )
 )]
 async fn create_project(
@@ -99,15 +100,25 @@ async fn create_project(
     let color = req.color.as_deref().unwrap_or(projects::COLORS[0]);
     clean_color(color)?;
     let key = req.key.as_deref().map(clean_key).transpose()?.flatten();
+    let visibility = match req.visibility.as_deref() {
+        None => Visibility::Members,
+        Some(raw) => Visibility::parse(raw).ok_or_else(|| bad("Видимость: members или team"))?,
+    };
 
     let mut tx = state.pool.begin().await?;
-    let project = db::projects::insert(&mut tx, &name, color, key.as_deref(), auth.id).await?;
+    // создавать проекты в команде могут её члены (и администратор сервера); гость и посторонний команды «не видят»
+    let team = access::team(&mut *tx, auth, req.team_id).await?;
+    if team.role.is_none() && !team.server_admin {
+        return Err(ApiError::NotFound);
+    }
+    let project =
+        db::projects::insert(&mut tx, req.team_id, visibility.as_str(), &name, color, key.as_deref(), auth.id).await?;
     for (title, color, is_done) in board::DEFAULT_COLUMNS {
         db::columns::insert(&mut tx, project.id, title, color, is_done).await?;
     }
     tx.commit().await?;
     events::note_project(project.id);
-    Ok((StatusCode::CREATED, Json(ProjectDto::new(project, Role::Admin.as_str()))))
+    Ok((StatusCode::CREATED, Json(ProjectDto::new(project, Role::Admin.as_str(), false))))
 }
 
 /// Название, цвет и ключ проекта (администратор). Смена ключа меняет только подпись id задач.
@@ -154,7 +165,7 @@ async fn update_project(
     }
     let project = db::projects::update(&mut tx, id, &patch).await?;
     tx.commit().await?;
-    Ok(Json(ProjectDto::new(project, access.role.as_str())))
+    Ok(Json(ProjectDto::new(project, access.role.as_str(), access.guest)))
 }
 
 /// Убрать проект из списков, данные остаются (администратор)
@@ -206,7 +217,7 @@ async fn set_archived(auth: AuthUser, state: &AppState, id: Uuid, archived: bool
     let access = access::admin_locked(&mut tx, auth, id).await?;
     let project = db::projects::set_archived(&mut tx, id, archived).await?;
     tx.commit().await?;
-    Ok(Json(ProjectDto::new(project, access.role.as_str())))
+    Ok(Json(ProjectDto::new(project, access.role.as_str(), access.guest)))
 }
 
 /// Всё для первой загрузки доски одним ответом: колонки, задачи (и бэклог) с метками и счётчиками подзадач,
@@ -239,7 +250,7 @@ async fn board(
 
     Ok(Json(BoardDto {
         tasks: cards.into_iter().map(|c| TaskCardDto::new(c, project.key.as_deref())).collect(),
-        project: ProjectDto::new(project, access.role.as_str()),
+        project: ProjectDto::new(project, access.role.as_str(), access.guest),
         columns: columns.into_iter().map(Into::into).collect(),
         tags: tags.into_iter().map(Into::into).collect(),
         modules: modules.into_iter().map(Into::into).collect(),
@@ -278,7 +289,8 @@ async fn list_members(
     }))
 }
 
-/// Сменить роль участника (администратор). Единственного администратора понизить нельзя.
+/// Сменить роль участника (администратор). Проект не остаётся без администратора: над каждым проектом стоит
+/// администратор его команды (docs/TEAMS.md, 4.4), поэтому запрета «единственный администратор» нет.
 #[utoipa::path(
     patch,
     path = "/projects/{id}/members/{user_id}",
@@ -292,7 +304,6 @@ async fn list_members(
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 403, description = "Нужны права администратора проекта", body = ErrorBody),
         (status = 404, description = "Нет такого проекта или участника", body = ErrorBody),
-        (status = 409, description = "Это единственный администратор проекта", body = ErrorBody),
     )
 )]
 async fn update_member(
@@ -304,18 +315,14 @@ async fn update_member(
     let role = Role::parse(&req.role).ok_or_else(|| bad("Роль: admin или member"))?;
     let mut tx = state.pool.begin().await?;
     access::admin_locked(&mut tx, auth, id).await?;
-    let current = db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
-    if current == Role::Admin.as_str() && role == Role::Member && db::members::admin_count(&mut *tx, id).await? <= 1 {
-        return Err(ApiError::Conflict(LAST_ADMIN.into()));
-    }
+    db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
     db::members::set_role(&mut tx, id, user_id, role.as_str()).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-const LAST_ADMIN: &str = "Единственный администратор проекта. Сначала назначьте другого или архивируйте проект";
-
-/// Убрать участника (администратор) или выйти самому (любой участник). Единственный администратор не может выйти.
+/// Убрать участника (администратор) или выйти самому (любой участник). Администратор команды остаётся над проектом и
+/// после выхода из списка участников.
 #[utoipa::path(
     delete,
     path = "/projects/{id}/members/{user_id}",
@@ -327,7 +334,6 @@ const LAST_ADMIN: &str = "Единственный администратор п
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 403, description = "Убрать другого может только администратор проекта", body = ErrorBody),
         (status = 404, description = "Нет такого проекта или участника", body = ErrorBody),
-        (status = 409, description = "Это единственный администратор проекта", body = ErrorBody),
     )
 )]
 async fn remove_member(
@@ -341,10 +347,7 @@ async fn remove_member(
     } else {
         access::admin_locked(&mut tx, auth, id).await?;
     }
-    let current = db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
-    if current == Role::Admin.as_str() && db::members::admin_count(&mut *tx, id).await? <= 1 {
-        return Err(ApiError::Conflict(LAST_ADMIN.into()));
-    }
+    db::members::role_of(&mut *tx, id, user_id).await?.ok_or(ApiError::NotFound)?;
     db::members::remove(&mut tx, id, user_id).await?;
     tx.commit().await?;
     // убранный человек уже не участник, но должен узнать об этом

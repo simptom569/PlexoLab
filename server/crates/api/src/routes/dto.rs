@@ -31,22 +31,40 @@ pub struct ProjectDto {
     /// Токен цвета: accent | warn | ok
     #[schema(example = "accent")]
     pub color: String,
-    /// Роль текущего человека в проекте: admin | member (у глобального админа всегда admin)
+    /// Роль текущего человека в проекте: admin | member. Администратор: явный админ проекта, администратор его команды
+    /// или администратор сервера.
     #[schema(example = "member")]
     pub role: String,
     /// Проект в архиве
     pub archived: bool,
+    /// Команда, которой принадлежит проект
+    pub team_id: Uuid,
+    /// Кто видит проект: members (явные участники и администраторы команды) | team (ещё и все члены команды)
+    #[schema(example = "members")]
+    pub visibility: String,
+    /// Текущий человек здесь гость: он явный участник проекта, но не член его команды
+    pub guest: bool,
 }
 
 impl ProjectDto {
-    pub fn new(p: Project, role: &str) -> Self {
-        ProjectDto { id: p.id, key: p.key, name: p.name, color: p.color, role: role.to_owned(), archived: p.archived }
+    pub fn new(p: Project, role: &str, guest: bool) -> Self {
+        ProjectDto {
+            id: p.id,
+            key: p.key,
+            name: p.name,
+            color: p.color,
+            role: role.to_owned(),
+            archived: p.archived,
+            team_id: p.team_id,
+            visibility: p.visibility,
+            guest,
+        }
     }
 }
 
 impl From<db::projects::MemberProject> for ProjectDto {
     fn from(m: db::projects::MemberProject) -> Self {
-        ProjectDto::new(m.project, &m.role)
+        ProjectDto::new(m.project, &m.role, m.guest)
     }
 }
 

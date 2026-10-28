@@ -23,6 +23,8 @@ pub struct TaskFile {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct File {
     pub id: Uuid,
+    /// Команда, которой принадлежит файл (у вложения задачи это команда её проекта)
+    pub team_id: Uuid,
     pub name: String,
     pub size_bytes: i64,
     pub kind: String,
@@ -37,7 +39,8 @@ pub struct File {
 macro_rules! select_file {
     ($tail:literal) => {
         concat!(
-            "select id, name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id, created_at \
+            "select id, team_id, name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id, \
+                    created_at \
              from files ",
             $tail
         )
@@ -73,15 +76,19 @@ pub struct LibraryFilter<'a> {
     pub wiki_page_id: Option<Uuid>,
 }
 
-/// Файлы библиотеки (без вложений задач), новые первыми
-pub async fn list_library<'e>(ex: impl PgExecutor<'e>, filter: &LibraryFilter<'_>) -> Result<Vec<File>, sqlx::Error> {
+/// Файлы библиотеки команды (без вложений задач), новые первыми
+pub async fn list_library<'e>(
+    ex: impl PgExecutor<'e>,
+    team_id: Uuid,
+    filter: &LibraryFilter<'_>,
+) -> Result<Vec<File>, sqlx::Error> {
     let (mode, folder_id) = match filter.folder {
         FolderScope::Any => ("any", None),
         FolderScope::Root => ("root", None),
         FolderScope::One(id) => ("one", Some(id)),
     };
     sqlx::query_as(select_file!(
-        "where task_id is null \
+        "where task_id is null and team_id = $6 \
          and ($1 = 'any' or ($1 = 'root' and folder_id is null) or ($1 = 'one' and folder_id = $2)) \
          and ($3::text is null or kind = $3) \
          and ($4::text is null or position(lower($4) in lower(name)) > 0) \
@@ -93,13 +100,17 @@ pub async fn list_library<'e>(ex: impl PgExecutor<'e>, filter: &LibraryFilter<'_
     .bind(filter.kind)
     .bind(filter.query)
     .bind(filter.wiki_page_id)
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }
 
-/// Сколько файлов в библиотеке всего (вложения задач не в счёт)
-pub async fn count_library<'e>(ex: impl PgExecutor<'e>) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("select count(*) from files where task_id is null").fetch_one(ex).await
+/// Сколько файлов в библиотеке команды всего (вложения задач не в счёт)
+pub async fn count_library<'e>(ex: impl PgExecutor<'e>, team_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("select count(*) from files where task_id is null and team_id = $1")
+        .bind(team_id)
+        .fetch_one(ex)
+        .await
 }
 
 pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<File>, sqlx::Error> {
@@ -109,6 +120,7 @@ pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<File>, 
 /// Новая запись о файле, уже сохранённом на диске
 #[derive(Debug)]
 pub struct NewFile<'a> {
+    pub team_id: Uuid,
     pub name: &'a str,
     pub size_bytes: i64,
     pub kind: &'a str,
@@ -121,9 +133,10 @@ pub struct NewFile<'a> {
 
 pub async fn insert(conn: &mut PgConnection, f: &NewFile<'_>) -> Result<File, sqlx::Error> {
     sqlx::query_as(concat!(
-        "insert into files (name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id) ",
-        "values ($1, $2, $3, $4, $5, $6, $7, $8) ",
-        "returning id, name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id, created_at"
+        "insert into files (name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id, team_id) ",
+        "values ($1, $2, $3, $4, $5, $6, $7, $8, $9) ",
+        "returning id, team_id, name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, task_id, ",
+        "created_at"
     ))
     .bind(f.name)
     .bind(f.size_bytes)
@@ -133,6 +146,7 @@ pub async fn insert(conn: &mut PgConnection, f: &NewFile<'_>) -> Result<File, sq
     .bind(f.folder_id)
     .bind(f.wiki_page_id)
     .bind(f.task_id)
+    .bind(f.team_id)
     .fetch_one(conn)
     .await
 }

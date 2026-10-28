@@ -16,8 +16,13 @@ use crate::serde_helpers::present;
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateProject {
+    /// Команда, в которой создаётся проект; создать может любой её член
+    pub team_id: Uuid,
     #[schema(example = "Сайт")]
     pub name: String,
+    /// members (только участники) | team (вся команда); без него members
+    #[schema(example = "members")]
+    pub visibility: Option<String>,
     /// Токен цвета: accent | warn | ok; без него берётся accent
     #[schema(example = "accent")]
     pub color: Option<String>,

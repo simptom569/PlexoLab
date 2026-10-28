@@ -108,18 +108,38 @@ async fn update_me(
     Ok(Json(user.into()))
 }
 
-/// Участники команды
+/// Люди, которых я вижу
+///
+/// Я сам, члены моих команд, участники проектов, к которым у меня есть доступ, и те, чьи имена остались на видимых мне
+/// данных (комментарии, задачи, события, страницы вики, файлы), хоть бы они уже ушли. Нужен клиенту как «книга имён и
+/// аватарок». E-mail у человека пуст, если мне его видеть не положено (docs/TEAMS.md, раздел 8); `is_admin` другим
+/// людям не отдаётся (у всех кроме меня `false`).
 #[utoipa::path(
     get,
     path = "/users",
     tag = "users",
     security(("bearer" = [])),
     responses(
-        (status = 200, description = "Все участники в порядке добавления в команду", body = [UserDto]),
+        (status = 200, description = "Видимые мне люди в порядке добавления", body = [UserDto]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
     )
 )]
-async fn list_users(_auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<UserDto>>> {
-    let users = db::users::list(&state.pool).await?;
-    Ok(Json(users.into_iter().map(UserDto::from).collect()))
+async fn list_users(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<UserDto>>> {
+    let people = db::users::list_visible(&state.pool, auth.id).await?;
+    Ok(Json(
+        people
+            .into_iter()
+            .map(|p| {
+                let mine = p.user.id == auth.id;
+                let mut dto = UserDto::from(p.user);
+                if !p.email_visible {
+                    dto.email = String::new();
+                }
+                if !mine {
+                    dto.is_admin = false;
+                }
+                dto
+            })
+            .collect(),
+    ))
 }

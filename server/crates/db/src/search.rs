@@ -6,20 +6,18 @@
 //! в запросе остаются обычными знаками. Различает ли `lower()` регистр русских букв, зависит от локали базы (README,
 //! «Локаль базы данных»); `lowercase_works` проверяет это.
 //!
-//! Задачи и документы берутся только из проектов, которые видны человеку: он участник (глобальный администратор видит
-//! все) и проект не в архиве. Страницы вики и файлы библиотеки общие для всех вошедших.
+//! Задачи и документы берутся только из проектов выбранной команды, которые видны человеку (`can_access_project`), без
+//! архивных. Страницы вики и файлы библиотеки берутся из выбранной команды; право читать её вики проверяет вызывающий.
 
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
-/// Проекты, видимые человеку в поиске: участник или глобальный администратор, без архивных
+/// Проекты команды `$4`, видимые человеку `$1` в поиске, без архивных
 macro_rules! visible_projects {
     () => {
         "visible as ( \
            select p.id, p.key, p.name from projects p \
-           join users u on u.id = $1 \
-           left join project_members m on m.project_id = p.id and m.user_id = u.id \
-           where p.archived_at is null and (u.is_admin or m.user_id is not null) \
+           where p.team_id = $4 and p.archived_at is null and can_access_project(p.id, $1) \
          )"
     };
 }
@@ -61,7 +59,13 @@ pub struct FileHit {
 
 /// Задачи, у которых название или id (`WEB-141`) содержит запрос. Сначала точное совпадение с id, потом начало названия
 /// или id, потом остальное; внутри группы недавно менявшиеся первыми.
-pub async fn tasks<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, q: &str, limit: i64) -> Result<Vec<TaskHit>, sqlx::Error> {
+pub async fn tasks<'e>(
+    ex: impl PgExecutor<'e>,
+    user_id: Uuid,
+    team_id: Uuid,
+    q: &str,
+    limit: i64,
+) -> Result<Vec<TaskHit>, sqlx::Error> {
     sqlx::query_as(concat!(
         "with ",
         visible_projects!(),
@@ -84,12 +88,19 @@ pub async fn tasks<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, q: &str, limit: i
     .bind(user_id)
     .bind(q)
     .bind(limit)
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }
 
 /// Документы проектов, у которых название содержит запрос. Содержимое не ищется.
-pub async fn docs<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, q: &str, limit: i64) -> Result<Vec<DocHit>, sqlx::Error> {
+pub async fn docs<'e>(
+    ex: impl PgExecutor<'e>,
+    user_id: Uuid,
+    team_id: Uuid,
+    q: &str,
+    limit: i64,
+) -> Result<Vec<DocHit>, sqlx::Error> {
     sqlx::query_as(concat!(
         "with ",
         visible_projects!(),
@@ -102,34 +113,37 @@ pub async fn docs<'e>(ex: impl PgExecutor<'e>, user_id: Uuid, q: &str, limit: i6
     .bind(user_id)
     .bind(q)
     .bind(limit)
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }
 
-/// Страницы вики (общие для всех), у которых название содержит запрос
-pub async fn wiki<'e>(ex: impl PgExecutor<'e>, q: &str, limit: i64) -> Result<Vec<WikiHit>, sqlx::Error> {
+/// Страницы вики команды, у которых название содержит запрос
+pub async fn wiki<'e>(ex: impl PgExecutor<'e>, team_id: Uuid, q: &str, limit: i64) -> Result<Vec<WikiHit>, sqlx::Error> {
     sqlx::query_as(
         "select id, title from wiki_pages \
-         where position(lower($1) in lower(title)) > 0 \
+         where team_id = $3 and position(lower($1) in lower(title)) > 0 \
          order by case when position(lower($1) in lower(title)) = 1 then 0 else 1 end, updated_at desc, id \
          limit $2",
     )
     .bind(q)
     .bind(limit)
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }
 
-/// Файлы библиотеки (общие для всех, вложения задач не входят), у которых имя содержит запрос
-pub async fn files<'e>(ex: impl PgExecutor<'e>, q: &str, limit: i64) -> Result<Vec<FileHit>, sqlx::Error> {
+/// Файлы библиотеки команды (вложения задач не входят), у которых имя содержит запрос
+pub async fn files<'e>(ex: impl PgExecutor<'e>, team_id: Uuid, q: &str, limit: i64) -> Result<Vec<FileHit>, sqlx::Error> {
     sqlx::query_as(
         "select id, name, kind, size_bytes from files \
-         where task_id is null and position(lower($1) in lower(name)) > 0 \
+         where team_id = $3 and task_id is null and position(lower($1) in lower(name)) > 0 \
          order by case when position(lower($1) in lower(name)) = 1 then 0 else 1 end, created_at desc, id \
          limit $2",
     )
     .bind(q)
     .bind(limit)
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }

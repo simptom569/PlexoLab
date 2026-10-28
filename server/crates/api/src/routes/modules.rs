@@ -195,7 +195,7 @@ async fn update_module(
     // ответственным назначают участника проекта; тот, кто уже назначен и вышел из проекта, остаётся
     if let Some(Some(lead)) = patch.lead
         && before.lead_id != Some(lead)
-        && db::members::role_of(&mut *tx, project.id, lead).await?.is_none()
+        && !db::members::is_person(&mut *tx, project.id, lead).await?
     {
         return Err(bad("Ответственный должен быть участником проекта"));
     }

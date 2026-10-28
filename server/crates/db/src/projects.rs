@@ -10,32 +10,61 @@ pub struct Project {
     pub color: String,
     /// В архиве: скрыт из списков, данные целы
     pub archived: bool,
+    /// Команда, которой принадлежит проект
+    pub team_id: Uuid,
+    /// `members`: явные участники и администраторы команды; `team`: ещё и все члены команды
+    pub visibility: String,
 }
 
-/// Проект и роль человека в нём: `admin` или `member` (у глобального администратора всегда `admin`)
+/// Проект, роль человека в нём и его положение относительно команды проекта
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct MemberProject {
     #[sqlx(flatten)]
     pub project: Project,
+    /// `admin` | `member`. Администратор: явный админ проекта, администратор его команды или администратор сервера.
     pub role: String,
+    /// Явный участник, который не член команды проекта (администратор сервера гостем не считается)
+    pub guest: bool,
 }
 
-/// Проект для человека: только если он участник или глобальный админ. Остальным проекта «нет».
+/// Столбцы проекта в запросах, где в `from` он назван `p`
+macro_rules! project_cols {
+    () => {
+        "p.id, p.key, p.name, p.color, (p.archived_at is not null) as archived, p.team_id, \
+         p.visibility::text as visibility"
+    };
+}
+
+/// Столбцы проекта в запросах без псевдонима (`returning`, одна таблица)
+macro_rules! bare_cols {
+    () => {
+        "id, key, name, color, (archived_at is not null) as archived, team_id, visibility::text as visibility"
+    };
+}
+
+/// Доступ к проекту (docs/TEAMS.md, раздел 3.3): явный участник ИЛИ администратор команды ИЛИ (видимость «Вся команда»
+/// И член команды), и команда не в архиве. Администратор сервера видит всё. Роль: высшая из оснований.
+/// `$1` — проект, `$2` — человек.
 macro_rules! for_user_sql {
     ($tail:literal) => {
         concat!(
-            "select p.id, p.key, p.name, p.color, (p.archived_at is not null) as archived, \
-                    case when u.is_admin then 'admin' else m.role::text end as role \
+            "select ",
+            project_cols!(),
+            ", case when u.is_admin or tm.role = 'admin' or m.role = 'admin' then 'admin' else 'member' end as role, \
+                  (tm.user_id is null and not u.is_admin) as guest \
              from projects p \
              join users u on u.id = $2 \
+             join teams t on t.id = p.team_id \
              left join project_members m on m.project_id = p.id and m.user_id = u.id \
-             where p.id = $1 and (u.is_admin or m.user_id is not null)",
+             left join team_members tm on tm.team_id = p.team_id and tm.user_id = u.id \
+             where p.id = $1 and (u.is_admin or (t.archived_at is null and \
+                   (m.user_id is not null or tm.role = 'admin' or (p.visibility = 'team' and tm.user_id is not null))))",
             $tail
         )
     };
 }
 
-/// Проект и роль человека в нём; `None`, если проекта нет или человек в нём не участник
+/// Проект и роль человека в нём; `None`, если проекта нет или человек его не видит
 pub async fn for_user<'e>(
     ex: impl PgExecutor<'e>,
     project_id: Uuid,
@@ -60,16 +89,23 @@ pub async fn list_for_user<'e>(
     user_id: Uuid,
     archived: bool,
 ) -> Result<Vec<MemberProject>, sqlx::Error> {
-    sqlx::query_as(
-        "select p.id, p.key, p.name, p.color, (p.archived_at is not null) as archived, \
-                case when u.is_admin then 'admin' else m.role::text end as role \
+    sqlx::query_as(concat!(
+        "select ",
+        project_cols!(),
+        ", case when u.is_admin or tm.role = 'admin' or m.role = 'admin' then 'admin' else 'member' end as role, \
+              (tm.user_id is null and not u.is_admin) as guest \
          from projects p \
          join users u on u.id = $1 \
+         join teams t on t.id = p.team_id \
          left join project_members m on m.project_id = p.id and m.user_id = u.id \
+         left join team_members tm on tm.team_id = p.team_id and tm.user_id = u.id \
          where (p.archived_at is not null) = $2 \
-           and (u.is_admin or (m.user_id is not null and (not $2 or m.role = 'admin'))) \
-         order by p.seq",
-    )
+           and (u.is_admin or (t.archived_at is null and ( \
+                (m.user_id is not null and (not $2 or m.role = 'admin')) \
+                or tm.role = 'admin' \
+                or (not $2 and p.visibility = 'team' and tm.user_id is not null)))) \
+         order by p.seq"
+    ))
     .bind(user_id)
     .bind(archived)
     .fetch_all(ex)
@@ -78,35 +114,35 @@ pub async fn list_for_user<'e>(
 
 /// Проект без проверки доступа. Только для служебных нужд (сид, тесты); ручки берут проект через `for_user`.
 pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
-    sqlx::query_as("select id, key, name, color, (archived_at is not null) as archived from projects where id = $1")
-        .bind(id)
-        .fetch_optional(ex)
-        .await
+    sqlx::query_as(concat!("select ", bare_cols!(), " from projects where id = $1")).bind(id).fetch_optional(ex).await
 }
 
 /// Блокирует проект без проверки доступа. Только для служебных нужд и тестов базы; ручки блокируют проект через
 /// `for_user_locked`.
 pub async fn lock(conn: &mut PgConnection, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
-    sqlx::query_as(
-        "select id, key, name, color, (archived_at is not null) as archived from projects where id = $1 for update",
-    )
-    .bind(id)
-    .fetch_optional(conn)
-    .await
+    sqlx::query_as(concat!("select ", bare_cols!(), " from projects where id = $1 for update"))
+        .bind(id)
+        .fetch_optional(conn)
+        .await
 }
 
-/// Новый проект; создатель становится его администратором
+/// Новый проект в команде; создатель становится его администратором
 pub async fn insert(
     conn: &mut PgConnection,
+    team_id: Uuid,
+    visibility: &str,
     name: &str,
     color: &str,
     key: Option<&str>,
     created_by: Uuid,
 ) -> Result<Project, sqlx::Error> {
-    let project: Project = sqlx::query_as(
-        "insert into projects (name, color, key, created_by) values ($1, $2, $3, $4) \
-         returning id, key, name, color, (archived_at is not null) as archived",
-    )
+    let project: Project = sqlx::query_as(concat!(
+        "insert into projects (team_id, visibility, name, color, key, created_by) \
+         values ($1, $2::project_visibility, $3, $4, $5, $6) returning ",
+        bare_cols!()
+    ))
+    .bind(team_id)
+    .bind(visibility)
     .bind(name)
     .bind(color)
     .bind(key)
@@ -126,11 +162,12 @@ pub struct ProjectPatch {
 }
 
 pub async fn update(conn: &mut PgConnection, id: Uuid, p: &ProjectPatch) -> Result<Project, sqlx::Error> {
-    sqlx::query_as(
+    sqlx::query_as(concat!(
         "update projects set name = coalesce($2, name), color = coalesce($3, color), \
                 key = case when $4 then $5 else key end \
-         where id = $1 returning id, key, name, color, (archived_at is not null) as archived",
-    )
+         where id = $1 returning ",
+        bare_cols!()
+    ))
     .bind(id)
     .bind(p.name.as_deref())
     .bind(p.color.as_deref())
@@ -141,10 +178,10 @@ pub async fn update(conn: &mut PgConnection, id: Uuid, p: &ProjectPatch) -> Resu
 }
 
 pub async fn set_archived(conn: &mut PgConnection, id: Uuid, archived: bool) -> Result<Project, sqlx::Error> {
-    sqlx::query_as(
-        "update projects set archived_at = case when $2 then coalesce(archived_at, now()) end where id = $1 \
-         returning id, key, name, color, (archived_at is not null) as archived",
-    )
+    sqlx::query_as(concat!(
+        "update projects set archived_at = case when $2 then coalesce(archived_at, now()) end where id = $1 returning ",
+        bare_cols!()
+    ))
     .bind(id)
     .bind(archived)
     .fetch_one(conn)

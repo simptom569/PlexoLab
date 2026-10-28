@@ -20,6 +20,8 @@ pub struct WikiNode {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct WikiPage {
     pub id: Uuid,
+    /// Команда, которой принадлежит страница
+    pub team_id: Uuid,
     pub parent_id: Option<Uuid>,
     pub title: String,
     pub md: String,
@@ -31,21 +33,29 @@ pub struct WikiPage {
 
 macro_rules! select_page {
     ($tail:literal) => {
-        concat!("select id, parent_id, title, md, position, rev, updated_by, updated_at from wiki_pages ", $tail)
+        concat!("select id, team_id, parent_id, title, md, position, rev, updated_by, updated_at from wiki_pages ", $tail)
     };
 }
 
-/// Все страницы без текста. Порядок: по позиции, так что соседи одного родителя идут как в дереве.
-pub async fn list<'e>(ex: impl PgExecutor<'e>) -> Result<Vec<WikiNode>, sqlx::Error> {
+/// Все страницы команды без текста. Порядок: по позиции, так что соседи одного родителя идут как в дереве.
+pub async fn list<'e>(ex: impl PgExecutor<'e>, team_id: Uuid) -> Result<Vec<WikiNode>, sqlx::Error> {
     sqlx::query_as(
-        "select id, parent_id, title, position, rev, updated_by, updated_at from wiki_pages order by position, id",
+        "select id, parent_id, title, position, rev, updated_by, updated_at from wiki_pages \
+         where team_id = $1 order by position, id",
     )
+    .bind(team_id)
     .fetch_all(ex)
     .await
 }
 
+/// Страница без проверки доступа: доступ к её команде проверяет вызывающий (`access`)
 pub async fn get<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<WikiPage>, sqlx::Error> {
     sqlx::query_as(select_page!("where id = $1")).bind(id).fetch_optional(ex).await
+}
+
+/// Команда страницы
+pub async fn team_of<'e>(ex: impl PgExecutor<'e>, id: Uuid) -> Result<Option<Uuid>, sqlx::Error> {
+    sqlx::query_scalar("select team_id from wiki_pages where id = $1").bind(id).fetch_optional(ex).await
 }
 
 /// Страница с блокировкой строки до конца транзакции: так проверка `rev` и запись не разойдутся
@@ -53,29 +63,35 @@ pub async fn get_for_update(conn: &mut PgConnection, id: Uuid) -> Result<Option<
     sqlx::query_as(select_page!("where id = $1 for update")).bind(id).fetch_optional(conn).await
 }
 
-/// Одновременное создание и перенос страниц идут по очереди: позиции соседей считаются «в конец»
-pub async fn lock(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    sqlx::query("select pg_advisory_xact_lock(hashtext('wiki_tree'))").execute(conn).await?;
+/// Одновременное создание и перенос страниц одной команды идут по очереди: позиции соседей считаются «в конец»
+pub async fn lock(conn: &mut PgConnection, team_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("select pg_advisory_xact_lock(hashtext('wiki_tree'), hashtext(($1::uuid)::text))")
+        .bind(team_id)
+        .execute(conn)
+        .await?;
     Ok(())
 }
 
-/// Новая страница в конец списка вложенных в `parent_id` (или корневых)
+/// Новая страница команды в конец списка вложенных в `parent_id` (или корневых)
 pub async fn insert(
     conn: &mut PgConnection,
+    team_id: Uuid,
     parent_id: Option<Uuid>,
     title: &str,
     md: &str,
     user_id: Uuid,
 ) -> Result<WikiPage, sqlx::Error> {
     sqlx::query_as(concat!(
-        "insert into wiki_pages (parent_id, title, md, position, updated_by) values ($1, $2, $3, ",
-        "coalesce((select max(position) from wiki_pages where parent_id is not distinct from $1), 0) + 1024, $4) ",
-        "returning id, parent_id, title, md, position, rev, updated_by, updated_at"
+        "insert into wiki_pages (team_id, parent_id, title, md, position, updated_by) values ($5, $1, $2, $3, ",
+        "coalesce((select max(position) from wiki_pages where team_id = $5 and parent_id is not distinct from $1), 0) ",
+        "+ 1024, $4) ",
+        "returning id, team_id, parent_id, title, md, position, rev, updated_by, updated_at"
     ))
     .bind(parent_id)
     .bind(title)
     .bind(md)
     .bind(user_id)
+    .bind(team_id)
     .fetch_one(conn)
     .await
 }
@@ -97,7 +113,7 @@ pub async fn update(
     sqlx::query_as(concat!(
         "update wiki_pages set title = coalesce($2, title), md = coalesce($3, md), ",
         "rev = rev + 1, updated_by = $4, updated_at = now() where id = $1 ",
-        "returning id, parent_id, title, md, position, rev, updated_by, updated_at"
+        "returning id, team_id, parent_id, title, md, position, rev, updated_by, updated_at"
     ))
     .bind(id)
     .bind(patch.title)
@@ -126,9 +142,11 @@ pub async fn place(
 ) -> Result<WikiPage, PlaceError> {
     // все вложенные в `parent`, включая саму страницу, если она там уже есть
     let all: Vec<(Uuid, f64)> = sqlx::query_as(
-        "select id, position from wiki_pages where parent_id is not distinct from $1 order by position, id",
+        "select id, position from wiki_pages where team_id = $2 and parent_id is not distinct from $1 \
+         order by position, id",
     )
     .bind(parent)
+    .bind(page.team_id)
     .fetch_all(&mut *conn)
     .await?;
     if page.parent_id == parent
@@ -156,7 +174,7 @@ pub async fn place(
     };
     let moved = sqlx::query_as(concat!(
         "update wiki_pages set parent_id = $2, position = $3 where id = $1 ",
-        "returning id, parent_id, title, md, position, rev, updated_by, updated_at"
+        "returning id, team_id, parent_id, title, md, position, rev, updated_by, updated_at"
     ))
     .bind(page.id)
     .bind(parent)

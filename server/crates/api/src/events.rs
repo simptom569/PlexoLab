@@ -38,6 +38,10 @@ pub struct Event {
     pub id: Option<Uuid>,
     /// Проект, если событие относится к одному проекту и ручка его знает
     pub project_id: Option<Uuid>,
+    /// Команда, если событие относится к вики или библиотеке файлов одной команды и ручка её знает. У событий проектов
+    /// поля нет.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<Uuid>,
     /// Метка клиента, который это сделал (заголовок `X-Client-Id`); он своё событие пропускает
     pub origin: Option<String>,
     /// Кому событие доставляется. Клиенту не передаётся: фильтрует сервер (`ws`).
@@ -45,14 +49,17 @@ pub struct Event {
     pub audience: Audience,
 }
 
-/// Кому доставляется событие (docs/PROJECTS.md, раздел 5): события проекта получают только его участники
+/// Кому доставляется событие (docs/PROJECTS.md, раздел 5; docs/TEAMS.md, раздел 13): события проекта получают те, кто его
+/// видит, события вики и файлов команды те, кто их читает
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Audience {
-    /// Всем вошедшим: вики, документы, ссылки и другие общие данные
+    /// Всем вошедшим: только то, что не принадлежит ни проекту, ни команде (имя человека поменялось)
     #[default]
     Everyone,
-    /// Участникам проекта (и глобальным админам)
+    /// Тем, кто видит проект (и администраторам сервера)
     Project(Uuid),
+    /// Тем, кто читает вики и файлы команды (и администраторам сервера)
+    Team(Uuid),
     /// Только этим людям, независимо от участия в проекте: приглашённому, исключённому
     Users(Vec<Uuid>),
 }
@@ -61,6 +68,7 @@ pub enum Audience {
 #[derive(Debug, Clone, Default)]
 struct Hints {
     project: Option<Uuid>,
+    team: Option<Uuid>,
     users: Vec<Uuid>,
 }
 
@@ -72,6 +80,12 @@ tokio::task_local! {
 /// Вызывается при получении проекта через `access`, так что ручки делают это не вручную.
 pub fn note_project(project_id: Uuid) {
     let _ = HINTS.try_with(|h| h.borrow_mut().project = Some(project_id));
+}
+
+/// Ручка сообщает, что изменение относится к вики или файлам этой команды: событие уйдёт только тем, кто их читает.
+/// Вызывается при получении команды через `access`.
+pub fn note_team(team_id: Uuid) {
+    let _ = HINTS.try_with(|h| h.borrow_mut().team = Some(team_id));
 }
 
 /// Ручка сообщает, что событие нужно доставить ещё и этому человеку, даже если он не участник проекта
@@ -192,7 +206,7 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("PATCH",  "/release-items/{id}",       &[all("release.changed"), ACTIVITY]),
     ("DELETE", "/release-items/{id}",       &[all("release.changed")]),
     // вики
-    ("POST",   "/wiki",                     &[all("wiki.updated"), ACTIVITY]),
+    ("POST",   "/teams/{id}/wiki",          &[all("wiki.updated"), ACTIVITY]),
     ("PATCH",  "/wiki/{id}",                &[one("wiki.updated"), ACTIVITY]),
     ("DELETE", "/wiki/{id}",                &[one("wiki.updated"), all("file.changed"), ACTIVITY]),
     // документы и холст
@@ -202,9 +216,9 @@ static TABLE: &[(&str, &str, &[Rule])] = &[
     ("PUT",    "/docs/{id}/canvas",         &[one("doc.canvas")]),
     ("PUT",    "/docs/{id}/star",           &[one("doc.updated")]),
     // файлы и папки
-    ("POST",   "/files",                    &[all("file.changed"), ACTIVITY]),
+    ("POST",   "/teams/{id}/files",         &[all("file.changed"), ACTIVITY]),
     ("DELETE", "/files/{id}",               &[one("file.changed"), ACTIVITY]),
-    ("POST",   "/folders",                  &[all("file.changed")]),
+    ("POST",   "/teams/{id}/folders",       &[all("file.changed")]),
     ("DELETE", "/folders/{id}",             &[all("file.changed")]),
     // участники: человек поменял своё имя, подпись или цвет аватара; клиенты перечитывают список участников
     ("PATCH",  "/me",                       &[all("user.changed")]),
@@ -253,15 +267,22 @@ pub async fn publish_events(
         .await;
 
     if response.status().is_success() {
-        // в адресах `/projects/{id}/...` идентификатор — проект, у остальных — сама запись
+        // в адресах `/projects/{id}/...` идентификатор — проект, в `/teams/{id}/...` — команда, у остальных — сама запись
         let in_project = path.starts_with("/api/v1/projects/{id}/");
+        let in_team = path.starts_with("/api/v1/teams/{id}/");
         let project_id = hints.project.or(if in_project { id } else { None });
-        let for_project = project_id.map_or(Audience::Everyone, Audience::Project);
+        let team_id = hints.team.or(if in_team { id } else { None });
+        let for_project = match (project_id, team_id) {
+            (Some(project), _) => Audience::Project(project),
+            (None, Some(team)) => Audience::Team(team),
+            (None, None) => Audience::Everyone,
+        };
         for rule in rules(&method, &path) {
             let event = |audience: Audience| Event {
                 kind: rule.kind,
-                id: if rule.with_id && !in_project { id } else { None },
+                id: if rule.with_id && !in_project && !in_team { id } else { None },
                 project_id,
+                team_id,
                 origin: origin.clone(),
                 audience,
             };
@@ -337,9 +358,9 @@ mod tests {
     }
 
     #[test]
-    fn project_routes_never_carry_the_record_id() {
+    fn project_and_team_routes_never_carry_the_record_id() {
         for (_, path, rules) in TABLE {
-            if path.starts_with("/projects/{id}/") {
+            if path.starts_with("/projects/{id}/") || path.starts_with("/teams/{id}/") {
                 assert!(rules.iter().all(|r| !r.with_id), "{path}: в адресе проект, а не запись");
             }
         }

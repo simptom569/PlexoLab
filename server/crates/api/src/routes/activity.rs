@@ -26,7 +26,7 @@ pub struct ActivityDto {
     pub id: Uuid,
     /// Кто сделал
     pub actor_id: Uuid,
-    /// Проект события; у вики и файлов библиотеки проекта нет, они видны в ленте любого проекта
+    /// Проект события; у вики и файлов библиотеки проекта нет, их видят в ленте проектов команды те, кто читает вики
     pub project_id: Option<Uuid>,
     /// Категория для цветной метки: tasks | comment | code | doc | wiki | release | file | module
     #[schema(example = "tasks")]
@@ -78,8 +78,8 @@ fn cursor_of(e: &Event) -> Cursor {
 
 /// Лента проекта
 ///
-/// События проекта и общие события без проекта (вики, файлы библиотеки), новые первыми. Фильтры «Участник» и «Тип
-/// события» сочетаются. Страница — 50 событий;
+/// События проекта и события вики и файлов библиотеки его команды (если человек их читает), новые первыми. Фильтры
+/// «Участник» и «Тип события» сочетаются. Страница — 50 событий;
 /// пока есть более старые, в ответе приходит `next`, его передают как `before`.
 #[utoipa::path(
     get,
@@ -100,7 +100,10 @@ async fn list_activity(
     ApiPath(project_id): ApiPath<Uuid>,
     ApiQuery(query): ApiQuery<ListActivityQuery>,
 ) -> ApiResult<Json<ActivityPageDto>> {
-    access::project(&state.pool, auth, project_id).await?;
+    let access = access::project(&state.pool, auth, project_id).await?;
+    // события вики команды подмешиваются тем, кто читает её вики: члены команды и гости при включённой настройке
+    let team = access::team(&state.pool, auth, access.project.team_id).await?;
+    let wiki_team = team.can_read_wiki().then_some(team.team.id);
     let kinds = match query.kind.as_deref() {
         None => None,
         Some(category) => Some(activity::kinds_of(category).ok_or_else(|| {
@@ -119,7 +122,7 @@ async fn list_activity(
     };
 
     // на одно событие больше страницы: так видно, есть ли что-то дальше, без отдельного запроса
-    let mut events = db::activity::list(&state.pool, project_id, query.actor, kinds, after, PAGE_SIZE + 1).await?;
+    let mut events = db::activity::list(&state.pool, project_id, wiki_team, query.actor, kinds, after, PAGE_SIZE + 1).await?;
     let more = events.len() as i64 > PAGE_SIZE;
     events.truncate(PAGE_SIZE as usize);
     let next = more.then(|| events.last().map(|e| cursor_of(e).encode())).flatten();

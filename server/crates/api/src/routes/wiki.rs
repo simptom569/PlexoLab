@@ -1,4 +1,4 @@
-//! Страницы вики. Одна версия (`rev`) на всю страницу: если за время правки её изменил другой участник,
+//! Страницы вики команды (docs/TEAMS.md, раздел 7). Одна версия (`rev`) на всю страницу: если за время правки её изменил другой участник,
 //! сохранение отвечает 409 и отдаёт актуальную версию. Запись в ленту активности делается в той же транзакции.
 
 use axum::{
@@ -45,26 +45,33 @@ fn clean_md(raw: &str) -> ApiResult<String> {
     Ok(raw.replace("\r\n", "\n"))
 }
 
-/// Родитель должен существовать
-async fn check_parent(conn: &mut PgConnection, parent_id: Uuid) -> ApiResult<()> {
-    db::wiki::get(&mut *conn, parent_id).await?.ok_or_else(|| bad("Родительская страница не найдена"))?;
+/// Родитель должен существовать и лежать в той же команде
+async fn check_parent(conn: &mut PgConnection, team_id: Uuid, parent_id: Uuid) -> ApiResult<()> {
+    let parent = db::wiki::get(&mut *conn, parent_id).await?;
+    parent.filter(|p| p.team_id == team_id).ok_or_else(|| bad("Родительская страница не найдена"))?;
     Ok(())
 }
 
-/// Дерево страниц без текста, соседи в порядке `position`
+/// Дерево страниц команды без текста, соседи в порядке `position`
 #[utoipa::path(
     get,
-    path = "/wiki",
+    path = "/teams/{id}/wiki",
     tag = "wiki",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Команда")),
     responses(
-        (status = 200, description = "Все страницы вики", body = [WikiNodeDto]),
+        (status = 200, description = "Все страницы вики команды", body = [WikiNodeDto]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или вики её не читать", body = ErrorBody),
     )
 )]
-async fn list_pages(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<WikiNodeDto>>> {
-    access::wiki(auth)?;
-    let pages = db::wiki::list(&state.pool).await?;
+async fn list_pages(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
+) -> ApiResult<Json<Vec<WikiNodeDto>>> {
+    access::wiki_read(&state.pool, auth, team_id).await?;
+    let pages = db::wiki::list(&state.pool, team_id).await?;
     Ok(Json(pages.into_iter().map(Into::into).collect()))
 }
 
@@ -78,7 +85,7 @@ async fn list_pages(auth: AuthUser, State(state): State<AppState>) -> ApiResult<
     responses(
         (status = 200, description = "Страница", body = WikiPageDto),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
-        (status = 404, description = "Нет такой страницы", body = ErrorBody),
+        (status = 404, description = "Нет такой страницы или вики её команды не читать", body = ErrorBody),
     )
 )]
 async fn get_page(
@@ -86,40 +93,44 @@ async fn get_page(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Json<WikiPageDto>> {
-    access::wiki(auth)?;
     let page = db::wiki::get(&state.pool, id).await?.ok_or(ApiError::NotFound)?;
+    access::wiki_read(&state.pool, auth, page.team_id).await?;
     Ok(Json(page.into()))
 }
 
 /// Новая страница в конец списка вложенных в `parent_id` (или в корень). В ленту пишется «создана».
 #[utoipa::path(
     post,
-    path = "/wiki",
+    path = "/teams/{id}/wiki",
     tag = "wiki",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Команда")),
     request_body = CreateWikiPage,
     responses(
         (status = 201, description = "Страница создана", body = WikiPageDto),
         (status = 400, description = "Некорректный запрос или нет такого родителя", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Вики команды можно только читать (гость)", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или вики её не читать", body = ErrorBody),
     )
 )]
 async fn create_page(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateWikiPage>,
 ) -> ApiResult<(StatusCode, Json<WikiPageDto>)> {
-    access::wiki(auth)?;
     let title = req.title.as_deref().map(clean_title).transpose()?.unwrap_or_default();
     let md = req.md.as_deref().map(clean_md).transpose()?.unwrap_or_default();
 
     let mut tx = state.pool.begin().await?;
-    db::wiki::lock(&mut tx).await?;
+    access::wiki_write(&mut *tx, auth, team_id).await?;
+    db::wiki::lock(&mut tx, team_id).await?;
     if let Some(parent) = req.parent_id {
-        check_parent(&mut tx, parent).await?;
+        check_parent(&mut tx, team_id, parent).await?;
     }
-    let page = db::wiki::insert(&mut tx, req.parent_id, &title, &md, auth.id).await?;
-    db::activity::insert(&mut tx, auth.id, None, "wiki", &wiki::target(&page.title), "создана").await?;
+    let page = db::wiki::insert(&mut tx, team_id, req.parent_id, &title, &md, auth.id).await?;
+    db::activity::insert_team(&mut tx, auth.id, team_id, "wiki", &wiki::target(&page.title), "создана").await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, Json(page.into())))
 }
@@ -144,7 +155,8 @@ async fn create_page(
         (status = 200, description = "Страница после изменений", body = WikiPageDto),
         (status = 400, description = "Некорректный запрос или перенос страницы внутрь себя", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
-        (status = 404, description = "Нет такой страницы", body = ErrorBody),
+        (status = 403, description = "Вики команды можно только читать (гость)", body = ErrorBody),
+        (status = 404, description = "Нет такой страницы или вики её команды не читать", body = ErrorBody),
         (status = 409, description = "Страницу уже изменили, в current её актуальная версия", body = WikiConflictDto),
     )
 )]
@@ -154,7 +166,6 @@ async fn update_page(
     ApiPath(id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<UpdateWikiPage>,
 ) -> ApiResult<Response> {
-    access::wiki(auth)?;
     let title = req.title.as_deref().map(clean_title).transpose()?;
     let md = req.md.as_deref().map(clean_md).transpose()?;
 
@@ -165,9 +176,11 @@ async fn update_page(
     let moving = req.parent_id.is_some() || req.before_id.is_some();
 
     let mut tx = state.pool.begin().await?;
+    let team_id = db::wiki::team_of(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    access::wiki_write(&mut *tx, auth, team_id).await?;
     if moving {
         // перенос меняет позиции соседей и опирается на проверку цикла: по очереди с созданием и удалением страниц
-        db::wiki::lock(&mut tx).await?;
+        db::wiki::lock(&mut tx, team_id).await?;
     }
     let mut page = db::wiki::get_for_update(&mut tx, id).await?.ok_or(ApiError::NotFound)?;
 
@@ -193,7 +206,7 @@ async fn update_page(
         if let Some(parent) = parent
             && req.parent_id.is_some()
         {
-            check_parent(&mut tx, parent).await?;
+            check_parent(&mut tx, team_id, parent).await?;
             if db::wiki::in_subtree(&mut tx, id, parent).await? {
                 return Err(bad("Страницу нельзя перенести внутрь неё самой или её вложенных страниц"));
             }
@@ -222,7 +235,8 @@ async fn update_page(
     responses(
         (status = 204, description = "Страница удалена"),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
-        (status = 404, description = "Нет такой страницы", body = ErrorBody),
+        (status = 403, description = "Вики команды можно только читать (гость)", body = ErrorBody),
+        (status = 404, description = "Нет такой страницы или вики её команды не читать", body = ErrorBody),
     )
 )]
 async fn delete_page(
@@ -230,9 +244,10 @@ async fn delete_page(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
-    access::wiki(auth)?;
     let mut tx = state.pool.begin().await?;
-    db::wiki::lock(&mut tx).await?;
+    let team_id = db::wiki::team_of(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    access::wiki_write(&mut *tx, auth, team_id).await?;
+    db::wiki::lock(&mut tx, team_id).await?;
     let page = db::wiki::get_for_update(&mut tx, id).await?.ok_or(ApiError::NotFound)?;
     let nested = db::wiki::subtree_size(&mut tx, id).await? - 1;
     db::wiki::delete(&mut tx, id).await?;
@@ -241,7 +256,7 @@ async fn delete_page(
     } else {
         "удалена".to_owned()
     };
-    db::activity::insert(&mut tx, auth.id, None, "wiki", &wiki::target(&page.title), &text).await?;
+    db::activity::insert_team(&mut tx, auth.id, team_id, "wiki", &wiki::target(&page.title), &text).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }

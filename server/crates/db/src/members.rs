@@ -33,9 +33,9 @@ pub async fn list<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec<M
     .await
 }
 
-/// Сколько из этих людей участники проекта (повторы в `user_ids` не считаются дважды)
+/// Сколько из этих людей «люди проекта» (повторы в `user_ids` не считаются дважды)
 pub async fn count_of<'e>(ex: impl PgExecutor<'e>, project_id: Uuid, user_ids: &[Uuid]) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("select count(*) from project_members where project_id = $1 and user_id = any($2)")
+    sqlx::query_scalar("select count(*) from (select distinct u from unnest($2::uuid[]) u) x where is_project_person($1, u)")
         .bind(project_id)
         .bind(user_ids)
         .fetch_one(ex)
@@ -91,33 +91,17 @@ pub async fn remove(conn: &mut PgConnection, project_id: Uuid, user_id: Uuid) ->
     Ok(done.rows_affected() > 0)
 }
 
-/// Сколько администраторов в проекте (не считая глобальных админов, которые не обязаны быть участниками)
-pub async fn admin_count<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar("select count(*) from project_members where project_id = $1 and role = 'admin'")
-        .bind(project_id)
-        .fetch_one(ex)
-        .await
-}
-
-/// Проекты, участником которых человек является (для рассылки событий). Глобальные админы тоже получают все.
+/// Проекты, события которых получает человек (для рассылки): все, к которым у него есть доступ (docs/TEAMS.md, 3.3)
 pub async fn project_ids<'e>(ex: impl PgExecutor<'e>, user_id: Uuid) -> Result<Vec<Uuid>, sqlx::Error> {
-    sqlx::query_scalar(
-        "select p.id from projects p join users u on u.id = $1 \
-         where u.is_admin or exists (select 1 from project_members m where m.project_id = p.id and m.user_id = u.id)",
-    )
-    .bind(user_id)
-    .fetch_all(ex)
-    .await
+    sqlx::query_scalar("select id from projects where can_access_project(id, $1)").bind(user_id).fetch_all(ex).await
 }
 
-/// Участник ли человек проекта (или глобальный админ)
+/// Видит ли человек проект
 pub async fn can_see<'e>(ex: impl PgExecutor<'e>, project_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
-    sqlx::query_scalar(
-        "select exists (select 1 from users u where u.id = $2 and (u.is_admin or exists \
-           (select 1 from project_members m where m.project_id = $1 and m.user_id = u.id)))",
-    )
-    .bind(project_id)
-    .bind(user_id)
-    .fetch_one(ex)
-    .await
+    sqlx::query_scalar("select can_access_project($1, $2)").bind(project_id).bind(user_id).fetch_one(ex).await
+}
+
+/// «Люди проекта» (docs/TEAMS.md, 3.4): явные участники и, при видимости «Вся команда», члены команды
+pub async fn is_person<'e>(ex: impl PgExecutor<'e>, project_id: Uuid, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("select is_project_person($1, $2)").bind(project_id).bind(user_id).fetch_one(ex).await
 }

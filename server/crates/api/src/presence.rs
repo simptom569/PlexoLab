@@ -52,6 +52,15 @@ impl Focus {
     }
 }
 
+/// Чьё это место: по нему решается, кому показывать метку
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    /// Документ проекта: метку видят те, кто видит проект
+    Project(Uuid),
+    /// Страница вики команды: метку видят те, кто читает вики команды
+    Team(Uuid),
+}
+
 /// Блок, в котором сейчас человек. `client` — номер подключения: у одного человека их может быть несколько
 /// (приложение запущено дважды, два компьютера).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -60,9 +69,9 @@ pub struct Mark {
     pub user_id: Uuid,
     pub kind: Kind,
     pub id: Uuid,
-    /// Проект документа: по нему решается, кому показывать. У страницы вики его нет, она общая.
+    /// Проект документа или команда страницы вики: по ним решается, кому показывать
     #[serde(skip)]
-    pub project_id: Option<Uuid>,
+    pub place: Place,
     pub rev: i64,
     pub start: u32,
     pub end: u32,
@@ -176,13 +185,13 @@ impl Attached {
     }
 
     /// Человек в этом блоке (или подтверждает, что всё ещё в нём)
-    pub fn set(&self, user_id: Uuid, project_id: Option<Uuid>, focus: &Focus) {
+    pub fn set(&self, user_id: Uuid, place: Place, focus: &Focus) {
         let mark = Mark {
             client: self.client(),
             user_id,
             kind: focus.kind,
             id: focus.id,
-            project_id,
+            place,
             rev: focus.rev,
             start: focus.start,
             end: focus.end,

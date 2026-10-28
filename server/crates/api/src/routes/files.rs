@@ -1,4 +1,4 @@
-//! Библиотека файлов, папки и вложения задач. Содержимое пишется на диск потоком (сервер маленький, файл целиком
+//! Библиотека файлов команды, папки и вложения задач (docs/TEAMS.md, раздел 7). Содержимое пишется на диск потоком (сервер маленький, файл целиком
 //! в память не берём), запись в базу и в ленту активности делается в одной транзакции после того, как файлы сохранены.
 
 use axum::{
@@ -181,6 +181,7 @@ async fn discard_on_error<T>(state: &AppState, incoming: &Incoming, result: ApiR
 async fn insert_all(
     conn: &mut PgConnection,
     incoming: &Incoming,
+    team_id: Uuid,
     uploader: Uuid,
     folder_id: Option<Uuid>,
     task_id: Option<Uuid>,
@@ -188,6 +189,7 @@ async fn insert_all(
     let mut saved = Vec::with_capacity(incoming.files.len());
     for f in &incoming.files {
         let new = NewFile {
+            team_id,
             name: &f.name,
             size_bytes: i64::try_from(f.size).map_err(|_| bad("Файл слишком большой"))?,
             kind: file_kind(&f.name),
@@ -204,25 +206,27 @@ async fn insert_all(
 
 // ===== Библиотека =====
 
-/// Файлы библиотеки (вложения задач сюда не входят), новые первыми
+/// Файлы библиотеки команды (вложения задач сюда не входят), новые первыми
 #[utoipa::path(
     get,
-    path = "/files",
+    path = "/teams/{id}/files",
     tag = "files",
     security(("bearer" = [])),
-    params(ListFilesQuery),
+    params(("id" = Uuid, Path, description = "Команда"), ListFilesQuery),
     responses(
         (status = 200, description = "Файлы и общее число файлов в библиотеке", body = FileListDto),
         (status = 400, description = "Некорректные условия отбора", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или библиотеку её не читать", body = ErrorBody),
     )
 )]
 async fn list_files(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
     ApiQuery(q): ApiQuery<ListFilesQuery>,
 ) -> ApiResult<Json<FileListDto>> {
-    access::wiki(auth)?;
+    access::wiki_read(&state.pool, auth, team_id).await?;
     let folder = match q.folder.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
         None => FolderScope::Any,
         Some("root") => FolderScope::Root,
@@ -238,8 +242,8 @@ async fn list_files(
     let filter = LibraryFilter { folder, kind, query, wiki_page_id: q.wiki_page_id };
 
     let mut conn = state.pool.acquire().await?;
-    let found = db::files::list_library(&mut *conn, &filter).await?;
-    let total = db::files::count_library(&mut *conn).await?;
+    let found = db::files::list_library(&mut *conn, team_id, &filter).await?;
+    let total = db::files::count_library(&mut *conn, team_id).await?;
     Ok(Json(FileListDto { total, files: found.into_iter().map(Into::into).collect() }))
 }
 
@@ -247,48 +251,61 @@ async fn list_files(
 /// необязательны. Файл, прикреплённый к странице без указания папки, попадает в папку «Вложения».
 #[utoipa::path(
     post,
-    path = "/files",
+    path = "/teams/{id}/files",
     tag = "files",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Команда")),
     request_body(content = UploadForm, content_type = "multipart/form-data"),
     responses(
         (status = 201, description = "Файлы сохранены", body = [FileDto]),
         (status = 400, description = "Некорректная форма, нет такой папки или страницы", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Библиотеку команды можно только читать (гость)", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или библиотеку её не читать", body = ErrorBody),
         (status = 413, description = "Файл больше лимита", body = ErrorBody),
     )
 )]
 async fn upload_files(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
     multipart: Multipart,
 ) -> ApiResult<(StatusCode, Json<Vec<FileDto>>)> {
-    access::wiki(auth)?;
+    // не принимаем гигабайты от того, кому в эту команду писать нельзя
+    access::wiki_write(&state.pool, auth, team_id).await?;
     let incoming = receive(&state, multipart).await?;
-    let saved = save_library_files(&state, &incoming, auth.id).await;
+    let saved = save_library_files(&state, &incoming, team_id, auth.id).await;
     let saved = discard_on_error(&state, &incoming, saved).await?;
     Ok((StatusCode::CREATED, Json(saved.into_iter().map(Into::into).collect())))
 }
 
-async fn save_library_files(state: &AppState, incoming: &Incoming, uploader: Uuid) -> ApiResult<Vec<File>> {
+async fn save_library_files(
+    state: &AppState,
+    incoming: &Incoming,
+    team_id: Uuid,
+    uploader: Uuid,
+) -> ApiResult<Vec<File>> {
     let mut tx = state.pool.begin().await?;
+    // страница и папка должны быть из этой же команды: чужие для неё всё равно что несуществующие
     if let Some(page) = incoming.wiki_page_id {
-        db::wiki::get(&mut *tx, page).await?.ok_or_else(|| bad("Страница не найдена"))?;
+        let found = db::wiki::get(&mut *tx, page).await?;
+        found.filter(|p| p.team_id == team_id).ok_or_else(|| bad("Страница не найдена"))?;
     }
     let folder_id = match (incoming.folder_id, incoming.wiki_page_id) {
         (Some(folder), _) => {
-            db::folders::get(&mut *tx, folder).await?.ok_or_else(|| bad("Папка не найдена"))?;
+            let found = db::folders::get(&mut *tx, folder).await?;
+            found.filter(|f| f.team_id == team_id).ok_or_else(|| bad("Папка не найдена"))?;
             Some(folder)
         }
-        (None, Some(_)) => Some(db::folders::find_or_create(&mut tx, ATTACHMENTS_FOLDER).await?),
+        (None, Some(_)) => Some(db::folders::find_or_create(&mut tx, team_id, ATTACHMENTS_FOLDER).await?),
         (None, None) => None,
     };
-    let saved = insert_all(&mut tx, incoming, uploader, folder_id, None).await?;
+    let saved = insert_all(&mut tx, incoming, team_id, uploader, folder_id, None).await?;
     let target = match saved.as_slice() {
         [one] => one.name.clone(),
         many => files_text(many.len()),
     };
-    db::activity::insert(&mut tx, uploader, None, "file", &target, "загружено в вики").await?;
+    db::activity::insert_team(&mut tx, uploader, team_id, "file", &target, "загружено в вики").await?;
     tx.commit().await?;
     Ok(saved)
 }
@@ -312,10 +329,15 @@ async fn download_file(
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<Response> {
     let file = db::files::get(&state.pool, id).await?.ok_or(ApiError::NotFound)?;
-    // вложение задачи видят только участники её проекта; файлы библиотеки (вики) видны всем
-    if let Some(task_id) = file.task_id {
-        let mut conn = state.pool.acquire().await?;
-        tasks::load(&mut conn, auth, task_id).await?;
+    // вложение задачи видят только те, кто видит её проект; файл библиотеки читают те, кто читает вики его команды
+    match file.task_id {
+        Some(task_id) => {
+            let mut conn = state.pool.acquire().await?;
+            tasks::load(&mut conn, auth, task_id).await?;
+        }
+        None => {
+            access::wiki_read(&state.pool, auth, file.team_id).await?;
+        }
     }
     let path = storage::path(&state.data_dir, &file.storage_key).ok_or(ApiError::NotFound)?;
     let content = tokio::fs::File::open(&path).await.map_err(|e| match e.kind() {
@@ -360,6 +382,7 @@ fn content_disposition(name: &str) -> String {
     responses(
         (status = 204, description = "Файл удалён"),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Библиотеку команды можно только читать (гость)", body = ErrorBody),
         (status = 404, description = "Нет такого файла", body = ErrorBody),
     )
 )]
@@ -380,8 +403,9 @@ async fn delete_file(
                 .await?;
         }
         None => {
+            access::wiki_write(&mut *tx, auth, file.team_id).await?;
             db::files::delete(&mut tx, id).await?;
-            db::activity::insert(&mut tx, auth.id, None, "file", &file.name, "удалён").await?;
+            db::activity::insert_team(&mut tx, auth.id, file.team_id, "file", &file.name, "удалён").await?;
         }
     }
     tx.commit().await?;
@@ -442,7 +466,7 @@ async fn save_task_files(state: &AppState, incoming: &Incoming, task_id: Uuid, a
     let uploader = auth.id;
     let mut tx = state.pool.begin().await?;
     let (task, project) = tasks::load_locked(&mut tx, auth, task_id).await?;
-    let saved = insert_all(&mut tx, incoming, uploader, None, Some(task_id)).await?;
+    let saved = insert_all(&mut tx, incoming, project.team_id, uploader, None, Some(task_id)).await?;
     let text = match saved.as_slice() {
         [one] => format!("прикреплён файл «{}»", one.name),
         many => format!("прикреплено: {}", files_text(many.len())),
@@ -454,47 +478,57 @@ async fn save_task_files(state: &AppState, incoming: &Incoming, task_id: Uuid, a
 
 // ===== Папки =====
 
-/// Папки в порядке создания, с числом файлов
+/// Папки команды в порядке создания, с числом файлов
 #[utoipa::path(
     get,
-    path = "/folders",
+    path = "/teams/{id}/folders",
     tag = "files",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Команда")),
     responses(
         (status = 200, description = "Папки библиотеки", body = [FolderDto]),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или библиотеку её не читать", body = ErrorBody),
     )
 )]
-async fn list_folders(auth: AuthUser, State(state): State<AppState>) -> ApiResult<Json<Vec<FolderDto>>> {
-    access::wiki(auth)?;
-    let folders = db::folders::list(&state.pool).await?;
+async fn list_folders(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
+) -> ApiResult<Json<Vec<FolderDto>>> {
+    access::wiki_read(&state.pool, auth, team_id).await?;
+    let folders = db::folders::list(&state.pool, team_id).await?;
     Ok(Json(folders.into_iter().map(Into::into).collect()))
 }
 
-/// Новая папка. Названия не повторяются.
+/// Новая папка. Названия в команде не повторяются.
 #[utoipa::path(
     post,
-    path = "/folders",
+    path = "/teams/{id}/folders",
     tag = "files",
     security(("bearer" = [])),
+    params(("id" = Uuid, Path, description = "Команда")),
     request_body = CreateFolder,
     responses(
         (status = 201, description = "Папка создана", body = FolderDto),
         (status = 400, description = "Некорректное название", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Библиотеку команды можно только читать (гость)", body = ErrorBody),
+        (status = 404, description = "Нет такой команды или библиотеку её не читать", body = ErrorBody),
         (status = 409, description = "Папка с таким названием уже есть", body = ErrorBody),
     )
 )]
 async fn create_folder(
     auth: AuthUser,
     State(state): State<AppState>,
+    ApiPath(team_id): ApiPath<Uuid>,
     ApiJson(req): ApiJson<CreateFolder>,
 ) -> ApiResult<(StatusCode, Json<FolderDto>)> {
-    access::wiki(auth)?;
     let name = clean_folder_name(&req.name)
         .ok_or_else(|| bad(format!("Название папки: от 1 до {} символов", domain::files::MAX_FOLDER_NAME_LEN)))?;
     let mut conn = state.pool.acquire().await?;
-    let folder = db::folders::insert(&mut conn, &name)
+    access::wiki_write(&mut *conn, auth, team_id).await?;
+    let folder = db::folders::insert(&mut conn, team_id, &name)
         .await?
         .ok_or_else(|| ApiError::Conflict("Папка с таким названием уже есть".into()))?;
     Ok((StatusCode::CREATED, Json(folder.into())))
@@ -510,6 +544,7 @@ async fn create_folder(
     responses(
         (status = 204, description = "Папка удалена"),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
+        (status = 403, description = "Библиотеку команды можно только читать (гость)", body = ErrorBody),
         (status = 404, description = "Нет такой папки", body = ErrorBody),
         (status = 409, description = "В папке есть файлы", body = ErrorBody),
     )
@@ -519,9 +554,9 @@ async fn delete_folder(
     State(state): State<AppState>,
     ApiPath(id): ApiPath<Uuid>,
 ) -> ApiResult<StatusCode> {
-    access::wiki(auth)?;
     let mut tx = state.pool.begin().await?;
     let folder = db::folders::get(&mut *tx, id).await?.ok_or(ApiError::NotFound)?;
+    access::wiki_write(&mut *tx, auth, folder.team_id).await?;
     if folder.file_count > 0 {
         return Err(ApiError::Conflict("Папку можно удалить, только когда в ней нет файлов".into()));
     }

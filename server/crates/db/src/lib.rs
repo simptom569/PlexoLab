@@ -28,6 +28,7 @@ pub mod seed;
 pub mod subtasks;
 pub mod tags;
 pub mod tasks;
+pub mod teams;
 pub mod tokens;
 pub mod users;
 pub mod wiki;

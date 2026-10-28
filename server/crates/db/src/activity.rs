@@ -9,6 +9,8 @@ pub struct Event {
     pub id: Uuid,
     pub actor_id: Uuid,
     pub project_id: Option<Uuid>,
+    /// Команда события вики или файлов библиотеки (у событий проекта пусто)
+    pub team_id: Option<Uuid>,
     /// move | create | delete | comment | code | doc | wiki | release | file | module
     pub kind: String,
     pub target: String,
@@ -38,6 +40,28 @@ pub async fn insert(
     Ok(())
 }
 
+/// Событие вики или библиотеки файлов команды: без проекта, с командой. Тип: wiki | file.
+pub async fn insert_team(
+    conn: &mut PgConnection,
+    actor_id: Uuid,
+    team_id: Uuid,
+    kind: &str,
+    target: &str,
+    text: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "insert into activity (actor_id, team_id, kind, target, text) values ($1, $2, $3::act_kind, $4, $5)",
+    )
+    .bind(actor_id)
+    .bind(team_id)
+    .bind(kind)
+    .bind(target)
+    .bind(text)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
 /// Все, у кого есть собственные события проекта, независимо от фильтров: из них и из участников собирается список
 /// «Участник». Авторы общих событий без проекта (вики, файлы библиотеки) сюда не входят: иначе автор страницы вики
 /// попал бы в список любого проекта, где его нет. Порядок не задан.
@@ -48,12 +72,13 @@ pub async fn actors<'e>(ex: impl PgExecutor<'e>, project_id: Uuid) -> Result<Vec
         .await
 }
 
-/// События проекта от новых к старым: его собственные и события без проекта (вики и файлы библиотеки). Доступ к
-/// проекту проверяет вызывающий. `actor` и `kinds` сужают выбор; `after` — место, после которого (то есть старше) продолжать: время события и его
+/// События проекта от новых к старым: его собственные и, если передана `wiki_team`, события вики и файлов библиотеки
+/// этой команды. Доступ к проекту и право читать вики проверяет вызывающий. `actor` и `kinds` сужают выбор; `after` — место, после которого (то есть старше) продолжать: время события и его
 /// идентификатор. Идентификатор разводит события с одинаковым временем.
 pub async fn list<'e>(
     ex: impl PgExecutor<'e>,
     project_id: Uuid,
+    wiki_team: Option<Uuid>,
     actor: Option<Uuid>,
     kinds: Option<&[&str]>,
     after: Option<(OffsetDateTime, Uuid)>,
@@ -61,11 +86,11 @@ pub async fn list<'e>(
 ) -> Result<Vec<Event>, sqlx::Error> {
     let kinds: Option<Vec<String>> = kinds.map(|k| k.iter().map(|s| (*s).to_owned()).collect());
     sqlx::query_as(
-        "select id, actor_id, project_id, kind::text as kind, target, text, created_at from activity \
+        "select id, actor_id, project_id, team_id, kind::text as kind, target, text, created_at from activity \
          where ($1::uuid is null or actor_id = $1) \
            and ($2::text[] is null or kind::text = any($2)) \
            and ($3::timestamptz is null or (created_at, id) < ($3, $4::uuid)) \
-           and (project_id is null or project_id = $6) \
+           and (project_id = $6 or (project_id is null and $7::uuid is not null and team_id = $7)) \
          order by created_at desc, id desc limit $5",
     )
     .bind(actor)
@@ -74,6 +99,7 @@ pub async fn list<'e>(
     .bind(after.map(|a| a.1))
     .bind(limit)
     .bind(project_id)
+    .bind(wiki_team)
     .fetch_all(ex)
     .await
 }

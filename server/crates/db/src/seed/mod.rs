@@ -110,7 +110,7 @@ impl std::fmt::Display for SeedReport {
 /// Очищает все данные (структура остаётся). Только для разработки.
 pub async fn reset(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "truncate table users, projects, tags, folders, wiki_pages, docs, link_groups, activity restart identity cascade",
+        "truncate table users, teams, projects, tags, folders, wiki_pages, docs, link_groups, activity restart identity cascade",
     )
     .execute(pool)
     .await?;
@@ -223,17 +223,31 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     let user = |key: &str| pick(&users, key);
     let opt_user = |key: Option<&str>| key.map(user).transpose();
 
+    // ----- Команда: личные «Личное» создала база вместе с аккаунтами; все данные сида живут в общей «Dream Team» -----
+    let team: Uuid = sqlx::query_scalar("insert into teams (name, created_by) values ('Dream Team', $1) returning id")
+        .bind(me)
+        .fetch_one(&mut *c)
+        .await?;
+    sqlx::query(
+        "insert into team_members (team_id, user_id, role) \
+         select $1, id, case when is_admin then 'admin'::team_role else 'member'::team_role end from users",
+    )
+    .bind(team)
+    .execute(&mut *c)
+    .await?;
+
     // ----- Проекты и колонки -----
     let mut projects: HashMap<&str, Uuid> = HashMap::new();
     let mut columns: HashMap<(&str, &str), Uuid> = HashMap::new();
     for p in PROJECTS {
         let id = sqlx::query_scalar(
-            "insert into projects (key, name, color, last_number) values ($1, $2, $3, $4) returning id",
+            "insert into projects (key, name, color, last_number, team_id) values ($1, $2, $3, $4, $5) returning id",
         )
         .bind(p.key)
         .bind(p.name)
         .bind(p.color)
         .bind(p.last_number)
+        .bind(team)
         .fetch_one(&mut *c)
         .await?;
         projects.insert(p.id, id);
@@ -370,7 +384,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         }
         for (name, size) in t.files {
             sqlx::query(
-                "insert into files (name, size_bytes, kind, storage_key, uploader_id, task_id) values ($1, $2, $3, $4, $5, $6)",
+                "insert into files (name, size_bytes, kind, storage_key, uploader_id, task_id, team_id) \
+                 values ($1, $2, $3, $4, $5, $6, $7)",
             )
             .bind(name)
             .bind(parse_size(size)?)
@@ -378,6 +393,7 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
             .bind(format!("{}{name}", crate::files::SEED_KEY_PREFIX))
             .bind(assignee.unwrap_or(me))
             .bind(task_id)
+            .bind(team)
             .execute(&mut *c)
             .await?;
             r.files += 1;
@@ -387,7 +403,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     // ----- Активность -----
     for (who, target, text, kind, project, when) in ACTIVITY {
         sqlx::query(
-            "insert into activity (actor_id, project_id, kind, target, text, created_at) values ($1, $2, $3::act_kind, $4, $5, $6)",
+            "insert into activity (actor_id, project_id, kind, target, text, created_at, team_id) \
+             values ($1, $2, $3::act_kind, $4, $5, $6, $7)",
         )
         .bind(user(who)?)
         .bind(project.map(|p| pick(&projects, p)).transpose()?)
@@ -395,6 +412,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         .bind(target)
         .bind(text)
         .bind(ctx.when(*when))
+        // события без проекта это вики и файлы библиотеки, они принадлежат команде
+        .bind(project.is_none().then_some(team))
         .execute(&mut *c)
         .await?;
         r.activity += 1;
@@ -433,13 +452,15 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         let position = wiki_position.entry(page.parent).or_insert(0.0);
         *position += 1024.0;
         let id = sqlx::query_scalar(
-            "insert into wiki_pages (parent_id, title, md, position, updated_by) values ($1, $2, $3, $4, $5) returning id",
+            "insert into wiki_pages (parent_id, title, md, position, updated_by, team_id) \
+             values ($1, $2, $3, $4, $5, $6) returning id",
         )
         .bind(page.parent.map(|p| pick(&wiki, p)).transpose()?)
         .bind(page.title)
         .bind(page.md.join("\n"))
         .bind(*position)
         .bind(me)
+        .bind(team)
         .fetch_one(&mut *c)
         .await?;
         wiki.insert(page.id, id);
@@ -508,8 +529,9 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     // ----- Папки и файлы (записи без файлов на диске) -----
     let mut folders: HashMap<&str, Uuid> = HashMap::new();
     for name in FOLDERS {
-        let id = sqlx::query_scalar("insert into folders (name) values ($1) returning id")
+        let id = sqlx::query_scalar("insert into folders (name, team_id) values ($1, $2) returning id")
             .bind(name)
+            .bind(team)
             .fetch_one(&mut *c)
             .await?;
         folders.insert(name, id);
@@ -517,8 +539,8 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
     }
     for f in FILES {
         sqlx::query(
-            "insert into files (name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, created_at) \
-             values ($1, $2, $3, $4, $5, $6, $7, $8)",
+            "insert into files (name, size_bytes, kind, storage_key, uploader_id, folder_id, wiki_page_id, created_at, team_id) \
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .bind(f.name)
         .bind(parse_size(f.size)?)
@@ -528,6 +550,7 @@ async fn fill(c: &mut PgConnection, ctx: &Ctx, hashes: &[String]) -> Result<Seed
         .bind(f.folder.map(|n| pick(&folders, n)).transpose()?)
         .bind(f.page.map(|p| pick(&wiki, p)).transpose()?)
         .bind(ctx.noon(f.date)?)
+        .bind(team)
         .execute(&mut *c)
         .await?;
         r.files += 1;

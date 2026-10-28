@@ -49,9 +49,43 @@ impl Role {
     }
 }
 
+/// Кто видит проект (docs/TEAMS.md, раздел 3.4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Visibility {
+    /// Явные участники и администраторы команды
+    Members,
+    /// Ещё и все члены команды
+    Team,
+}
+
+impl Visibility {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Visibility::Members => "members",
+            Visibility::Team => "team",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Visibility> {
+        match value {
+            "members" => Some(Visibility::Members),
+            "team" => Some(Visibility::Team),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visibility_round_trips() {
+        for v in [Visibility::Members, Visibility::Team] {
+            assert_eq!(Visibility::parse(v.as_str()), Some(v));
+        }
+        assert_eq!(Visibility::parse("everyone"), None);
+    }
 
     #[test]
     fn keys_are_normalized_and_checked() {
