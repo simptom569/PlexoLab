@@ -45,7 +45,8 @@ export function useDesktopNotifications(list: NotificationList | undefined): voi
   useEffect(() => {
     if (!isTauri() || !list) return
     const timer = setTimeout(() => {
-      const toast = planner.current.plan(list, document.hasFocus())
+      // выключатель читаем в момент показа: переключили, пока ждали секунду, значит, действует новое значение
+      const toast = planner.current.plan(list, document.hasFocus(), useUi.getState().toasts)
       if (toast) void (listening.current ?? Promise.resolve()).then(() => showToast(toast))
     }, GROUP_MS)
     return () => clearTimeout(timer)

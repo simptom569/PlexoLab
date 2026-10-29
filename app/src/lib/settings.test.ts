@@ -15,6 +15,7 @@ describe('parseSettings', () => {
       live: true,
       presence: true,
       closeToTray: true,
+      toasts: true,
       page: 'board',
       project: null,
       team: null,
@@ -50,6 +51,12 @@ describe('parseSettings', () => {
     expect(parseSettings({}).closeToTray).toBe(true)
     expect(parseSettings({ closeToTray: false }).closeToTray).toBe(false)
     expect(parseSettings({ closeToTray: 0 }).closeToTray).toBe(true)
+  })
+
+  it('«Уведомления Windows» по умолчанию включены, выключенное хранится, мусор заменяется на «включено»', () => {
+    expect(parseSettings({}).toasts).toBe(true)
+    expect(parseSettings({ toasts: false }).toasts).toBe(false)
+    expect(parseSettings({ toasts: 'нет' }).toasts).toBe(true)
   })
 
   it('вид холста по документам хранится; мусор не ломает остальные записи', () => {

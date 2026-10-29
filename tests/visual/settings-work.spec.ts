@@ -135,10 +135,27 @@ test.describe('приложение (трей и запуск с Windows)', () =
   })
 
   test('сохранённое «выключено» читается при запуске', async ({ page }) => {
-    await openApp(page, { settings: { closeToTray: false } })
+    await openApp(page, { settings: { closeToTray: false, toasts: false } })
     const dialog = await openSettings(page)
     await pickTab(dialog, 'Приложение')
     await expect(dialog.getByRole('switch', { name: 'Сворачивать в трей при закрытии' })).toHaveAttribute('aria-checked', 'false')
+    await expect(dialog.getByRole('switch', { name: 'Уведомления Windows' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  test('«Уведомления Windows»: включено по умолчанию, выключается и запоминается, а сами уведомления в приложении остаются', async ({ page }) => {
+    await openApp(page)
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Приложение')
+    const toasts = dialog.getByRole('switch', { name: 'Уведомления Windows' })
+    await expect(toasts).toHaveAttribute('aria-checked', 'true')
+    await expect(toasts).toBeEnabled()
+    await toasts.click()
+    await expect(toasts).toHaveAttribute('aria-checked', 'false')
+    await expect.poll(async () => (await stored(page)).toasts).toBe(false)
+    // пункт «Уведомления» в меню пользователя никуда не делся
+    await dialog.getByRole('button', { name: 'Закрыть настройки' }).click()
+    await page.getByRole('button', { name: USER_BUTTON }).click()
+    await expect(page.getByRole('menuitem', { name: /^Уведомления/ })).toBeVisible()
   })
 
   test('вне приложения запуск вместе с Windows недоступен и сказано почему', async ({ page }) => {

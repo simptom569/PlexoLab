@@ -79,6 +79,14 @@ describe('ToastPlanner', () => {
     expect(planner.plan(list(n('a')), false)).toBeNull()
   })
 
+  it('выключатель «Уведомления Windows» выключен: окошка нет, а после включения старое не приходит', () => {
+    const planner = new ToastPlanner()
+    expect(planner.plan(list(n('a'), n('b')), false, false)).toBeNull()
+    expect(planner.plan(list(n('a'), n('b')), false, true)).toBeNull()
+    // новое после включения показывается как обычно
+    expect(planner.plan(list(n('c'), n('a'), n('b')), false, true)?.extra).toMatchObject({ notificationId: 'c' })
+  })
+
   it('прочитал в другом окне: ничего не показывается', () => {
     const planner = new ToastPlanner()
     planner.plan(list(n('a')), false)

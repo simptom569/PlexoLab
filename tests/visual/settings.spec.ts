@@ -94,10 +94,11 @@ test.describe('меню пользователя', () => {
     await expect(scrollbars.getByRole('button', { name: 'Видимые' })).toHaveAttribute('aria-pressed', 'false')
 
     await dialog.getByRole('tab', { name: 'Приложение' }).click()
-    await expect(dialog.getByRole('switch')).toHaveCount(2)
-    // запуск вместе с Windows есть только в приложении; «Сворачивать в трей» включено по умолчанию
+    await expect(dialog.getByRole('switch')).toHaveCount(3)
+    // запуск вместе с Windows есть только в приложении; «Сворачивать в трей» и «Уведомления Windows» включены по умолчанию
     await expect(dialog.getByRole('switch', { name: 'Запускать вместе с Windows' })).toBeDisabled()
     await expect(dialog.getByRole('switch', { name: 'Сворачивать в трей при закрытии' })).toHaveAttribute('aria-checked', 'true')
+    await expect(dialog.getByRole('switch', { name: 'Уведомления Windows' })).toHaveAttribute('aria-checked', 'true')
     await expect(dialog.getByText('Скоро')).toHaveCount(0)
   })
 

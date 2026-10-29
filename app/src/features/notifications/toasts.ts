@@ -43,14 +43,18 @@ export function toastFor(fresh: Notification[]): Toast | null {
 export class ToastPlanner {
   private announced = new Set<string>()
 
-  /** `focused`: приложение перед глазами. Тогда непрочитанное видно и так (точка в боковом меню), окошко не нужно. */
-  plan(list: NotificationList, focused: boolean): Toast | null {
+  /**
+   * `focused`: приложение перед глазами. Тогда непрочитанное видно и так (точка в боковом меню), окошко не нужно.
+   * `enabled`: выключатель «Уведомления Windows» в настройках. Выключен: окошка нет, но новое всё равно считается
+   * «сказанным», чтобы после включения не пришло разом всё накопившееся.
+   */
+  plan(list: NotificationList, focused: boolean, enabled = true): Toast | null {
     const fresh = list.items.filter((n) => !n.read && !this.announced.has(n.id))
     // помним только то, что ещё в списке: старое выпадает вместе с ним
     const inList = new Set(list.items.map((n) => n.id))
     this.announced = new Set([...this.announced].filter((id) => inList.has(id)))
     for (const n of fresh) this.announced.add(n.id)
-    return focused ? null : toastFor(fresh)
+    return focused || !enabled ? null : toastFor(fresh)
   }
 }
 

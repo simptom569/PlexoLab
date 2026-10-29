@@ -13,6 +13,8 @@ import { SettingGroup, SettingRow } from '../SettingRow'
 export function AppSection() {
   const closeToTray = useUi((s) => s.closeToTray)
   const setCloseToTray = useUi((s) => s.setCloseToTray)
+  const toasts = useUi((s) => s.toasts)
+  const setToasts = useUi((s) => s.setToasts)
   const desktop = isTauri()
   // null — ещё спрашиваем систему
   const [autostart, setAuto] = useState<boolean | null>(null)
@@ -56,9 +58,15 @@ export function AppSection() {
       </SettingRow>
       <SettingRow
         label="Сворачивать в трей при закрытии"
-        description="Крестик на окне прячет приложение в область уведомлений, и оно продолжает работать: окошки о новых уведомлениях приходят, пока окно закрыто. Выйти совсем можно из меню значка в трее."
+        description="Крестик на окне прячет приложение в область уведомлений, и оно продолжает работать: новые уведомления приходят, пока окно закрыто. Выйти совсем можно из меню значка в трее."
       >
         <Switch label="Сворачивать в трей при закрытии" checked={closeToTray} onChange={setCloseToTray} />
+      </SettingRow>
+      <SettingRow
+        label="Уведомления Windows"
+        description="Окошко в углу экрана, когда вас назначили в задаче или упомянули в комментарии, а приложение не перед глазами. Выключено: уведомления остаются в приложении (пункт «Уведомления» в меню пользователя), а Windows вас не отвлекает."
+      >
+        <Switch label="Уведомления Windows" checked={toasts} onChange={setToasts} />
       </SettingRow>
     </SettingGroup>
   )

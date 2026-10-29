@@ -67,6 +67,8 @@ export const settingsSchema = z.object({
   presence: z.boolean().catch(true),
   /** Крестик на окне прячет приложение в трей, а не закрывает его (только в окне Tauri) */
   closeToTray: z.boolean().catch(true),
+  /** Окошки Windows о новых уведомлениях (только в окне Tauri); выключено — уведомления остаются только в приложении */
+  toasts: z.boolean().catch(true),
   page: z.enum(PAGE_IDS).catch('board'),
   project: z.string().nullable().catch(null),
   /** Выбранная команда (переключатель в боковом меню); null — ещё не выбирали, тогда «Личное» */
