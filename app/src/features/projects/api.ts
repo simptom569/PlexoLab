@@ -1,5 +1,5 @@
 // Действия с проектами, участниками, приглашениями и метками. Это обычные запросы, а не useMutation: окнам нужен текст
-// ошибки сервера на месте («Аккаунта с таким адресом нет»), а не общая плашка «Не удалось сохранить». Свои события сервер
+// ошибки сервера на месте («Уже в проекте»), а не общая плашка «Не удалось сохранить». Свои события сервер
 // нашему окну не присылает (метка клиента), поэтому данные перечитываем здесь сами.
 
 import { api } from '../../lib/api/client'
@@ -40,7 +40,7 @@ export function projectVisibilityImpact(id: string, to: Visibility): Promise<Vis
 
 export async function setArchived(id: string, archived: boolean): Promise<void> {
   await api.post(`/projects/${id}/${archived ? 'archive' : 'unarchive'}`, {})
-  await refresh(keys.projects)
+  await refresh(keys.projects, keys.teams)
 }
 
 export async function inviteMember(projectId: string, email: string, role: ProjectRole): Promise<void> {
@@ -61,12 +61,13 @@ export async function setMemberRole(projectId: string, userId: string, role: Pro
 /** Убрать участника или выйти самому: для сервера это одно и то же */
 export async function removeMember(projectId: string, userId: string): Promise<void> {
   await api.delete(`/projects/${projectId}/members/${userId}`)
-  await refresh(keys.members(projectId), keys.projects)
+  await refresh(keys.members(projectId), keys.projects, keys.teams)
 }
 
 export async function answerInvite(inviteId: string, accept: boolean): Promise<void> {
   await api.post(`/invites/${inviteId}/${accept ? 'accept' : 'decline'}`, {})
-  await refresh(keys.invites, keys.projects)
+  // гость принял приглашение: в переключателе появляется команда проекта
+  await refresh(keys.invites, keys.projects, keys.teams)
 }
 
 /** Ключ задач модуля (`null` убирает). Сервер переносит задачи между рядами, поэтому перечитываются доска и открытые задачи. */
