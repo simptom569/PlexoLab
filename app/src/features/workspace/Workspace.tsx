@@ -17,6 +17,7 @@ import { useDark } from '../../lib/useDark'
 import { useSearchShortcut } from '../../lib/useSearchShortcut'
 import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
+import { useDesktopNotifications } from '../notifications/useDesktopNotifications'
 import { CloseAskDialog } from './CloseAskDialog'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
@@ -71,6 +72,8 @@ export function Workspace() {
   const invites = useMyInvites()
   const teamInvites = useMyTeamInvites()
   const notifications = useNotifications()
+  // новое уведомление, пока окно не перед глазами: окошко Windows (только в приложении)
+  useDesktopNotifications(notifications.data)
   // пока человек в приложении, держим связь с сервером: чужие изменения приходят сразу, а не при следующем открытии экрана
   const connection = useRealtime(queryClient, live)
   // сеть пропала или вернулась: узнаём сразу, а не по неудачному запросу

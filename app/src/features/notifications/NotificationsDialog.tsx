@@ -3,11 +3,11 @@ import { useNotifications, useProjects, useUsers } from '../../lib/api/queries'
 import type { Notification } from '../../lib/api/types'
 import { whenText } from '../../lib/date'
 import { failed } from '../../lib/query'
-import { useTeamStore } from '../../lib/team'
 import { useUi } from '../../lib/ui-store'
 import { DialogFrame, Problem } from '../projects/parts'
 import { kindText, unreadText } from './logic'
 import { useReadAllNotifications, useReadNotification } from './mutations'
+import { openNotificationTask } from './open'
 
 /**
  * «Уведомления»: меня назначили исполнителем или упомянули в комментарии. Нажатие на строку открывает задачу в её
@@ -26,15 +26,7 @@ export function NotificationsDialog() {
 
   const open = (n: Notification) => {
     if (!n.read) read.mutate({ id: n.id })
-    // сначала проект и экран (они сбрасывают открытую задачу), потом сама задача
-    const ui = useUi.getState()
-    // уведомление из другой команды: сначала переходим в неё (docs/TEAMS.md, 7)
-    const team = projects?.find((p) => p.id === n.project_id)?.team_id
-    if (team && team !== useTeamStore.getState().team?.id) ui.setTeam(team)
-    ui.setProject(n.project_id)
-    ui.setPage('board')
-    ui.openTask(n.task_id)
-    ui.closeProjectDialog()
+    openNotificationTask(n, projects)
   }
 
   const items = list.data?.items ?? []
