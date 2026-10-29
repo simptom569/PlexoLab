@@ -14,6 +14,7 @@ describe('parseSettings', () => {
       weekStart: 'mon',
       live: true,
       presence: true,
+      closeToTray: true,
       page: 'board',
       project: null,
       team: null,
@@ -43,6 +44,12 @@ describe('parseSettings', () => {
     expect(parseSettings({}).presence).toBe(true)
     expect(parseSettings({ presence: false }).presence).toBe(false)
     expect(parseSettings({ presence: 'нет' }).presence).toBe(true)
+  })
+
+  it('«Сворачивать в трей» по умолчанию включено, выключенное хранится, мусор заменяется на «включено»', () => {
+    expect(parseSettings({}).closeToTray).toBe(true)
+    expect(parseSettings({ closeToTray: false }).closeToTray).toBe(false)
+    expect(parseSettings({ closeToTray: 0 }).closeToTray).toBe(true)
   })
 
   it('вид холста по документам хранится; мусор не ломает остальные записи', () => {

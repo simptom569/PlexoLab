@@ -1,11 +1,14 @@
 import { useEffect } from 'react'
-import { guardUnload, handleCloseRequest } from './closeGuard'
+import { guardUnload, handleTrayQuit, handleWindowClose } from './closeGuard'
+import { hideWindow, onTrayQuit, quitApp, showWindow } from './platform/desktop'
 import { isTauri } from './platform/runtime'
-import { unsentCount } from './unsent'
+import { useUi } from './ui-store'
 
 /**
- * Пока открыто рабочее пространство, закрыть окно с неотправленным текстом нельзя молча (lib/closeGuard.ts).
- * В окне Tauri это просьба закрыть окно (`onCloseRequested`), в браузере `beforeunload`.
+ * Что делает приложение, когда его просят закрыть (lib/closeGuard.ts).
+ * В окне Tauri крестик прячет окно в трей (если включено «Сворачивать в трей при закрытии») или закрывает с проверкой
+ * неотправленного текста; «Выйти» в меню трея проверяет текст так же. В браузере `beforeunload` не даёт закрыть
+ * вкладку с неотправленным текстом.
  */
 export function useCloseGuard(): void {
   useEffect(() => {
@@ -16,22 +19,29 @@ export function useCloseGuard(): void {
     }
 
     let cancelled = false
-    let stop: (() => void) | undefined
+    const stops: Array<() => void> = []
+    const keep = (stop: () => void) => (cancelled ? stop() : stops.push(stop))
     void (async () => {
       const { getCurrentWindow } = await import('@tauri-apps/api/window')
       const win = getCurrentWindow()
-      const unlisten = await win.onCloseRequested(async (event) => {
-        // нечего терять: окно закрывается само, как без защиты
-        if (unsentCount() === 0) return
-        event.preventDefault()
-        if ((await handleCloseRequest()) === 'close') await win.destroy()
-      })
-      if (cancelled) unlisten()
-      else stop = unlisten
+      keep(
+        await win.onCloseRequested(async (event) => {
+          // решаем сами: закрывать, прятать или остаться
+          event.preventDefault()
+          const action = await handleWindowClose(useUi.getState().closeToTray)
+          if (action === 'hide') await hideWindow()
+          else if (action === 'close') await win.destroy()
+        }),
+      )
+      keep(
+        await onTrayQuit(() => {
+          void handleTrayQuit(showWindow).then((action) => (action === 'close' ? quitApp() : undefined))
+        }),
+      )
     })()
     return () => {
       cancelled = true
-      stop?.()
+      stops.forEach((stop) => stop())
     }
   }, [])
 }

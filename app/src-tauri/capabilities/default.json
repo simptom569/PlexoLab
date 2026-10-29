@@ -10,6 +10,10 @@
     "core:window:allow-destroy",
     "store:default",
     "opener:default",
+    "notification:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     {
       "identifier": "http:default",
       "allow": [

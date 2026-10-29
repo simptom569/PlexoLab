@@ -21,12 +21,32 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * Окно просят закрыть. `close` — закрывать, `stay` — остаться. Нет несохранённого: закрываем без вопросов. Есть:
  * отправляем, и если за `CLOSE_WAIT_MS` всё ушло, закрываем, а если нет, решает человек.
  */
-export async function handleCloseRequest(deps: CloseDeps = { unsentCount, flushUnsent, ask: askPerson }): Promise<'close' | 'stay'> {
+export async function handleCloseRequest(deps: CloseDeps = realDeps()): Promise<'close' | 'stay'> {
   if (deps.unsentCount() === 0) return 'close'
   await Promise.race([deps.flushUnsent().catch(() => undefined), (deps.wait ?? sleep)(CLOSE_WAIT_MS)])
   if (deps.unsentCount() === 0) return 'close'
   return (await deps.ask()) ? 'close' : 'stay'
 }
+
+/**
+ * Нажали крестик на окне. `hide` — спрятать в трей: настройка «Сворачивать в трей при закрытии» включена, приложение
+ * живёт дальше, и неотправленный текст уйдёт сам (спрашивать нечего). Выключена: как `handleCloseRequest`.
+ */
+export async function handleWindowClose(closeToTray: boolean, deps?: CloseDeps): Promise<'hide' | 'close' | 'stay'> {
+  if (closeToTray) return 'hide'
+  return handleCloseRequest(deps)
+}
+
+/**
+ * Выбрали «Выйти» в меню трея. Окно может быть спрятано, а вопрос про неотправленный текст задаётся в окне:
+ * если текст есть, сначала показываем окно (`reveal`).
+ */
+export async function handleTrayQuit(reveal: () => Promise<void>, deps: CloseDeps = realDeps()): Promise<'close' | 'stay'> {
+  if (deps.unsentCount() > 0) await reveal()
+  return handleCloseRequest(deps)
+}
+
+const realDeps = (): CloseDeps => ({ unsentCount, flushUnsent, ask: askPerson })
 
 async function askPerson(): Promise<boolean> {
   const { useCloseAsk } = await import('./closeAsk')

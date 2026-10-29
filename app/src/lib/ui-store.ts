@@ -22,8 +22,8 @@ import { resolveDark } from './theme'
 
 export type { Theme }
 
-type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'presence' | 'page' | 'project' | 'team' | 'view' | 'filters' | 'display'>
-const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'presence', 'page', 'project', 'team', 'view', 'filters', 'display']
+type Persisted = Pick<Settings, 'theme' | 'scrollbars' | 'weekStart' | 'live' | 'presence' | 'closeToTray' | 'page' | 'project' | 'team' | 'view' | 'filters' | 'display'>
+const PERSISTED_KEYS: Array<keyof Persisted> = ['theme', 'scrollbars', 'weekStart', 'live', 'presence', 'closeToTray', 'page', 'project', 'team', 'view', 'filters', 'display']
 
 // Локальное состояние интерфейса. Часть сохраняется на диск (см. PERSISTED_KEYS), остальное живёт, пока открыто окно.
 type UiState = Persisted & {
@@ -59,6 +59,7 @@ type UiState = Persisted & {
   setWeekStart: (start: WeekStart) => void
   setLive: (live: boolean) => void
   setPresence: (presence: boolean) => void
+  setCloseToTray: (closeToTray: boolean) => void
   toggleMenu: (menu: string) => void
   closeMenus: () => void
   openSettings: (tab?: SettingsTab) => void
@@ -95,6 +96,7 @@ export const useUi = create<UiState>()((set) => ({
   weekStart: DEFAULT_SETTINGS.weekStart,
   live: DEFAULT_SETTINGS.live,
   presence: DEFAULT_SETTINGS.presence,
+  closeToTray: DEFAULT_SETTINGS.closeToTray,
   page: DEFAULT_SETTINGS.page,
   project: DEFAULT_SETTINGS.project,
   team: DEFAULT_SETTINGS.team,
@@ -123,6 +125,7 @@ export const useUi = create<UiState>()((set) => ({
   setWeekStart: (weekStart) => set({ weekStart }),
   setLive: (live) => set({ live }),
   setPresence: (presence) => set({ presence }),
+  setCloseToTray: (closeToTray) => set({ closeToTray }),
   toggleMenu: (menu) => set((s) => ({ menu: s.menu === menu ? null : menu })),
   closeMenus: () => set({ menu: null }),
   openSettings: (tab = 'account') => set({ settingsTab: tab, projectDialog: null, menu: null }),
@@ -167,6 +170,7 @@ export function hydrateUi(settings: Settings): void {
     weekStart: settings.weekStart,
     live: settings.live,
     presence: settings.presence,
+    closeToTray: settings.closeToTray,
     page: settings.page,
     project: settings.project,
     team: settings.team,

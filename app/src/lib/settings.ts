@@ -65,6 +65,8 @@ export const settingsSchema = z.object({
   live: z.boolean().catch(true),
   /** Показывать, в каком блоке сейчас другие люди, и сообщать о своём (только при включённых живых обновлениях) */
   presence: z.boolean().catch(true),
+  /** Крестик на окне прячет приложение в трей, а не закрывает его (только в окне Tauri) */
+  closeToTray: z.boolean().catch(true),
   page: z.enum(PAGE_IDS).catch('board'),
   project: z.string().nullable().catch(null),
   /** Выбранная команда (переключатель в боковом меню); null — ещё не выбирали, тогда «Личное» */

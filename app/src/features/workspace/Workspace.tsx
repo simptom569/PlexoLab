@@ -14,7 +14,6 @@ import type { PageId } from '../../lib/pages'
 import { useSession } from '../../lib/session'
 import { useUi } from '../../lib/ui-store'
 import { useDark } from '../../lib/useDark'
-import { useCloseGuard } from '../../lib/useCloseGuard'
 import { useSearchShortcut } from '../../lib/useSearchShortcut'
 import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
@@ -76,8 +75,6 @@ export function Workspace() {
   const connection = useRealtime(queryClient, live)
   // сеть пропала или вернулась: узнаём сразу, а не по неудачному запросу
   useLinkWatch()
-  // окно с неотправленным текстом молча не закрывается (lib/closeGuard.ts)
-  useCloseGuard()
   // Ctrl+K: поиск по названиям
   useSearchShortcut()
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус

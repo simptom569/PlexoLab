@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCloseAsk } from './closeAsk'
-import { CLOSE_WAIT_MS, guardUnload, handleCloseRequest, type CloseDeps } from './closeGuard'
+import { CLOSE_WAIT_MS, guardUnload, handleCloseRequest, handleTrayQuit, handleWindowClose, type CloseDeps } from './closeGuard'
 import { trackUnsent, untrackUnsent, type Unsent } from './unsent'
 
 /** Окружение закрытия на минималках: сколько черновиков не сохранено, что будет после отправки, что ответит человек */
@@ -19,6 +19,54 @@ function setup({ unsent = 1, flushed = true, answer = true }: { unsent?: number;
 
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
+
+describe('handleWindowClose (крестик на окне)', () => {
+  it('«Сворачивать в трей» включено: прячет в трей, не отправляя и не спрашивая', async () => {
+    const { deps } = setup({ unsent: 3, flushed: false })
+    expect(await handleWindowClose(true, deps)).toBe('hide')
+    expect(deps.flushUnsent).not.toHaveBeenCalled()
+    expect(deps.ask).not.toHaveBeenCalled()
+  })
+
+  it('выключено, нечего терять: закрывается', async () => {
+    const { deps } = setup({ unsent: 0 })
+    expect(await handleWindowClose(false, deps)).toBe('close')
+  })
+
+  it('выключено, есть неотправленное и связи нет: спрашивает', async () => {
+    const { deps } = setup({ flushed: false, answer: false })
+    const result = handleWindowClose(false, deps)
+    await vi.advanceTimersByTimeAsync(CLOSE_WAIT_MS)
+    expect(await result).toBe('stay')
+    expect(deps.ask).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('handleTrayQuit («Выйти» в меню трея)', () => {
+  it('нечего терять: выходит, окно не показывает', async () => {
+    const { deps } = setup({ unsent: 0 })
+    const reveal = vi.fn(async () => undefined)
+    expect(await handleTrayQuit(reveal, deps)).toBe('close')
+    expect(reveal).not.toHaveBeenCalled()
+  })
+
+  it('есть неотправленное: сначала показывает окно (вопрос задаётся в нём), потом отправляет', async () => {
+    const { deps } = setup({ flushed: true })
+    const order: string[] = []
+    const reveal = vi.fn(async () => void order.push('окно'))
+    deps.flushUnsent = vi.fn(async () => void order.push('отправка'))
+    deps.unsentCount = vi.fn(() => (order.includes('отправка') ? 0 : 1))
+    expect(await handleTrayQuit(reveal, deps)).toBe('close')
+    expect(order).toEqual(['окно', 'отправка'])
+  })
+
+  it('не ушло и человек ответил «остаться»: приложение работает дальше', async () => {
+    const { deps } = setup({ flushed: false, answer: false })
+    const result = handleTrayQuit(async () => undefined, deps)
+    await vi.advanceTimersByTimeAsync(CLOSE_WAIT_MS)
+    expect(await result).toBe('stay')
+  })
+})
 
 describe('handleCloseRequest', () => {
   it('нечего терять: закрывается сразу, без отправки и без вопроса', async () => {
