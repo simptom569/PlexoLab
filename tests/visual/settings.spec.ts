@@ -95,8 +95,10 @@ test.describe('меню пользователя', () => {
 
     await dialog.getByRole('tab', { name: 'Приложение' }).click()
     await expect(dialog.getByRole('switch')).toHaveCount(2)
-    for (const sw of await dialog.getByRole('switch').all()) await expect(sw).toBeDisabled()
-    await expect(dialog.getByText('Скоро')).toHaveCount(2)
+    // запуск вместе с Windows есть только в приложении; «Сворачивать в трей» включено по умолчанию
+    await expect(dialog.getByRole('switch', { name: 'Запускать вместе с Windows' })).toBeDisabled()
+    await expect(dialog.getByRole('switch', { name: 'Сворачивать в трей при закрытии' })).toHaveAttribute('aria-checked', 'true')
+    await expect(dialog.getByText('Скоро')).toHaveCount(0)
   })
 
   test('тема в окне переключает тему приложения', async ({ page }) => {

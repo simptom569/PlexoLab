@@ -120,6 +120,48 @@ test.describe('сбросы', () => {
   })
 })
 
+test.describe('приложение (трей и запуск с Windows)', () => {
+  test('«Сворачивать в трей при закрытии»: включено по умолчанию, выключается и запоминается', async ({ page }) => {
+    await openApp(page)
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Приложение')
+    const tray = dialog.getByRole('switch', { name: 'Сворачивать в трей при закрытии' })
+    await expect(tray).toHaveAttribute('aria-checked', 'true')
+    await tray.click()
+    await expect(tray).toHaveAttribute('aria-checked', 'false')
+    await expect.poll(async () => (await stored(page)).closeToTray).toBe(false)
+    await tray.click()
+    await expect.poll(async () => (await stored(page)).closeToTray).toBe(true)
+  })
+
+  test('сохранённое «выключено» читается при запуске', async ({ page }) => {
+    await openApp(page, { settings: { closeToTray: false } })
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Приложение')
+    await expect(dialog.getByRole('switch', { name: 'Сворачивать в трей при закрытии' })).toHaveAttribute('aria-checked', 'false')
+  })
+
+  test('вне приложения запуск вместе с Windows недоступен и сказано почему', async ({ page }) => {
+    await openApp(page)
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Приложение')
+    const autostart = dialog.getByRole('switch', { name: 'Запускать вместе с Windows' })
+    await expect(autostart).toBeDisabled()
+    await expect(autostart).toHaveAttribute('aria-checked', 'false')
+    await expect(dialog.getByText('Работает только в приложении для Windows.')).toBeVisible()
+  })
+
+  test('«Сбросить всё» возвращает «Сворачивать в трей» в положение по умолчанию', async ({ page }) => {
+    await openApp(page, { settings: { closeToTray: false } })
+    const dialog = await openSettings(page)
+    await pickTab(dialog, 'Данные')
+    await dialog.getByRole('button', { name: 'Сбросить всё' }).click()
+    await dialog.getByRole('button', { name: 'Точно сбросить?' }).click()
+    await expect(dialog.getByRole('status')).toHaveText('Готово')
+    await expect.poll(async () => (await stored(page)).closeToTray).toBe(true)
+  })
+})
+
 test.describe('связь с сервером', () => {
   test('«Проверить связь» показывает, за сколько ответил сервер', async ({ page }) => {
     await openApp(page)
