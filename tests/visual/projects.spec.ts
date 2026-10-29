@@ -392,16 +392,16 @@ test.describe('участники и приглашения', () => {
     }
   })
 
-  test('ошибки приглашения написаны по-русски: нет аккаунта, уже в проекте, уже приглашён', async ({ page }) => {
+  test('ошибки приглашения написаны по-русски: неверный адрес, уже в проекте, уже приглашён', async ({ page }) => {
     await openApp(page)
     const dialog = await settingsOf(page, 'Web-приложение')
     await dialog.getByRole('tab', { name: 'Участники' }).click()
     const email = dialog.getByLabel('E-mail')
     const invite = dialog.getByRole('button', { name: 'Пригласить' })
 
-    await email.fill('nobody@example.com')
+    await email.fill('nobody@localhost')
     await invite.click()
-    await expect(dialog.getByRole('alert')).toHaveText('Аккаунта с таким адресом нет')
+    await expect(dialog.getByRole('alert')).toHaveText('Некорректный e-mail')
     await email.fill('artem@example.com')
     await invite.click()
     await expect(dialog.getByRole('alert')).toHaveText('Уже в проекте')
@@ -424,12 +424,12 @@ test.describe('участники и приглашения', () => {
     const dialog = await settingsOf(page, 'Web-приложение')
     await dialog.getByRole('tab', { name: 'Участники' }).click()
     const invite = dialog.getByRole('button', { name: 'Пригласить' })
-    await dialog.getByLabel('E-mail').fill('nobody@example.com')
+    await dialog.getByLabel('E-mail').fill('nobody@localhost')
     // кнопка у нижнего края окна: всё, что ниже неё, пришлось бы прокручивать
     await invite.evaluate((el) => el.scrollIntoView({ block: 'end' }))
     await invite.click()
     const alert = dialog.getByRole('alert')
-    await expect(alert).toHaveText('Аккаунта с таким адресом нет')
+    await expect(alert).toHaveText('Некорректный e-mail')
     await expect(alert).toBeInViewport({ ratio: 1 })
   })
 

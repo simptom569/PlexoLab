@@ -223,9 +223,19 @@ test.describe('приглашения в команду', () => {
       await openTeamContext(page, 'Настройки команды')
       const dialog = page.getByRole('dialog', { name: /^Настройки команды «/ })
       await dialog.getByRole('tab', { name: 'Участники' }).click()
-      await dialog.getByLabel('E-mail').fill('nobody@example.com')
+      await dialog.getByLabel('E-mail').fill('nobody@localhost')
       await dialog.getByRole('button', { name: 'Пригласить', exact: true }).click()
-      await expect(dialog.getByRole('alert')).toHaveText('Аккаунта с таким адресом нет')
+      await expect(dialog.getByRole('alert')).toHaveText('Некорректный e-mail')
+
+      // адрес без аккаунта не ошибка: приглашение ждёт регистрации, строка так и подписана
+      await dialog.getByLabel('E-mail').fill('newbie@example.com')
+      await dialog.getByRole('button', { name: 'Пригласить', exact: true }).click()
+      await expect(dialog.getByRole('status')).toContainText('Приглашение отправлено: newbie@example.com')
+      const waiting = dialog.locator('.proj-rows[aria-label^="Приглашения в команду"] .proj-row', { hasText: 'newbie@example.com' })
+      await expect(waiting).toContainText('ждёт регистрации')
+      await expect(waiting).not.toContainText('ожидает ответа')
+      await waiting.getByRole('button', { name: 'Отозвать' }).click()
+      await expect(waiting).toHaveCount(0)
       await dialog.getByLabel('E-mail').fill(ARTEM)
       await dialog.getByRole('button', { name: 'Пригласить', exact: true }).click()
       await expect(dialog.getByRole('status')).toContainText(`Приглашение отправлено: ${ARTEM}`)
@@ -370,6 +380,34 @@ test.describe('гостевая команда', () => {
       await expect(brand(g)).toHaveScreenshot('guest-brand-light.png')
     } finally {
       await igor.close()
+    }
+  })
+
+  test('гость принимает приглашение в окне: команда появляется в переключателе без перезагрузки', async ({ page, browser }) => {
+    await openApp(page)
+    const lena = (await teamsOf(page, LENA)).find((t) => t.personal)!
+    const guest = await secondClient(browser, IGOR, 'light', { team: null })
+    const g = guest.page
+    try {
+      await openTeamMenu(g)
+      const items = teamMenu(g).getByRole('menuitemradio')
+      const before = await items.count()
+      await g.keyboard.press('Escape')
+
+      const project = await apiAs<{ id: string }>(page, LENA, '/projects', { method: 'POST', data: { team_id: lena.id, name: 'Проект гостя' } })
+      await apiAs(page, LENA, `/projects/${project.id}/invites`, { method: 'POST', data: { email: IGOR } })
+      await expect(g.locator('.invite-dot')).toBeVisible()
+      await userButton(g).click()
+      await g.getByRole('menuitem', { name: /^Приглашения/ }).click()
+      const invites = g.getByRole('dialog', { name: 'Приглашения' })
+      await invites.locator('.proj-row', { hasText: 'Проект гостя' }).getByRole('button', { name: 'Принять' }).click()
+      await expect(invites.getByText('Приглашений нет')).toBeVisible()
+      await g.keyboard.press('Escape')
+
+      await openTeamMenu(g)
+      await expect(items).toHaveCount(before + 1)
+    } finally {
+      await guest.close()
     }
   })
 

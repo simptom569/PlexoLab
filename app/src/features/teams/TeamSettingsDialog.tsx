@@ -292,7 +292,13 @@ function MemberRow({ member, itsMe, teamId }: { member: TeamMember; itsMe: boole
   )
 }
 
-function InviteRow({ invite, teamId }: { invite: { id: string; name: string; tone: number; email: string; role: string }; teamId: string }) {
+function InviteRow({
+  invite,
+  teamId,
+}: {
+  invite: { id: string; name: string; tone: number; email: string; role: string; registered: boolean }
+  teamId: string
+}) {
   const { problem, run } = useAttempt()
   return (
     <>
@@ -302,7 +308,7 @@ function InviteRow({ invite, teamId }: { invite: { id: string; name: string; ton
           <span>
             <strong>{invite.name}</strong>
             <small>
-              {invite.email} · {ROLE_LABELS[roleOf(invite.role)]} · ожидает ответа
+              {invite.registered ? `${invite.email} · ${ROLE_LABELS[roleOf(invite.role)]} · ожидает ответа` : `${ROLE_LABELS[roleOf(invite.role)]} · ждёт регистрации`}
             </small>
           </span>
         </div>

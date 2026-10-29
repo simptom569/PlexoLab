@@ -634,7 +634,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Пригласить человека по e-mail (администратор). Аккаунт должен уже существовать. */
+        /** Пригласить человека по e-mail (администратор). Если аккаунта с таким адресом ещё нет, приглашение ждёт регистрации. */
         post: operations["create_invite"];
         delete?: never;
         options?: never;
@@ -1189,7 +1189,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Пригласить человека в команду по e-mail (администратор команды). Аккаунт должен уже существовать. */
+        /**
+         * Пригласить человека в команду по e-mail (администратор команды). Если аккаунта с таким адресом ещё нет, приглашение
+         *     ждёт регистрации.
+         */
         post: operations["create_invite"];
         delete?: never;
         options?: never;
@@ -1493,7 +1496,7 @@ export interface components {
         };
         CreateInvite: {
             /**
-             * @description E-mail существующего аккаунта, регистр не важен
+             * @description E-mail, регистр не важен. Если аккаунта с таким адресом ещё нет, приглашение ждёт регистрации
              * @example artem@example.com
              */
             email: string;
@@ -1585,7 +1588,7 @@ export interface components {
         };
         CreateTeamInvite: {
             /**
-             * @description E-mail существующего аккаунта, регистр не важен
+             * @description E-mail, регистр не важен. Если аккаунта с таким адресом ещё нет, приглашение ждёт регистрации
              * @example artem@example.com
              */
             email: string;
@@ -1611,8 +1614,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             role: string;
-            /** Format: uuid */
-            user_id: string;
+            /**
+             * Format: uuid
+             * @description Пусто, если аккаунта с этим адресом ещё нет и приглашение ждёт регистрации
+             */
+            user_id?: string | null;
         };
         /** @description Приглашение, только что созданное администратором */
         CreatedTeamInviteDto: {
@@ -1621,8 +1627,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             role: string;
-            /** Format: uuid */
-            user_id: string;
+            /**
+             * Format: uuid
+             * @description Пусто, если аккаунта с этим адресом ещё нет и приглашение ждёт регистрации
+             */
+            user_id?: string | null;
         };
         /** @description Ответ 409: название или текст документа уже изменили. В `current` лежит актуальная версия. */
         DocConflictDto: {
@@ -1977,13 +1986,19 @@ export interface components {
             /** Format: uuid */
             id: string;
             job: string;
+            /** @description Имя; пока аккаунта нет, вместо него адрес */
             name: string;
+            /** @description Есть ли уже аккаунт: если нет, приглашение ждёт регистрации */
+            registered: boolean;
             /** @description Роль, с которой человек войдёт: admin | member */
             role: string;
             /** Format: int32 */
             tone: number;
-            /** Format: uuid */
-            user_id: string;
+            /**
+             * Format: uuid
+             * @description Пусто, пока аккаунта с этим адресом нет
+             */
+            user_id?: string | null;
         };
         /** @description Приглашение в команду, ожидающее ответа, глазами администратора команды */
         PendingTeamInviteDto: {
@@ -1993,13 +2008,19 @@ export interface components {
             /** Format: uuid */
             id: string;
             job: string;
+            /** @description Имя; пока аккаунта нет, вместо него адрес */
             name: string;
+            /** @description Есть ли уже аккаунт: если нет, приглашение ждёт регистрации */
+            registered: boolean;
             /** @description Роль, с которой человек войдёт: admin | member */
             role: string;
             /** Format: int32 */
             tone: number;
-            /** Format: uuid */
-            user_id: string;
+            /**
+             * Format: uuid
+             * @description Пусто, пока аккаунта с этим адресом нет
+             */
+            user_id?: string | null;
         };
         ProjectDto: {
             /** @description Проект в архиве */
@@ -4578,7 +4599,7 @@ export interface operations {
                     "application/json": components["schemas"]["CreatedInviteDto"];
                 };
             };
-            /** @description Аккаунта с таким адресом нет или некорректная роль */
+            /** @description Некорректный e-mail или роль */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6870,7 +6891,7 @@ export interface operations {
                     "application/json": components["schemas"]["CreatedTeamInviteDto"];
                 };
             };
-            /** @description Аккаунта с таким адресом нет или некорректная роль */
+            /** @description Некорректный e-mail или роль */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -52,10 +52,11 @@ create table project_members (       -- участники проекта и и�
   created_at timestamptz not null default now(),
   primary key (project_id, user_id)
 );
-create table project_invites (       -- приглашение существующему аккаунту; решает приглашённый, закрытое остаётся историей
+create table project_invites (       -- решает приглашённый, закрытое остаётся историей; у адреса без аккаунта вместо user_id email (0019)
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects on delete cascade,
-  user_id uuid not null references users on delete cascade,        -- кого пригласили
+  user_id uuid references users on delete cascade,                 -- кого пригласили; пусто, пока аккаунта нет
+  email text check (email = lower(email)),                         -- ровно одно из user_id и email; триггер users_claim_invites переносит email в user_id
   invited_by uuid references users on delete set null,
   role project_role not null default 'member',
   status invite_status not null default 'pending',
@@ -273,10 +274,11 @@ create table team_members (
   created_at timestamptz not null default now(),
   primary key (team_id, user_id)
 );
-create table team_invites (   -- как project_invites; ручки приглашений появятся на этапе К2
+create table team_invites (   -- как project_invites (в том числе приглашение на адрес без аккаунта, см. ниже)
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references teams on delete cascade,
-  user_id uuid not null references users on delete cascade,
+  user_id uuid references users on delete cascade,      -- кого пригласили; пусто, пока аккаунта нет
+  email text check (email = lower(email)),               -- адрес приглашения, которое ждёт регистрации (миграция 0019)
   invited_by uuid references users on delete set null,
   role team_role not null default 'member',
   status invite_status not null default 'pending',
@@ -308,14 +310,14 @@ create table team_invites (   -- как project_invites; ручки пригла
 | `PATCH /teams/{id}` | название и `guests_read_wiki` (администратор команды, членам без прав 403). Гостям при смене настройки приходит личное событие |
 | `POST /teams/{id}/archive`, `POST /teams/{id}/restore` | архив и возврат (администратор команды). «Личное» архивировать нельзя (409). Архивная команда пропадает у всех (проекты, вики, гости), вернуть её видит только администратор команды и администратор сервера. Всем членам и гостям приходит личное событие |
 | `PATCH /teams/{id}/members/{user_id}`, `DELETE /teams/{id}/members/{user_id}`, `POST /teams/{id}/leave` | роль (`admin`/`member`), исключение и выход. Исключение и выход убирают человека и из явных участий в проектах команды, гостей не трогают. Единственного администратора нельзя понизить, убрать и ему нельзя выйти; владелец «Личного» не уходит, не убирается и не понижается (409) |
-| `POST /teams/{id}/invites`, `DELETE /team-invites/{id}`, `GET /team-invites`, `POST /team-invites/{id}/accept`, `POST /team-invites/{id}/decline` | приглашения в команду (К2), устроены как приглашения в проект: администратор зовёт по e-mail существующего аккаунта с ролью (неизвестный адрес 400 «Аккаунта с таким адресом нет», член 409 «Уже в команде», повтор 409 «Уже приглашён»), приглашённый принимает или отклоняет, администратор отзывает. Приглашения в архивные команды скрыты, не истекают. Гость, принявший приглашение, перестаёт быть гостем, роль в проекте остаётся |
+| `POST /teams/{id}/invites`, `DELETE /team-invites/{id}`, `GET /team-invites`, `POST /team-invites/{id}/accept`, `POST /team-invites/{id}/decline` | приглашения в команду (К2), устроены как приглашения в проект: администратор зовёт по e-mail с ролью (адрес без аккаунта принимается и ждёт регистрации, `user_id` в ответе пустой; не похоже на адрес 400 «Некорректный e-mail», член 409 «Уже в команде», повтор 409 «Уже приглашён»), приглашённый принимает или отклоняет, администратор отзывает. Приглашения в архивные команды скрыты, не истекают. Гость, принявший приглашение, перестаёт быть гостем, роль в проекте остаётся |
 | `GET /admin/teams?q=` | все команды сервера для администратора сервера (остальным 403): до 200, обычные первыми, с числом членов и проектов; ищется по названию, а «Личное» ещё по имени и e-mail владельца. Открыть и править любую команду администратор сервера может обычными адресами |
 | `GET /projects/{id}/visibility-impact?to=` | сколько человек затронет смена видимости (К2, администратор проекта): при `team` сколько членов команды увидят проект, при `members` сколько потеряют доступ; администраторы команды и явные участники в счёт не входят. Сама смена: `PATCH /projects/{id}` с `visibility` |
 | `GET /projects?archived=` | мои проекты (глобальному админу все) с моей ролью `role`; `archived=true`: архивные, которыми я управляю |
 | `POST /projects`, `PATCH /projects/{id}` | создать проект в команде (`team_id` обязателен, создавать может её член или администратор сервера, иначе 404; `visibility` `members` по умолчанию или `team`; создатель администратор, доска с четырьмя колонками макета) и изменить название, цвет, ключ и `visibility` (администратор; ключ не должен совпадать с ключом модуля проекта; смена видимости действует сразу, лишившимся доступа уходит личное событие). В проекте `team_id`, `visibility` и `guest` (я явный участник, но не член его команды) |
 | `POST /projects/{id}/archive`, `POST /projects/{id}/unarchive` | архив проекта и возврат из него (администратор) |
 | `GET /projects/{id}/members`, `PATCH /projects/{id}/members/{user_id}`, `DELETE /projects/{id}/members/{user_id}` | (К2: в списке кроме явных участников администраторы команды с `team_admin` и при «Вся команда» члены команды с `implicit`; повышение неявного до администратора создаёт явную запись без приглашения, убрать неявного 409; e-mail явных участников видит администратор проекта, неявных администратор команды, каждый свой) участники (ожидающие приглашения видит только администратор); смена роли и исключение (администратор); выйти из проекта может любой участник. Единственного администратора нельзя понизить, убрать или дать ему выйти (409) |
-| `POST /projects/{id}/invites`, `DELETE /invites/{id}` | пригласить по e-mail существующего аккаунта с ролью и отозвать приглашение (администратор). Неизвестный адрес: 400 «Аккаунта с таким адресом нет», уже в проекте или уже приглашён: 409 |
+| `POST /projects/{id}/invites`, `DELETE /invites/{id}` | пригласить по e-mail с ролью и отозвать приглашение (администратор). Адрес без аккаунта принимается и ждёт регистрации (`user_id` пустой, в списке ожидающих `registered: false`, вместо имени адрес); не похоже на адрес: 400 «Некорректный e-mail»; уже в проекте или уже приглашён: 409 |
 | `GET /invites`, `POST /invites/{id}/accept`, `POST /invites/{id}/decline` | мои приглашения, на которые я не ответил; принять и отклонить может только приглашённый. Приглашения в архивный проект скрыты |
 | `GET /projects/{id}/board` | колонки, задачи (с метками и счётчиками подзадач), метки, модули, вехи одним ответом для первой загрузки доски |
 | `POST /projects/{id}/columns`, `PATCH /columns/{id}`, `DELETE /columns/{id}?move_to=` | колонки; порядок и цвет через `PATCH` |

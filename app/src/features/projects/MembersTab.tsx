@@ -181,7 +181,7 @@ function InviteRow({ invite, projectId }: { invite: PendingInvite; projectId: st
           <span>
             <strong>{invite.name}</strong>
             <small>
-              {invite.email} · {ROLE_LABELS[roleOf(invite.role)]} · ожидает ответа
+              {invite.registered ? `${invite.email} · ${ROLE_LABELS[roleOf(invite.role)]} · ожидает ответа` : `${ROLE_LABELS[roleOf(invite.role)]} · ждёт регистрации`}
             </small>
           </span>
         </div>
