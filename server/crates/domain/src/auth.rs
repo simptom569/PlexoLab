@@ -41,6 +41,19 @@ pub fn normalize_email(raw: &str) -> String {
     raw.trim().to_lowercase()
 }
 
+/// Похож ли адрес на настоящий (уже нормализованный): есть «@», нет пробелов, умещается в 254 знака. Письма пока не шлём,
+/// поэтому строже не проверяем.
+pub fn is_plausible_email(email: &str) -> bool {
+    let Some((local, host)) = email.split_once('@') else { return false };
+    !local.is_empty()
+        && host.contains('.')
+        && !host.starts_with('.')
+        && !host.ends_with('.')
+        && !host.contains('@')
+        && email.len() <= 254
+        && !email.contains(char::is_whitespace)
+}
+
 /// Текущее время в секундах Unix
 pub fn now_unix() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -135,6 +148,16 @@ mod tests {
     #[test]
     fn email_is_trimmed_and_lowercased() {
         assert_eq!(normalize_email("  Lena@Example.COM "), "lena@example.com");
+    }
+
+    #[test]
+    fn plausible_email_needs_a_name_a_dotted_host_and_no_spaces() {
+        assert!(is_plausible_email("lena@example.com"));
+        assert!(is_plausible_email("a.b+c@mail.example.co"));
+        for bad in ["", "nobody", "@example.com", "lena@", "lena@example", "lena@.com", "lena@example.", "a@b@c.com", "le na@example.com"] {
+            assert!(!is_plausible_email(bad), "{bad}");
+        }
+        assert!(!is_plausible_email(&format!("{}@example.com", "a".repeat(250))));
     }
 
     #[test]

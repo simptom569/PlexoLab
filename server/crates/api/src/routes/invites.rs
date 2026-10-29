@@ -24,7 +24,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(decline_invite))
 }
 
-/// Пригласить человека по e-mail (администратор). Аккаунт должен уже существовать.
+/// Пригласить человека по e-mail (администратор). Если аккаунта с таким адресом ещё нет, приглашение ждёт регистрации.
 #[utoipa::path(
     post,
     path = "/projects/{id}/invites",
@@ -34,7 +34,7 @@ pub fn router() -> OpenApiRouter<AppState> {
     request_body = CreateInvite,
     responses(
         (status = 201, description = "Приглашение создано", body = CreatedInviteDto),
-        (status = 400, description = "Аккаунта с таким адресом нет или некорректная роль", body = ErrorBody),
+        (status = 400, description = "Некорректный e-mail или роль", body = ErrorBody),
         (status = 401, description = "Нет действительного токена", body = ErrorBody),
         (status = 403, description = "Нужны права администратора проекта", body = ErrorBody),
         (status = 404, description = "Нет такого проекта", body = ErrorBody),
@@ -55,19 +55,32 @@ async fn create_invite(
 
     let mut tx = state.pool.begin().await?;
     access::admin_locked(&mut tx, auth, project_id).await?;
-    let user = db::users::find_by_email(&state.pool, &email)
-        .await?
-        .ok_or_else(|| ApiError::BadRequest("Аккаунта с таким адресом нет".into()))?;
-    // «в проекте» и тот, кто видит его по команде (администратор команды, член при «Вся команда»): звать его незачем
-    if db::members::can_see(&mut *tx, project_id, user.id).await? {
-        return Err(ApiError::Conflict("Уже в проекте".into()));
-    }
-    if db::invites::pending(&mut *tx, project_id, user.id).await?.is_some() {
-        return Err(ApiError::Conflict("Уже приглашён".into()));
-    }
-    let invite = db::invites::insert(&mut tx, project_id, user.id, auth.id, role.as_str()).await?;
+    let invite = match db::users::find_by_email(&state.pool, &email).await? {
+        Some(user) => {
+            // «в проекте» и тот, кто видит его по команде (администратор команды, член при «Вся команда»): звать его незачем
+            if db::members::can_see(&mut *tx, project_id, user.id).await? {
+                return Err(ApiError::Conflict("Уже в проекте".into()));
+            }
+            if db::invites::pending(&mut *tx, project_id, user.id).await?.is_some() {
+                return Err(ApiError::Conflict("Уже приглашён".into()));
+            }
+            db::invites::insert(&mut tx, project_id, user.id, auth.id, role.as_str()).await?
+        }
+        // аккаунта нет: приглашение ждёт регистрации, а ответ тот же, что и для существующего адреса
+        None => {
+            if !domain::auth::is_plausible_email(&email) {
+                return Err(ApiError::BadRequest("Некорректный e-mail".into()));
+            }
+            if db::invites::pending_by_email(&mut *tx, project_id, &email).await?.is_some() {
+                return Err(ApiError::Conflict("Уже приглашён".into()));
+            }
+            db::invites::insert_for_email(&mut tx, project_id, &email, auth.id, role.as_str()).await?
+        }
+    };
     tx.commit().await?;
-    events::note_user(user.id);
+    if let Some(user_id) = invite.user_id {
+        events::note_user(user_id);
+    }
     Ok((StatusCode::CREATED, Json(invite.into())))
 }
 
@@ -116,7 +129,9 @@ async fn revoke_invite(
     }
     db::invites::close(&mut tx, id, "revoked").await?;
     tx.commit().await?;
-    events::note_user(invite.user_id);
+    if let Some(user_id) = invite.user_id {
+        events::note_user(user_id);
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -183,7 +198,7 @@ async fn decline_invite(
 /// Моё ожидающее приглашение (блокируется до конца транзакции). Чужое, закрытое или в архивный проект: «нет такого».
 async fn pending_of(conn: &mut db::sqlx::PgConnection, auth: AuthUser, id: Uuid) -> ApiResult<db::invites::Invite> {
     let invite =
-        db::invites::get_for_update(conn, id).await?.filter(|i| i.user_id == auth.id).ok_or(ApiError::NotFound)?;
+        db::invites::get_for_update(conn, id).await?.filter(|i| i.user_id == Some(auth.id)).ok_or(ApiError::NotFound)?;
     if invite.status != "pending" {
         return Err(ApiError::Conflict("Приглашение уже закрыто".into()));
     }

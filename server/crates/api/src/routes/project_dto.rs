@@ -72,7 +72,7 @@ pub struct UpdateMember {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CreateInvite {
-    /// E-mail существующего аккаунта, регистр не важен
+    /// E-mail, регистр не важен. Если аккаунта с таким адресом ещё нет, приглашение ждёт регистрации
     #[schema(example = "artem@example.com")]
     pub email: String,
     /// admin | member; без него member
@@ -142,11 +142,16 @@ impl From<Member> for MemberDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct PendingInviteDto {
     pub id: Uuid,
-    pub user_id: Uuid,
+    /// Пусто, пока аккаунта с этим адресом нет
+    #[schema(nullable)]
+    pub user_id: Option<Uuid>,
     pub email: String,
+    /// Имя; пока аккаунта нет, вместо него адрес
     pub name: String,
     pub job: String,
     pub tone: i16,
+    /// Есть ли уже аккаунт: если нет, приглашение ждёт регистрации
+    pub registered: bool,
     /// Роль, с которой человек войдёт: admin | member
     pub role: String,
     #[serde(with = "time::serde::rfc3339")]
@@ -158,10 +163,11 @@ impl From<PendingInvite> for PendingInviteDto {
         PendingInviteDto {
             id: p.invite.id,
             user_id: p.invite.user_id,
-            email: p.email,
+            email: p.person_email,
             name: p.name,
             job: p.job,
             tone: p.tone,
+            registered: p.registered,
             role: p.invite.role,
             created_at: p.invite.created_at,
         }
@@ -213,7 +219,9 @@ impl From<InviteForUser> for InviteDto {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct CreatedInviteDto {
     pub id: Uuid,
-    pub user_id: Uuid,
+    /// Пусто, если аккаунта с этим адресом ещё нет и приглашение ждёт регистрации
+    #[schema(nullable)]
+    pub user_id: Option<Uuid>,
     pub role: String,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,

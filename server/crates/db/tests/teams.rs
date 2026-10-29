@@ -296,12 +296,15 @@ async fn the_access_rule_in_the_database_follows_the_spec(pool: PgPool) {
 }
 
 const DOWN: &str = include_str!("../../../migrations_down/0018_teams.down.sql");
+/// Откат идёт с конца: приглашения на адрес без аккаунта (0019) убираются раньше команд (0018)
+const DOWN_INVITES: &str = include_str!("../../../migrations_down/0019_invites_by_email.down.sql");
 
 #[sqlx::test]
 async fn down_migration_makes_wiki_and_files_shared_again_and_drops_teams(pool: PgPool) {
     let migrator = before_the_migration(&pool, true).await;
     migrator.run(&pool).await.unwrap();
 
+    sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN_INVITES.to_owned())).execute(&pool).await.expect("откат приглашений выполняется");
     sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN.to_owned())).execute(&pool).await.expect("обратная миграция выполняется");
 
     for table in ["teams", "team_members", "team_invites"] {
@@ -317,6 +320,59 @@ async fn down_migration_makes_wiki_and_files_shared_again_and_drops_teams(pool: 
     }
     // имя папки снова уникально на весь сервер
     assert!(sqlx::query("insert into folders (name) values ('Дизайн')").execute(&pool).await.is_err());
+}
+
+#[sqlx::test]
+async fn a_new_account_takes_the_invitations_that_waited_for_its_address_and_only_the_pending_ones(pool: PgPool) {
+    before_the_migration(&pool, true).await.run(&pool).await.unwrap();
+    exec(&pool, "insert into team_invites (team_id, email, role) select id, 'new@example.com', 'admin' from teams limit 1").await;
+    exec(&pool, "insert into project_invites (project_id, email) select id, 'new@example.com' from projects where key = 'WEB'").await;
+    exec(&pool, "insert into project_invites (project_id, email, status) select id, 'new@example.com', 'revoked' from projects where key = 'API'").await;
+    exec(&pool, "insert into project_invites (project_id, email) select id, 'other@example.com' from projects where key = 'WEB'").await;
+    // два ожидающих приглашения в один проект на один адрес не бывают
+    assert!(
+        sqlx::query("insert into project_invites (project_id, email) select id, 'new@example.com' from projects where key = 'WEB'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // и приглашение без адреса и без человека тоже
+    assert!(sqlx::query("insert into team_invites (team_id) select id from teams limit 1").execute(&pool).await.is_err());
+
+    exec(&pool, "insert into users (email, name, password_hash) values ('new@example.com', 'Новичок', 'h')").await;
+
+    assert_eq!(
+        rows(&pool, "select u.email, i.role::text from team_invites i join users u on u.id = i.user_id where i.email is null").await,
+        [pair("new@example.com", "admin")]
+    );
+    assert_eq!(
+        rows(&pool, "select p.key, i.status::text from project_invites i join projects p on p.id = i.project_id where i.user_id is not null").await,
+        [pair("WEB", "pending")]
+    );
+    // отозванное и чужое остались как были, с адресом
+    assert_eq!(count(&pool, "select count(*) from project_invites where user_id is null").await, 2);
+}
+
+#[sqlx::test]
+async fn down_migration_of_waiting_invitations_drops_them_with_the_trigger_and_the_rest_rolls_back(pool: PgPool) {
+    before_the_migration(&pool, true).await.run(&pool).await.unwrap();
+    exec(&pool, "insert into team_invites (team_id, email) select id, 'new@example.com' from teams limit 1").await;
+    exec(&pool, "insert into project_invites (project_id, email) select id, 'new@example.com' from projects where key = 'WEB'").await;
+    exec(&pool, "insert into project_invites (project_id, user_id) select p.id, u.id from projects p, users u where p.key = 'WEB' and u.email = 'dev@example.com'").await;
+
+    sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN_INVITES.to_owned())).execute(&pool).await.expect("откат приглашений выполняется");
+
+    assert_eq!(count(&pool, "select count(*) from team_invites").await, 0, "ждавшие регистрации пропали");
+    assert_eq!(count(&pool, "select count(*) from project_invites").await, 1, "обычное приглашение осталось");
+    for sql in ["select email from project_invites", "select email from team_invites"] {
+        assert!(sqlx::query(sqlx::AssertSqlSafe(sql.to_owned())).execute(&pool).await.is_err(), "{sql}");
+    }
+    assert!(sqlx::query("insert into project_invites (project_id) select id from projects limit 1").execute(&pool).await.is_err());
+    // триггера нет: новый аккаунт создаётся без обращения к убранным столбцам
+    exec(&pool, "insert into users (email, name, password_hash) values ('late@example.com', 'Поздний', 'h')").await;
+
+    // откат идёт дальше, к командам
+    sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN.to_owned())).execute(&pool).await.expect("обратная миграция выполняется");
 }
 
 #[sqlx::test]

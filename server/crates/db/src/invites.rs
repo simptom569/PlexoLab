@@ -8,8 +8,10 @@ use uuid::Uuid;
 pub struct Invite {
     pub id: Uuid,
     pub project_id: Uuid,
-    /// Кого пригласили
-    pub user_id: Uuid,
+    /// Кого пригласили; пусто, пока человек не зарегистрирован (тогда есть `email`)
+    pub user_id: Option<Uuid>,
+    /// Адрес, на который приглашение ждёт регистрации; у приглашения существующему аккаунту пусто
+    pub email: Option<String>,
     pub invited_by: Option<Uuid>,
     /// admin | member: роль, с которой человек войдёт
     pub role: String,
@@ -34,16 +36,20 @@ pub struct InviteForUser {
 pub struct PendingInvite {
     #[sqlx(flatten)]
     pub invite: Invite,
-    pub email: String,
+    /// Адрес приглашённого (у зарегистрированного его адрес из аккаунта)
+    pub person_email: String,
+    /// Имя; пока аккаунта нет, вместо него адрес
     pub name: String,
     pub job: String,
     pub tone: i16,
+    /// Есть ли уже аккаунт с этим адресом
+    pub registered: bool,
 }
 
 macro_rules! select_invite {
     ($tail:literal) => {
         concat!(
-            "select i.id, i.project_id, i.user_id, i.invited_by, i.role::text as role, i.status::text as status, \
+            "select i.id, i.project_id, i.user_id, i.email, i.invited_by, i.role::text as role, i.status::text as status, \
              i.created_at from project_invites i ",
             $tail
         )
@@ -72,6 +78,19 @@ pub async fn pending<'e>(
         .await
 }
 
+/// Ожидающее приглашение на этот адрес (аккаунта с ним ещё нет), если есть
+pub async fn pending_by_email<'e>(
+    ex: impl PgExecutor<'e>,
+    project_id: Uuid,
+    email: &str,
+) -> Result<Option<Invite>, sqlx::Error> {
+    sqlx::query_as(select_invite!("where i.project_id = $1 and i.email = $2 and i.status = 'pending'"))
+        .bind(project_id)
+        .bind(email)
+        .fetch_optional(ex)
+        .await
+}
+
 pub async fn insert(
     conn: &mut PgConnection,
     project_id: Uuid,
@@ -81,10 +100,30 @@ pub async fn insert(
 ) -> Result<Invite, sqlx::Error> {
     sqlx::query_as(
         "insert into project_invites (project_id, user_id, invited_by, role) values ($1, $2, $3, $4::project_role) \
-         returning id, project_id, user_id, invited_by, role::text as role, status::text as status, created_at",
+         returning id, project_id, user_id, email, invited_by, role::text as role, status::text as status, created_at",
     )
     .bind(project_id)
     .bind(user_id)
+    .bind(invited_by)
+    .bind(role)
+    .fetch_one(conn)
+    .await
+}
+
+/// Приглашение на адрес, у которого ещё нет аккаунта: ждёт регистрации (миграция 0019)
+pub async fn insert_for_email(
+    conn: &mut PgConnection,
+    project_id: Uuid,
+    email: &str,
+    invited_by: Uuid,
+    role: &str,
+) -> Result<Invite, sqlx::Error> {
+    sqlx::query_as(
+        "insert into project_invites (project_id, email, invited_by, role) values ($1, $2, $3, $4::project_role) \
+         returning id, project_id, user_id, email, invited_by, role::text as role, status::text as status, created_at",
+    )
+    .bind(project_id)
+    .bind(email)
     .bind(invited_by)
     .bind(role)
     .fetch_one(conn)
@@ -104,8 +143,8 @@ pub async fn close(conn: &mut PgConnection, id: Uuid, status: &str) -> Result<()
 /// Приглашения человека, на которые он ещё не ответил, от старых к новым. Приглашения в архивные проекты скрыты.
 pub async fn list_for_user<'e>(ex: impl PgExecutor<'e>, user_id: Uuid) -> Result<Vec<InviteForUser>, sqlx::Error> {
     sqlx::query_as(
-        "select i.id, i.project_id, i.user_id, i.invited_by, i.role::text as role, i.status::text as status, i.created_at, \
-                p.name as project_name, p.color as project_color, p.key as project_key, u.name as inviter_name \
+        "select i.id, i.project_id, i.user_id, i.email, i.invited_by, i.role::text as role, i.status::text as status, \
+                i.created_at, p.name as project_name, p.color as project_color, p.key as project_key, u.name as inviter_name \
          from project_invites i \
          join projects p on p.id = i.project_id \
          left join users u on u.id = i.invited_by \
@@ -142,9 +181,10 @@ pub async fn list_pending_for_project<'e>(
     project_id: Uuid,
 ) -> Result<Vec<PendingInvite>, sqlx::Error> {
     sqlx::query_as(
-        "select i.id, i.project_id, i.user_id, i.invited_by, i.role::text as role, i.status::text as status, i.created_at, \
-                u.email, u.name, u.role as job, u.tone \
-         from project_invites i join users u on u.id = i.user_id \
+        "select i.id, i.project_id, i.user_id, i.email, i.invited_by, i.role::text as role, i.status::text as status, \
+                i.created_at, coalesce(u.email, i.email) as person_email, coalesce(u.name, i.email) as name, \
+                coalesce(u.role, '') as job, coalesce(u.tone, 0::smallint) as tone, (i.user_id is not null) as registered \
+         from project_invites i left join users u on u.id = i.user_id \
          where i.project_id = $1 and i.status = 'pending' \
          order by i.created_at, i.id",
     )

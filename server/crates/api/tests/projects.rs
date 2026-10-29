@@ -401,9 +401,9 @@ async fn invitation_errors_are_clear(pool: PgPool) {
     let p = project_uri(f.project);
     let guest = f.c.another("guest@example.com", "Гость").await;
 
-    let unknown = f.c.post(&format!("{p}/invites"), json!({ "email": "nobody@example.com" })).await;
-    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
-    assert_eq!(unknown.body["message"], "Аккаунта с таким адресом нет");
+    let malformed = f.c.post(&format!("{p}/invites"), json!({ "email": "nobody" })).await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    assert_eq!(malformed.body["message"], "Некорректный e-mail");
     let me = f.c.post(&format!("{p}/invites"), json!({ "email": "tester@example.com" })).await;
     assert_eq!((me.status, me.body["message"].as_str()), (StatusCode::CONFLICT, Some("Уже в проекте")));
     assert_eq!(
@@ -415,6 +415,42 @@ async fn invitation_errors_are_clear(pool: PgPool) {
     let again = f.c.post(&format!("{p}/invites"), json!({ "email": "guest@example.com" })).await;
     assert_eq!((again.status, again.body["message"].as_str()), (StatusCode::CONFLICT, Some("Уже приглашён")));
     assert_eq!(guest.get("/api/v1/invites").await.body.as_array().unwrap().len(), 1, "дубля нет");
+}
+
+/// Приглашение на адрес без аккаунта ждёт регистрации; новый аккаунт с этим адресом находит его у себя в приглашениях
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn an_invitation_to_an_address_without_an_account_waits_for_registration(pool: PgPool) {
+    let f = Fx::new(pool).await;
+    let p = project_uri(f.project);
+
+    let created =
+        f.c.ok(f.c.post(&format!("{p}/invites"), json!({ "email": " Newbie@Example.com ", "role": "admin" })).await, StatusCode::CREATED)
+            .await;
+    assert_eq!((created["user_id"].clone(), created["role"].clone()), (Value::Null, json!("admin")));
+    let again = f.c.post(&format!("{p}/invites"), json!({ "email": "newbie@example.com" })).await;
+    assert_eq!((again.status, again.body["message"].as_str()), (StatusCode::CONFLICT, Some("Уже приглашён")));
+
+    // администратор проекта видит ожидающего: вместо имени адрес, отметка «аккаунта нет»
+    let members = f.c.ok(f.c.get(&format!("{p}/members")).await, StatusCode::OK).await;
+    let waiting = &members["invites"][0];
+    assert_eq!(
+        (waiting["email"].clone(), waiting["name"].clone(), waiting["registered"].clone(), waiting["user_id"].clone()),
+        (json!("newbie@example.com"), json!("newbie@example.com"), json!(false), Value::Null)
+    );
+    // отозванное приглашение к новому аккаунту не переходит
+    let other = f.c.ok(f.c.post(&format!("{p}/invites"), json!({ "email": "revoked@example.com" })).await, StatusCode::CREATED).await;
+    assert_eq!(f.c.delete(&format!("/api/v1/invites/{}", id_of(&other))).await.status, StatusCode::NO_CONTENT);
+
+    let newbie = f.c.another("newbie@example.com", "Новичок").await;
+    let revoked = f.c.another("revoked@example.com", "Отозванный").await;
+    assert!(revoked.get("/api/v1/invites").await.body.as_array().unwrap().is_empty());
+    let mine = newbie.ok(newbie.get("/api/v1/invites").await, StatusCode::OK).await;
+    assert_eq!(mine.as_array().unwrap().len(), 1);
+    assert_eq!(mine[0]["role"], "admin");
+    assert_eq!(newbie.post(&format!("/api/v1/invites/{}/accept", id_of(&mine[0])), json!({})).await.status, StatusCode::NO_CONTENT);
+    let members = f.c.ok(f.c.get(&format!("{p}/members")).await, StatusCode::OK).await;
+    assert!(roles_by_email(&members).contains(&("newbie@example.com".to_owned(), "admin".to_owned())));
+    assert_eq!(members["invites"], json!([]));
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]

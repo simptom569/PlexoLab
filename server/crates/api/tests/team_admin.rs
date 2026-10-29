@@ -182,9 +182,9 @@ async fn an_invitation_is_answered_by_the_invitee_and_checked_on_creation(pool: 
     let team = create_team(&lead, "Веб").await;
     let invites = format!("/api/v1/teams/{team}/invites");
 
-    let unknown = lead.post(&invites, json!({ "email": "nobody@example.com" })).await;
-    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
-    assert_eq!(message(&unknown), "Аккаунта с таким адресом нет");
+    // не похоже на адрес: ошибка (адрес без аккаунта принимается, см. ожидающие регистрации ниже)
+    let malformed = lead.post(&invites, json!({ "email": "nobody" })).await;
+    assert_eq!((malformed.status, message(&malformed).as_str()), (StatusCode::BAD_REQUEST, "Некорректный e-mail"));
     assert_eq!(
         lead.post(&invites, json!({ "email": "artem@example.com", "role": "owner" })).await.status,
         StatusCode::BAD_REQUEST
@@ -309,6 +309,49 @@ async fn an_invitation_to_an_archived_team_is_hidden_and_cannot_be_accepted(pool
         1,
         "после возврата приглашение снова ждёт"
     );
+}
+
+/// Приглашение на адрес без аккаунта ждёт регистрации: администратор его видит и может отозвать, а новый аккаунт с этим
+/// адресом получает приглашение в «Приглашениях» (решает сам)
+#[sqlx::test(migrator = "db::MIGRATOR")]
+async fn an_invitation_to_an_address_without_an_account_waits_for_registration(pool: PgPool) {
+    let lead = Ctx::new(pool).await;
+    let team = create_team(&lead, "Веб").await;
+    let invites = format!("/api/v1/teams/{team}/invites");
+
+    // ответ тот же, что и для существующего аккаунта; регистр и пробелы не важны
+    let r = lead.post(&invites, json!({ "email": " Newbie@Example.com ", "role": "admin" })).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.body);
+    assert_eq!((r.body["user_id"].clone(), r.body["role"].clone()), (Value::Null, json!("admin")));
+    let again = lead.post(&invites, json!({ "email": "newbie@example.com" })).await;
+    assert_eq!((again.status, message(&again).as_str()), (StatusCode::CONFLICT, "Уже приглашён"));
+
+    // администратор видит ожидающего: имя заменено адресом, отметка «аккаунта нет»
+    let before = roster(&lead, team).await;
+    let waiting = &before["invites"][0];
+    assert_eq!(
+        (waiting["email"].clone(), waiting["name"].clone(), waiting["registered"].clone(), waiting["user_id"].clone()),
+        (json!("newbie@example.com"), json!("newbie@example.com"), json!(false), Value::Null)
+    );
+    // отозвать можно как обычное
+    let other = lead.post(&invites, json!({ "email": "revoked@example.com" })).await;
+    assert_eq!(lead.delete(&format!("/api/v1/team-invites/{}", id_of(&other.body))).await.status, StatusCode::NO_CONTENT);
+
+    // аккаунт создан: приглашение у него, отозванного нет, роль та, что указал администратор
+    let newbie = lead.another("newbie@example.com", "Новичок").await;
+    let revoked = lead.another("revoked@example.com", "Отозванный").await;
+    let mine = newbie.ok(newbie.get("/api/v1/team-invites").await, StatusCode::OK).await;
+    assert_eq!(mine.as_array().unwrap().len(), 1);
+    assert_eq!((mine[0]["team_name"].clone(), mine[0]["role"].clone()), (json!("Веб"), json!("admin")));
+    assert_eq!(mine[0]["invited_by_name"], "Тестер Т.");
+    assert_eq!(newbie.get(&format!("/api/v1/teams/{team}")).await.status, StatusCode::NOT_FOUND, "пока не принял, команды нет");
+    let accepted = newbie.post(&format!("/api/v1/team-invites/{}/accept", id_of(&mine[0])), json!({})).await;
+    assert_eq!(accepted.status, StatusCode::NO_CONTENT, "{}", accepted.body);
+    let after = roster(&lead, team).await;
+    assert_eq!(after["invites"], json!([]));
+    let admins: Vec<_> = after["members"].as_array().unwrap().iter().filter(|m| m["role"] == "admin").collect();
+    assert_eq!(admins.len(), 2, "новичок вошёл администратором: {after}");
+    assert!(revoked.get("/api/v1/team-invites").await.body.as_array().unwrap().is_empty());
 }
 
 // ===== Роли, выход и исключение =====

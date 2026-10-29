@@ -132,8 +132,9 @@ async fn an_empty_database_migrates_and_unused_tags_without_any_project_are_drop
 }
 
 const DOWN: &str = include_str!("../../../migrations_down/0013_project_members.down.sql");
-/// Откат идёт с конца: сначала команды (в них общий с приглашениями в проекты тип `invite_status`)
+/// Откат идёт с конца: сначала приглашения по адресу, потом команды (в них общий с приглашениями в проекты тип `invite_status`)
 const DOWN_TEAMS: &str = include_str!("../../../migrations_down/0018_teams.down.sql");
+const DOWN_INVITES: &str = include_str!("../../../migrations_down/0019_invites_by_email.down.sql");
 
 #[sqlx::test]
 async fn down_migration_makes_tags_shared_again_and_drops_membership(pool: PgPool) {
@@ -143,6 +144,7 @@ async fn down_migration_makes_tags_shared_again_and_drops_membership(pool: PgPoo
     exec(&pool, "insert into tags (project_id, label, tone) select id, 'Срочно', 5 from projects").await;
     exec(&pool, "insert into task_tags select t.id, g.id from tasks t join tags g on g.project_id = t.project_id where g.label = 'Срочно' and t.title = 'API-1'").await;
 
+    sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN_INVITES.to_owned())).execute(&pool).await.expect("откат приглашений выполняется");
     sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN_TEAMS.to_owned())).execute(&pool).await.expect("откат команд выполняется");
     sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN.to_owned())).execute(&pool).await.expect("обратная миграция выполняется");
 
