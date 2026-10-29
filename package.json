@@ -1,6 +1,7 @@
 {
   "name": "plexolab",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Корневые задачи репозитория. Зависимостей нет, клиент живёт в app/.",
   "scripts": {
     "dev-server": "cargo run --manifest-path server/Cargo.toml",

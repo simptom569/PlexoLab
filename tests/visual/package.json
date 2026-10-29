@@ -1,6 +1,7 @@
 {
   "name": "plexolab-visual-tests",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "description": "Playwright: сравнение интерфейса с эталоном design/screenshots и снимки витрины компонентов",
   "scripts": {

@@ -3,6 +3,7 @@ name = "plexolab"
 version = "0.1.0"
 description = "PlexoLab: рабочее пространство команды"
 edition = "2024"
+license = "AGPL-3.0-only"
 rust-version = "1.90"
 
 [lib]
