@@ -1,0 +1,70 @@
+# Полный прогон e2e (Playwright, около 560 тестов): настоящий сервер, настоящий Postgres, клиент в Chromium.
+# Идёт перед релизом (release.yml) и по кнопке «Run workflow» на вкладке Actions.
+#
+# Сравнение пикселей со снимками здесь выключено (--ignore-snapshots): 66 эталонных снимков tests/visual/snapshots
+# сделаны на Windows (-win32.png), на Linux их нет. Их проверяют у себя: npm run test-visual на Windows.
+# Все поведенческие проверки и сравнение с макетом design/screenshots идут как обычно.
+
+name: Полные тесты (e2e)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e на Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # тестовый стенд (tests/visual/scripts/e2e-env.mjs) сам создаёт базу plexolab_e2e рядом с этой
+      DATABASE_URL: postgres://postgres:dev@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            tests/visual/package-lock.json
+      - run: npm ci --prefix app
+      - run: npm ci --prefix tests/visual
+      - name: Chromium для Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: tests/visual
+      # стенд создаёт базу командой psql
+      - name: Клиент psql
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      # сервер и сид собираем заранее: у Playwright на запуск стенда всего четыре минуты, а с нуля сборка дольше
+      - name: Сборка сервера и сида
+        run: cargo build --manifest-path server/Cargo.toml --bins
+      - name: Playwright
+        run: npx playwright test --ignore-snapshots --retries=1
+        working-directory: tests/visual
+      - name: Результаты при падении
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-output
+          path: tests/visual/output
+          retention-days: 7
+          if-no-files-found: ignore

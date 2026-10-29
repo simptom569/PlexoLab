@@ -1,0 +1,62 @@
+# Быстрые проверки: идут на каждый push в любую ветку, а перед релизом их же вызывает release.yml.
+# Полный прогон e2e (Playwright) долгий и вынесен в e2e.yml.
+
+name: Проверки
+
+on:
+  push:
+    branches: ['**']
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Сервер, тесты на Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # sqlx::test сам создаёт по базе на каждый тест, ему нужна только служебная база postgres
+      DATABASE_URL: postgres://postgres:dev@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: cargo test --workspace --manifest-path server/Cargo.toml
+
+  client:
+    name: Клиент, линтер, юнит-тесты, сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
