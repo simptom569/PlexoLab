@@ -38,9 +38,9 @@ Windows-клиент (Tauri 2 + React)  --HTTPS/WSS-->  Rust-бэкенд (axum)
 
 ## Бэкенд
 
-- Крейты: `axum`, `tokio`, `sqlx` (postgres, uuid, time, migrate, runtime-tokio-rustls), `serde`, `tower-http` (cors, trace, compression), `argon2`, `jsonwebtoken`, `uuid`, `time`, `tracing`, `tracing-subscriber`, `utoipa` + `utoipa-axum`, `tokio-tungstenite` через встроенный ws axum, `thiserror`, `anyhow`.
-- Конфигурация через переменные окружения: `DATABASE_URL`, `JWT_SECRET`, `BIND_ADDR`, `DATA_DIR` (файлы), `MAX_UPLOAD_MB` (лимит файла), `RUST_LOG`.
-- Вход по e-mail и паролю (`argon2id`), токен доступа JWT (живёт 12 часов) + refresh-токен в базе (30 дней). Пользователей создаёт администратор из командной строки (`server user add`), публичной регистрации нет.
+- Крейты: `axum`, `tokio`, `sqlx` (postgres, uuid, time, migrate, runtime-tokio-rustls), `serde`, `tower-http` (cors, trace, compression), `argon2`, `jsonwebtoken`, `uuid`, `time`, `tracing`, `tracing-subscriber`, `utoipa` + `utoipa-axum`, `tokio-tungstenite` через встроенный ws axum, `thiserror`, `anyhow`, `reqwest` (только отправка писем в Resend; `rustls` с провайдером `ring`, без `openssl` и без `aws-lc`, чтобы на Windows и при кросс-сборке не требовались `cmake` и NASM), `base64`.
+- Конфигурация через переменные окружения: `DATABASE_URL`, `JWT_SECRET`, `BIND_ADDR`, `DATA_DIR` (файлы), `MAX_UPLOAD_MB` (лимит файла), `RUST_LOG`; для почты `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_MAX_PER_HOUR` (и `MAIL_OUTBOX_DIR` для разработки), см. `docs/REGISTRATION.md`.
+- Вход по e-mail и паролю (`argon2id`), токен доступа JWT (живёт 12 часов) + refresh-токен в базе (30 дней). Аккаунт создаёт администратор из командной строки (`server user add`) или человек сам: регистрация по коду из письма (`docs/REGISTRATION.md`), она включается, когда настроена почта. Письма уходят через Resend по HTTPS (`reqwest` с `rustls`, без фоновых процессов: запрос делается в момент действия человека).
 - Все ручки под `/api/v1`, формат JSON, ошибки в виде `{ "code": "...", "message": "..." }`.
 - Живые обновления: `GET /api/v1/ws` (WebSocket). После каждого изменения сервер рассылает событие всем подключённым клиентам (внутри процесса, канал `tokio::sync::broadcast`). Редис и брокеры не нужны, сервер один. Токен клиент присылает первым сообщением, а не в адресе (адреса попадают в журналы); протокол и список событий в `docs/DATA-MODEL.md`.
 - Загрузка файлов: `multipart`, на диск в `DATA_DIR/files/<uuid>`, метаданные в БД, лимит размера задаётся настройкой (по умолчанию 25 МБ).
