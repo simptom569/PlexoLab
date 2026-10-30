@@ -1,11 +1,12 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use db::PgPool;
-use domain::{files::DEFAULT_MAX_UPLOAD_BYTES, teams::DEFAULT_MAX_TEAMS_PER_USER};
+use domain::{codes::DEFAULT_MAX_MAILS_PER_HOUR, files::DEFAULT_MAX_UPLOAD_BYTES, teams::DEFAULT_MAX_TEAMS_PER_USER};
 use tokio::sync::{Semaphore, watch};
 
 use crate::{
     events::{DEFAULT_CAPACITY, Events},
+    mail::Mailer,
     presence::Presence,
 };
 
@@ -50,6 +51,10 @@ pub struct AppState {
     pub max_upload_bytes: u64,
     /// Сколько обычных команд может создать один человек
     pub max_teams_per_user: u32,
+    /// Отправка писем с кодами; пока почта не настроена, регистрации и сброса пароля по почте нет
+    pub mailer: Mailer,
+    /// Сколько писем с кодами сервер отправляет за час на все адреса вместе
+    pub mail_per_hour: u32,
     /// События для живых обновлений: сюда пишет слой над ручками, отсюда читают WebSocket-соединения
     pub events: Events,
     pub realtime: Realtime,
@@ -71,6 +76,8 @@ impl AppState {
             data_dir: PathBuf::from("./data"),
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
             max_teams_per_user: DEFAULT_MAX_TEAMS_PER_USER,
+            mailer: Mailer::off(),
+            mail_per_hour: DEFAULT_MAX_MAILS_PER_HOUR,
             events: Events::new(DEFAULT_CAPACITY),
             presence: Presence::default(),
             connections: Arc::new(Semaphore::new(realtime.max_connections)),
@@ -91,6 +98,16 @@ impl AppState {
 
     pub fn with_max_teams_per_user(mut self, max: u32) -> Self {
         self.max_teams_per_user = max;
+        self
+    }
+
+    pub fn with_mailer(mut self, mailer: Mailer) -> Self {
+        self.mailer = mailer;
+        self
+    }
+
+    pub fn with_mail_limit(mut self, per_hour: u32) -> Self {
+        self.mail_per_hour = per_hour;
         self
     }
 

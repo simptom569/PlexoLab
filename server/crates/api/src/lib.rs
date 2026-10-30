@@ -18,6 +18,7 @@ pub mod cors;
 pub mod error;
 pub mod events;
 pub mod extract;
+pub mod mail;
 mod openapi;
 pub mod presence;
 pub mod routes;
@@ -79,11 +80,22 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         );
     }
 
+    let mailer = mail::Mailer::from_config(&config.mail).context("не удалось подготовить отправку писем")?;
+    match &config.mail {
+        config::MailConfig::Off => tracing::info!("почта не настроена: регистрации и сброса пароля по почте нет"),
+        config::MailConfig::Resend { from, .. } => tracing::info!(%from, "письма с кодами отправляются через Resend"),
+        config::MailConfig::Outbox(dir) => {
+            tracing::warn!(dir = %dir.display(), "письма пишутся в папку (MAIL_OUTBOX_DIR), наружу не уходят: только для разработки")
+        }
+    }
+
     let state = AppState::new(pool, &config.jwt_secret)
         .with_openapi(config.expose_openapi)
         .with_data_dir(config.data_dir.clone())
         .with_max_upload_bytes(config.max_upload_bytes)
-        .with_max_teams_per_user(config.max_teams_per_user);
+        .with_max_teams_per_user(config.max_teams_per_user)
+        .with_mailer(mailer)
+        .with_mail_limit(config.mail_max_per_hour);
     let app = router(state.clone()).layer(cors::layer(&config.cors_origins));
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await
