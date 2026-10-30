@@ -110,7 +110,7 @@ impl std::fmt::Display for SeedReport {
 /// Очищает все данные (структура остаётся). Только для разработки.
 pub async fn reset(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "truncate table users, teams, projects, tags, folders, wiki_pages, docs, link_groups, activity restart identity cascade",
+        "truncate table users, teams, projects, tags, folders, wiki_pages, docs, link_groups, activity, email_codes restart identity cascade",
     )
     .execute(pool)
     .await?;

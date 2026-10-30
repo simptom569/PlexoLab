@@ -14,6 +14,7 @@ pub mod activity;
 pub mod columns;
 pub mod comments;
 pub mod docs;
+pub mod email_codes;
 pub mod files;
 pub mod folders;
 pub mod invites;

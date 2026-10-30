@@ -22,6 +22,12 @@ pub fn is_avatar_tone(tone: i16) -> bool {
     (0..AVATAR_TONES).contains(&tone)
 }
 
+/// Цвет аватара для нового аккаунта, который зарегистрировался сам: из адреса, поэтому у разных людей цвета разные,
+/// а у одного и того же адреса всегда один и тот же. Потом человек выбирает цвет сам.
+pub fn tone_for(email: &str) -> i16 {
+    (email.bytes().map(u32::from).sum::<u32>() % AVATAR_TONES as u32) as i16
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,6 +48,17 @@ mod tests {
         assert_eq!(clean_role("   ").as_deref(), Some(""));
         assert!(clean_role(&"я".repeat(MAX_ROLE_LEN)).is_some());
         assert_eq!(clean_role(&"я".repeat(MAX_ROLE_LEN + 1)), None);
+    }
+
+    #[test]
+    fn registered_tone_is_valid_and_stable() {
+        for email in ["a@b.c", "lena@example.com", "иван@пример.рф", ""] {
+            assert!(is_avatar_tone(tone_for(email)), "{email}");
+            assert_eq!(tone_for(email), tone_for(email));
+        }
+        let tones: std::collections::BTreeSet<i16> =
+            (0..40).map(|i| tone_for(&format!("user{i}@example.com"))).collect();
+        assert!(tones.len() > 1, "все цвета одинаковые: {tones:?}");
     }
 
     #[test]

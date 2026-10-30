@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod auth;
 pub mod board;
+pub mod codes;
 pub mod docs;
 pub mod files;
 pub mod links;
