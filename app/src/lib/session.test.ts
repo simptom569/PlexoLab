@@ -4,7 +4,16 @@ import type { TokenResponse } from './api/types'
 // Всё, что снаружи, подменяем: сеть, хранилище токенов, файл настроек.
 // vi.hoisted нужен потому, что vi.mock выполняется раньше остального кода файла.
 const mocks = vi.hoisted(() => ({
-  authApi: { login: vi.fn(), refresh: vi.fn(), logout: vi.fn(), findServer: vi.fn() },
+  authApi: {
+    login: vi.fn(),
+    refresh: vi.fn(),
+    logout: vi.fn(),
+    findServer: vi.fn(),
+    requestRegisterCode: vi.fn(),
+    requestResetCode: vi.fn(),
+    register: vi.fn(),
+    resetPassword: vi.fn(),
+  },
   httpFetch: vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(),
   vault: new Map<string, string>(),
   settings: { serverUrl: null as string | null, lastEmail: '' },
@@ -163,6 +172,97 @@ describe('шаг 2: вход', () => {
     authApi.login.mockRejectedValue(new ApiError(401, 'invalid_credentials', 'Неверный e-mail или пароль'))
     await expect(state().login('lena@example.com', 'bad')).rejects.toMatchObject({ status: 401 })
     expect(state().phase).toBe('login')
+    expect(vault.size).toBe(0)
+  })
+})
+
+describe('регистрация и сброс пароля', () => {
+  beforeEach(async () => {
+    saved(SERVER)
+    await state().boot()
+  })
+
+  it('со входа на «Создать аккаунт» и «Забыли пароль?» и обратно; набранный e-mail идёт с человеком', () => {
+    state().openCodeFlow('register', '  lena@example.com ')
+    expect(state()).toMatchObject({ phase: 'register', lastEmail: 'lena@example.com' })
+    state().backToLogin()
+    expect(state()).toMatchObject({ phase: 'login', lastEmail: 'lena@example.com' })
+
+    // набранное на экране сброса возвращается на вход, пустое прежнее не стирает
+    state().openCodeFlow('reset')
+    state().backToLogin(' other@example.com ')
+    expect(state()).toMatchObject({ phase: 'login', lastEmail: 'other@example.com' })
+    state().openCodeFlow('reset', 'lena@example.com')
+    state().backToLogin('  ')
+    expect(state().lastEmail).toBe('lena@example.com')
+
+    state().openCodeFlow('reset')
+    expect(state().phase).toBe('reset')
+    expect(state().lastEmail).toBe('lena@example.com')
+    state().openCodeFlow('reset', '   ')
+    expect(state().lastEmail).toBe('lena@example.com')
+    state().backToLogin()
+    expect(state().phase).toBe('login')
+    expect(saveSettings).not.toHaveBeenCalledWith(expect.objectContaining({ lastEmail: 'lena@example.com' }), expect.anything())
+  })
+
+  it('код просят у сервера, к которому подключён клиент, регистрация и сброс идут разными ручками', async () => {
+    authApi.requestRegisterCode.mockResolvedValue(undefined)
+    authApi.requestResetCode.mockResolvedValue(undefined)
+    await state().requestCode('register', ' lena@example.com ')
+    expect(authApi.requestRegisterCode).toHaveBeenCalledWith(SERVER, 'lena@example.com')
+    expect(authApi.requestResetCode).not.toHaveBeenCalled()
+    await state().requestCode('reset', 'lena@example.com')
+    expect(authApi.requestResetCode).toHaveBeenCalledWith(SERVER, 'lena@example.com')
+  })
+
+  it('отказ сервера в коде (адрес занят, слишком часто) уходит наверх, экран не меняется', async () => {
+    state().openCodeFlow('register')
+    authApi.requestRegisterCode.mockRejectedValue(new ApiError(409, 'conflict', 'Аккаунт с таким e-mail уже есть'))
+    await expect(state().requestCode('register', 'lena@example.com')).rejects.toMatchObject({ status: 409 })
+    expect(state().phase).toBe('register')
+  })
+
+  it('без адреса сервера ничего не отправляется', async () => {
+    useSession.setState({ serverUrl: null })
+    await expect(state().requestCode('register', 'a@b.c')).rejects.toMatchObject({ code: 'no_server' })
+    await expect(state().register('a@b.c', '123456', 'Лена', 'long-password')).rejects.toMatchObject({ code: 'no_server' })
+    await expect(state().resetPassword('a@b.c', '123456', 'long-password')).rejects.toMatchObject({ code: 'no_server' })
+    expect(authApi.requestRegisterCode).not.toHaveBeenCalled()
+  })
+
+  it('регистрация: человек сразу в работе, токен и e-mail сохранены, имя без пробелов по краям', async () => {
+    state().openCodeFlow('register')
+    authApi.register.mockResolvedValue(tokens(1))
+    await state().register(' lena@example.com ', '123456', '  Лена М. ', 'long-password')
+    expect(authApi.register).toHaveBeenCalledWith(SERVER, 'lena@example.com', '123456', 'Лена М.', 'long-password')
+    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access1', user: lena, lastEmail: 'lena@example.com' })
+    expect(vault.get(SERVER)).toBe('refresh1')
+    expect(saveSettings).toHaveBeenCalledWith({ lastEmail: 'lena@example.com' }, { immediate: true })
+  })
+
+  it('регистрация: неверный код, остаёмся на экране, ничего не сохранено', async () => {
+    state().openCodeFlow('register')
+    authApi.register.mockRejectedValue(new ApiError(400, 'wrong_code', 'Неверный код. Осталось попыток: 4'))
+    await expect(state().register('lena@example.com', '000000', 'Лена', 'long-password')).rejects.toMatchObject({ code: 'wrong_code' })
+    expect(state()).toMatchObject({ phase: 'register', accessToken: null, user: null })
+    expect(vault.size).toBe(0)
+  })
+
+  it('сброс пароля: человек сразу в работе с новой сессией', async () => {
+    state().openCodeFlow('reset')
+    authApi.resetPassword.mockResolvedValue(tokens(2))
+    await state().resetPassword(' lena@example.com ', '654321', 'brand-new-password')
+    expect(authApi.resetPassword).toHaveBeenCalledWith(SERVER, 'lena@example.com', '654321', 'brand-new-password')
+    expect(state()).toMatchObject({ phase: 'ready', accessToken: 'access2', user: lena, lastEmail: 'lena@example.com' })
+    expect(vault.get(SERVER)).toBe('refresh2')
+  })
+
+  it('сброс пароля: устаревший код, остаёмся на экране, пароль не меняется', async () => {
+    state().openCodeFlow('reset')
+    authApi.resetPassword.mockRejectedValue(new ApiError(400, 'code_expired', 'Код не подходит или устарел. Запросите новый'))
+    await expect(state().resetPassword('lena@example.com', '654321', 'brand-new-password')).rejects.toMatchObject({ code: 'code_expired' })
+    expect(state().phase).toBe('reset')
     expect(vault.size).toBe(0)
   })
 })

@@ -14,10 +14,15 @@ import { getSettings, saveSettings } from './settings'
  * booting: читаем настройки, пробуем войти по сохранённому токену
  * server: шаг 1, адрес сервера
  * login: шаг 2, e-mail и пароль
+ * register: «Создать аккаунт» (e-mail, потом код из письма, имя и пароль)
+ * reset: «Забыли пароль?» (e-mail, потом код из письма и новый пароль)
  * offline: сервер недоступен, вход сохранён
  * ready: работаем
  */
-export type Phase = 'booting' | 'server' | 'login' | 'offline' | 'ready'
+export type Phase = 'booting' | 'server' | 'login' | 'register' | 'reset' | 'offline' | 'ready'
+
+/** Две цепочки «письмо с кодом»: регистрация и сброс пароля */
+export type CodeKind = 'register' | 'reset'
 
 interface SessionState {
   phase: Phase
@@ -35,6 +40,16 @@ interface SessionState {
   changeServer: () => void
   /** Шаг 2. Бросает ApiError: 401 — неверный e-mail или пароль. */
   login: (email: string, password: string) => Promise<void>
+  /** Со входа на «Создать аккаунт» или «Забыли пароль?»; уже набранный e-mail переходит вместе с человеком */
+  openCodeFlow: (kind: CodeKind, email?: string) => void
+  /** Обратно ко входу; набранный на этих экранах e-mail возвращается вместе с человеком */
+  backToLogin: (email?: string) => void
+  /** Прислать код на e-mail (шаг 1 регистрации или сброса). Бросает ApiError с текстом для человека. */
+  requestCode: (kind: CodeKind, email: string) => Promise<void>
+  /** Регистрация, шаг 2: аккаунт создаётся, человек сразу в работе. Бросает ApiError: 400 неверный или устаревший код. */
+  register: (email: string, code: string, name: string, password: string) => Promise<void>
+  /** Сброс пароля, шаг 2: пароль заменён, прежние сессии завершены, человек сразу в работе. Бросает ApiError. */
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>
   logout: () => Promise<void>
   /** Сохранить изменения своего профиля (PATCH /me); в сессии остаётся то, что вернул сервер. Бросает ApiError. */
   updateProfile: (patch: UpdateProfile) => Promise<void>
@@ -147,6 +162,35 @@ export const useSession = create<SessionState>()((set, get) => {
       const server = get().serverUrl
       if (!server) throw new ApiError(0, 'no_server', 'Не задан адрес сервера')
       const tokens = await authApi.login(server, email.trim(), password)
+      saveSettings({ lastEmail: tokens.user.email }, { immediate: true })
+      set({ lastEmail: tokens.user.email })
+      await applyTokens(tokens)
+    },
+
+    openCodeFlow: (kind, email) => set(email?.trim() ? { phase: kind, lastEmail: email.trim() } : { phase: kind }),
+
+    backToLogin: (email) => set(email?.trim() ? { phase: 'login', lastEmail: email.trim() } : { phase: 'login' }),
+
+    async requestCode(kind, email) {
+      const server = get().serverUrl
+      if (!server) throw new ApiError(0, 'no_server', 'Не задан адрес сервера')
+      const request = kind === 'register' ? authApi.requestRegisterCode : authApi.requestResetCode
+      await request(server, email.trim())
+    },
+
+    async register(email, code, name, password) {
+      const server = get().serverUrl
+      if (!server) throw new ApiError(0, 'no_server', 'Не задан адрес сервера')
+      const tokens = await authApi.register(server, email.trim(), code, name.trim(), password)
+      saveSettings({ lastEmail: tokens.user.email }, { immediate: true })
+      set({ lastEmail: tokens.user.email })
+      await applyTokens(tokens)
+    },
+
+    async resetPassword(email, code, newPassword) {
+      const server = get().serverUrl
+      if (!server) throw new ApiError(0, 'no_server', 'Не задан адрес сервера')
+      const tokens = await authApi.resetPassword(server, email.trim(), code, newPassword)
       saveSettings({ lastEmail: tokens.user.email }, { immediate: true })
       set({ lastEmail: tokens.user.email })
       await applyTokens(tokens)

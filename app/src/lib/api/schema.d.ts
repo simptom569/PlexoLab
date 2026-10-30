@@ -58,6 +58,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Что умеет этот сервер до входа */
+        get: operations["options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/password": {
         parameters: {
             query?: never;
@@ -80,6 +97,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Сброс пароля, шаг 2: код из письма и новый пароль. Все прежние сессии завершаются, этому устройству сразу выдаётся
+         *     новая пара токенов: заново входить не нужно. Ошибки кода те же, что при регистрации.
+         */
+        post: operations["reset_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password-reset/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Сброс пароля, шаг 1: прислать код. Ответ один и тот же, есть такой аккаунт или нет: по нему нельзя узнать, кто
+         *     зарегистрирован. Для адреса, который просили меньше минуты назад, письмо тоже не уходит, но человек ответа 204 не
+         *     отличит; клиент сам не даёт нажать «Отправить ещё раз» раньше времени.
+         */
+        post: operations["reset_code"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -91,6 +149,47 @@ export interface paths {
         put?: never;
         /** Обмен refresh-токена на новую пару. Старый refresh-токен перестаёт действовать. */
         post: operations["refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Регистрация, шаг 2: код из письма, имя и пароль. Аккаунт создаётся здесь, человек сразу входит (как после `/auth/login`).
+         *     Неверный код: 400 `wrong_code` с числом оставшихся попыток; после пяти ошибок, через 15 минут и после использования
+         *     400 `code_expired`.
+         */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Регистрация, шаг 1: прислать код на e-mail. Если аккаунт с таким адресом уже есть, это 409: человеку надо войти
+         *     или сбросить пароль.
+         */
+        post: operations["register_code"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1393,6 +1492,12 @@ export interface components {
             /** Format: int64 */
             project_count: number;
         };
+        AuthOptions: {
+            /** @description Работает ли «Забыли пароль?» (на сервере настроена почта) */
+            password_reset: boolean;
+            /** @description Можно ли зарегистрироваться самому (на сервере настроена почта) */
+            registration: boolean;
+        };
         /** @description Всё для первой загрузки доски одним ответом */
         BoardDto: {
             /** @description Колонки слева направо */
@@ -1447,6 +1552,10 @@ export interface components {
             current_password: string;
             /** @description Новый пароль: от 8 символов */
             new_password: string;
+        };
+        CodeRequest: {
+            /** @example lena@example.com */
+            email: string;
         };
         ColumnDto: {
             /** @description Токен цвета: muted | accent | warn | ok | b-fg | e-fg */
@@ -2061,6 +2170,21 @@ export interface components {
         RefreshRequest: {
             refresh_token: string;
         };
+        RegisterRequest: {
+            /**
+             * @description Шесть цифр из письма (пробелы и дефисы между ними допускаются)
+             * @example 123456
+             */
+            code: string;
+            email: string;
+            /**
+             * @description Как человека будут видеть в команде: от 1 до 60 символов
+             * @example Лена М.
+             */
+            name: string;
+            /** @description От 8 символов */
+            password: string;
+        };
         ReleaseDto: {
             /** Format: uuid */
             id: string;
@@ -2088,6 +2212,13 @@ export interface components {
             position: number;
             /** @example Заморозка кода */
             title: string;
+        };
+        ResetPasswordRequest: {
+            /** @example 123456 */
+            code: string;
+            email: string;
+            /** @description От 8 символов */
+            new_password: string;
         };
         /** @description Холст после сохранения */
         SavedCanvasDto: {
@@ -2756,6 +2887,26 @@ export interface operations {
             };
         };
     };
+    options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Возможности сервера */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthOptions"];
+                };
+            };
+        };
+    };
     change_password: {
         parameters: {
             query?: never;
@@ -2798,6 +2949,97 @@ export interface operations {
             };
         };
     };
+    reset_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Пароль заменён, человек вошёл */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Некорректные поля, неверный (wrong_code) или устаревший (code_expired) код */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Почта на сервере не настроена (code = mail_disabled) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    reset_code: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Если аккаунт с таким e-mail есть, ему отправлено письмо с кодом */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Некорректный e-mail */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Сервер исчерпал часовой лимит писем */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Почта на сервере не настроена (code = mail_disabled) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
     refresh: {
         parameters: {
             query?: never;
@@ -2831,6 +3073,124 @@ export interface operations {
             };
             /** @description Токен неизвестен, уже использован или просрочен */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Аккаунт создан, человек вошёл */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Некорректные поля, неверный (wrong_code) или устаревший (code_expired) код */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Аккаунт с таким e-mail уже есть */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Почта на сервере не настроена (code = mail_disabled) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+        };
+    };
+    register_code: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Письмо с кодом отправлено */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Некорректный e-mail */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Аккаунт с таким e-mail уже есть */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Письмо на этот адрес уже уходило меньше минуты назад или сервер исчерпал часовой лимит писем */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Сервис почты письмо не принял (code = mail_failed) */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBody"];
+                };
+            };
+            /** @description Почта на сервере не настроена (code = mail_disabled) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

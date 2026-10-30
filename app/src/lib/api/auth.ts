@@ -1,9 +1,9 @@
-// Запросы без токена: проверка сервера, вход, обновление и выход.
+// Запросы без токена: проверка сервера, вход, регистрация, сброс пароля, обновление и выход.
 
 import { httpFetch, NetworkError } from '../platform/http'
 import { ApiError, readError } from './client'
 import { originOf, serverCandidates } from './serverUrl'
-import type { TokenResponse } from './types'
+import type { AuthOptions, TokenResponse } from './types'
 
 async function postJson<T>(server: string, path: string, body: unknown): Promise<T> {
   const res = await httpFetch(`${server}/api/v1${path}`, {
@@ -17,6 +17,36 @@ async function postJson<T>(server: string, path: string, body: unknown): Promise
 
 export const login = (server: string, email: string, password: string) =>
   postJson<TokenResponse>(server, '/auth/login', { email, password })
+
+/**
+ * Что умеет сервер до входа: настроена ли почта, а с ней регистрация и «Забыли пароль?». Сервер без этой ручки
+ * (старый) и любая ошибка означают «нет»: ссылок на экране входа просто не будет.
+ */
+export async function fetchOptions(server: string): Promise<AuthOptions> {
+  const none = { registration: false, password_reset: false }
+  try {
+    const res = await httpFetch(`${server}/api/v1/auth/options`, { headers: { Accept: 'application/json' }, timeoutMs: 6000 })
+    if (!res.ok) return none
+    const body = (await res.json()) as Partial<AuthOptions>
+    return { registration: body.registration === true, password_reset: body.password_reset === true }
+  } catch {
+    return none
+  }
+}
+
+/** Регистрация, шаг 1: прислать код на e-mail */
+export const requestRegisterCode = (server: string, email: string) => postJson<void>(server, '/auth/register/code', { email })
+
+/** Регистрация, шаг 2: код из письма, имя и пароль. Аккаунт создаётся, человек сразу вошёл. */
+export const register = (server: string, email: string, code: string, name: string, password: string) =>
+  postJson<TokenResponse>(server, '/auth/register', { email, code, name, password })
+
+/** Сброс пароля, шаг 1: прислать код на e-mail (ответ один и тот же, есть такой аккаунт или нет) */
+export const requestResetCode = (server: string, email: string) => postJson<void>(server, '/auth/password-reset/code', { email })
+
+/** Сброс пароля, шаг 2: код из письма и новый пароль. Прежние сессии завершены, человек сразу вошёл. */
+export const resetPassword = (server: string, email: string, code: string, newPassword: string) =>
+  postJson<TokenResponse>(server, '/auth/password-reset', { email, code, new_password: newPassword })
 
 export const refresh = (server: string, refreshToken: string) =>
   postJson<TokenResponse>(server, '/auth/refresh', { refresh_token: refreshToken })
