@@ -22,6 +22,11 @@ playwright-report/
 # Tauri
 /app/src-tauri/gen/
 
+# Инструкции и настройки для Claude Code (не часть проекта)
+/CLAUDE.md
+/CLAUDE.local.md
+.claude/
+
 # Редакторы и ОС
 .vscode/
 .idea/
