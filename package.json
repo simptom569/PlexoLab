@@ -16,6 +16,7 @@
     "test-app": "npm --prefix app run lint && npm --prefix app run test && npm --prefix app run build",
     "gen-api": "cargo run -q --manifest-path server/Cargo.toml -- openapi --out app/src/lib/api/openapi.json && npx --yes openapi-typescript@7.13.0 app/src/lib/api/openapi.json -o app/src/lib/api/schema.d.ts",
     "test-visual": "npm --prefix tests/visual test",
-    "update-visual": "npm --prefix tests/visual run update"
+    "update-visual": "npm --prefix tests/visual run update",
+    "readme-media": "npm --prefix tests/visual run media"
   }
 }

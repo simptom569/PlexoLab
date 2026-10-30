@@ -6,12 +6,14 @@
   "description": "Playwright: сравнение интерфейса с эталоном design/screenshots и снимки витрины компонентов",
   "scripts": {
     "test": "playwright test",
-    "update": "playwright test --update-snapshots"
+    "update": "playwright test --update-snapshots",
+    "media": "playwright test -c playwright.media.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "@types/pngjs": "^6.0.5",
+    "gifenc": "^1.0.3",
     "pixelmatch": "^8.0.0",
     "pngjs": "^7.0.0"
   }
