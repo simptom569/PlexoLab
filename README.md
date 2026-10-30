@@ -158,6 +158,7 @@ npm run dev-app                    # окно Tauri; первая сборка �
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | схема системы, структура репозитория, развёртывание на сервере в 1 ГБ |
 | [`docs/SPEC.md`](docs/SPEC.md) | как ведёт себя каждый экран |
 | [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md) | таблицы PostgreSQL и ручки API |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | дорожная карта: этапы, что сделано и что впереди |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | настройки сервера, пользователи, устройство клиента по экранам, тесты, сборка и релиз |
 | [`docs/TEAMS.md`](docs/TEAMS.md) и [`docs/PROJECTS.md`](docs/PROJECTS.md) | команды, проекты, участники, права, ключи задач |
 | [`docs/EDITOR-AND-CANVAS.md`](docs/EDITOR-AND-CANVAS.md) | markdown-редактор и холст |

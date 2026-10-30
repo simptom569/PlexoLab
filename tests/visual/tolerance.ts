@@ -1,4 +1,4 @@
-// Допуск сравнения с эталоном design/screenshots (docs/PLAN.md, этап 1).
+// Допуск сравнения с эталоном design/screenshots (docs/ROADMAP.md, этап 1).
 
 /** Допустимая доля отличающихся пикселей: меньше 0,5% */
 export const MAX_DIFF_RATIO = 0.005
