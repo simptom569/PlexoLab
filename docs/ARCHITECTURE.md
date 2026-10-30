@@ -12,7 +12,6 @@ Windows-клиент (Tauri 2 + React)  --HTTPS/WSS-->  Rust-бэкенд (axum)
 
 ```
 /
-  CLAUDE.md
   design/                     эталон, только чтение
   docs/
   server/                     Rust-бэкенд (cargo workspace)
@@ -59,7 +58,7 @@ Windows-клиент (Tauri 2 + React)  --HTTPS/WSS-->  Rust-бэкенд (axum)
 ## Tauri 2
 
 - Цель сборки: Windows, `nsis`. Режим установки WebView2 — через встроенный или скачиваемый загрузчик (см. настройку `webviewInstallMode` в документации Tauri 2). Проверь актуальные названия в документации, версии меняются.
-- Название: `productName` и заголовок окна — «PlexoLab». Иконка: `npm run tauri icon <путь>` по файлу из `CLAUDE.md` (раздел «Бренд»); пока пути нет, иконки по умолчанию.
+- Название: `productName` и заголовок окна — «PlexoLab». Иконка: `design/icon.png` (копия в `app/src/assets/icon.png`); иконки сборки создаёт `npm --prefix app run tauri icon src/assets/icon.png` (подробнее: [DEVELOPMENT.md](DEVELOPMENT.md), «Идентификатор и иконка»).
 - Окно: минимальный размер около 900×600, остальное как в макете (макет адаптивный). Нативная рамка окна, дизайн повторяем внутри окна.
 - Один экземпляр приложения (`tauri-plugin-single-instance`: вторая копия показывает первую, даже спрятанную в трее), запоминание размера и положения окна (`tauri-plugin-window-state`, без флага `VISIBLE`: «спрятано в трей» не запоминается).
 - Трей (встроенная возможность Tauri, флаг `tray-icon`), окошки Windows (`tauri-plugin-notification`), запуск вместе с Windows (`tauri-plugin-autostart`, запись в реестре пользователя с аргументом `--autostart`). Окно в `tauri.conf.json` создаётся спрятанным (`visible: false`), `setup` показывает его, если приложение запущено не системой при входе. Код: `src-tauri/src/window.rs` (трей, команды `show_main_window`, `hide_main_window`, `quit_app`), клиент: `lib/platform/desktop.ts`, `lib/useCloseGuard.ts`, `features/notifications/toasts.ts`.
