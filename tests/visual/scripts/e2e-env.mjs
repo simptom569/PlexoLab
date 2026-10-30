@@ -13,6 +13,8 @@ export const E2E_DB = 'plexolab_e2e'
 export const MANIFEST = path.join(ROOT, 'server', 'Cargo.toml')
 /** Загруженные в тестах файлы лежат здесь (папка не попадает в git) и стираются вместе с данными */
 export const E2E_DATA_DIR = path.join(ROOT, 'tests', 'visual', 'output', 'data')
+/** Письма с кодами тестовый сервер не отправляет, а пишет файлами сюда (MAIL_OUTBOX_DIR); стирается вместе с данными */
+export const E2E_OUTBOX_DIR = path.join(E2E_DATA_DIR, 'outbox')
 
 /** Читает KEY=VALUE из .env в корне репозитория (без зависимостей) */
 function readEnvFile() {
@@ -48,6 +50,12 @@ export function e2eEnv() {
       DATA_DIR: E2E_DATA_DIR,
       // лимит мал нарочно: тест «файл больше лимита» обходится двумя мегабайтами
       MAX_UPLOAD_MB: '1',
+      // почта: письма в папку, а не в Resend. Ключ и адрес пустые нарочно: настоящий ключ из окружения или .env
+      // разработчика не должен ни уйти в тесты, ни поссорить их с MAIL_OUTBOX_DIR
+      MAIL_OUTBOX_DIR: E2E_OUTBOX_DIR,
+      RESEND_API_KEY: '',
+      MAIL_FROM: '',
+      MAIL_MAX_PER_HOUR: '200',
       RUST_LOG: 'warn',
     },
   }
