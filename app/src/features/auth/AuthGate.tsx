@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { ThemeRoot } from '../../components/AppShell'
 import { useSession } from '../../lib/session'
 import { useDark } from '../../lib/useDark'
+import { CodeFlow } from './CodeFlow'
 import { LoginStep } from './LoginStep'
 import { OfflineStep } from './OfflineStep'
 import { ServerStep } from './ServerStep'
@@ -16,6 +17,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       return <ServerStep />
     case 'login':
       return <LoginStep />
+    case 'register':
+      return <CodeFlow kind="register" />
+    case 'reset':
+      return <CodeFlow kind="reset" />
     case 'offline':
       return <OfflineStep />
     case 'ready':

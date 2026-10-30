@@ -1,18 +1,31 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Button, Input } from '../../components'
+import { fetchOptions } from '../../lib/api/auth'
 import { ApiError } from '../../lib/api/client'
 import { shortServerName } from '../../lib/api/serverUrl'
+import type { AuthOptions } from '../../lib/api/types'
 import { NetworkError } from '../../lib/platform/http'
 import { useSession } from '../../lib/session'
 import { AuthLayout, FieldLabel, FormError } from './AuthLayout'
 
 /** Шаг 2: e-mail и пароль */
 export function LoginStep() {
-  const { serverUrl, lastEmail, login, changeServer } = useSession()
+  const { serverUrl, lastEmail, login, changeServer, openCodeFlow } = useSession()
   const [email, setEmail] = useState(lastEmail)
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Что умеет сервер: ссылки «Создать аккаунт» и «Забыли пароль?» появляются, только когда на нём настроена почта */
+  const [options, setOptions] = useState<AuthOptions | null>(null)
+
+  useEffect(() => {
+    if (!serverUrl) return
+    let alive = true
+    void fetchOptions(serverUrl).then((o) => alive && setOptions(o))
+    return () => {
+      alive = false
+    }
+  }, [serverUrl])
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -64,8 +77,25 @@ export function LoginStep() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
+        {options?.password_reset && (
+          <button
+            className="crumb-btn"
+            type="button"
+            onClick={() => openCodeFlow('reset', email)}
+            style={{ alignSelf: 'flex-start', textDecoration: 'underline' }}
+          >
+            Забыли пароль?
+          </button>
+        )}
         <FormError message={error} />
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          {options?.registration ? (
+            <button className="crumb-btn" type="button" onClick={() => openCodeFlow('register', email)} style={{ textDecoration: 'underline' }}>
+              Создать аккаунт
+            </button>
+          ) : (
+            <span />
+          )}
           <Button variant="primary" type="submit" disabled={busy || !email.trim() || !password}>
             {busy ? 'Вхожу…' : 'Войти'}
           </Button>
