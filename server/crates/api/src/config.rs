@@ -75,7 +75,9 @@ pub enum ConfigError {
     BadMaxUpload(String),
     #[error("MAX_TEAMS_PER_USER «{0}» должно быть целым числом от 1 до {MAX_TEAMS_LIMIT}")]
     BadMaxTeams(String),
-    #[error("задан RESEND_API_KEY, но не задан MAIL_FROM: письмо надо отправлять с какого-то адреса")]
+    #[error(
+        "задан RESEND_API_KEY, но не задан MAIL_FROM: письмо надо отправлять с какого-то адреса. Если строка MAIL_FROM в .env есть, возьмите значение в кавычки: MAIL_FROM=\"PlexoLab <noreply@example.com>\""
+    )]
     MailFromMissing,
     #[error("MAIL_FROM «{0}» не похож на адрес вида noreply@example.com или PlexoLab <noreply@example.com>")]
     BadMailFrom(String),

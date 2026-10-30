@@ -10,7 +10,14 @@ use cli::{Command, PasswordSource, UserAdd, UserPasswd};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // .env нужен только при разработке, на сервере настройки приходят из окружения службы
-    let _ = dotenvy::dotenv();
+    // Нет файла: не беда. Файл с ошибкой в строке нужно показать: читалка бросает эту строку и все, что ниже, и без
+    // предупреждения настройки пропадали бы молча (так «пропадал» MAIL_FROM без кавычек вокруг пробела и «<»).
+    if let Err(e) = dotenvy::dotenv()
+        && !e.not_found()
+    {
+        eprintln!("Предупреждение: .env прочитан не до конца: {e}");
+        eprintln!("Значение с пробелами или «<» берётся в кавычки: MAIL_FROM=\"PlexoLab <noreply@example.com>\"");
+    }
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
