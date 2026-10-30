@@ -31,6 +31,18 @@ pub enum ApiError {
     /// Неверный текущий пароль при смене пароля. Это 400, а не 401: клиент принял бы 401 за потерянную сессию.
     #[error("Текущий пароль указан неверно")]
     WrongPassword,
+    /// Неверный код из письма; `left` — сколько попыток осталось. Это 400, а не 401: у людей до входа сессии нет.
+    #[error("{}", wrong_code_message(*.left))]
+    WrongCode { left: i16 },
+    /// Кода нет: не запрашивали, истёк (15 минут), сгорел (пять ошибок) или уже использован
+    #[error("Код не подходит или устарел. Запросите новый")]
+    CodeExpired,
+    #[error("{0}")]
+    TooManyRequests(String),
+    #[error("Регистрация и сброс пароля по почте на этом сервере не настроены")]
+    MailDisabled,
+    #[error("Не удалось отправить письмо. Попробуйте позже")]
+    MailFailed,
     #[error("Недостаточно прав")]
     Forbidden,
     #[error("Не найдено")]
@@ -45,10 +57,22 @@ pub enum ApiError {
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
+fn wrong_code_message(left: i16) -> String {
+    match left {
+        l if l > 0 => format!("Неверный код. Осталось попыток: {l}"),
+        _ => "Неверный код. Попытки закончились, запросите новый".to_owned(),
+    }
+}
+
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
-            ApiError::BadRequest(_) | ApiError::WrongPassword => StatusCode::BAD_REQUEST,
+            ApiError::BadRequest(_) | ApiError::WrongPassword | ApiError::WrongCode { .. } | ApiError::CodeExpired => {
+                StatusCode::BAD_REQUEST
+            }
+            ApiError::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
+            ApiError::MailDisabled => StatusCode::SERVICE_UNAVAILABLE,
+            ApiError::MailFailed => StatusCode::BAD_GATEWAY,
             ApiError::Unauthorized | ApiError::InvalidCredentials | ApiError::InvalidRefreshToken => {
                 StatusCode::UNAUTHORIZED
             }
@@ -67,6 +91,11 @@ impl ApiError {
             ApiError::InvalidCredentials => "invalid_credentials",
             ApiError::InvalidRefreshToken => "invalid_refresh_token",
             ApiError::WrongPassword => "wrong_password",
+            ApiError::WrongCode { .. } => "wrong_code",
+            ApiError::CodeExpired => "code_expired",
+            ApiError::TooManyRequests(_) => "too_many_requests",
+            ApiError::MailDisabled => "mail_disabled",
+            ApiError::MailFailed => "mail_failed",
             ApiError::Forbidden => "forbidden",
             ApiError::NotFound => "not_found",
             ApiError::Conflict(_) => "conflict",

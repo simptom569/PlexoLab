@@ -56,12 +56,12 @@ pub struct TokenResponse {
 }
 
 /// Argon2 считает десятки миллисекунд: выносим из потока, который обслуживает запросы
-async fn blocking<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static) -> ApiResult<T> {
+pub(super) async fn blocking<T: Send + 'static>(job: impl FnOnce() -> T + Send + 'static) -> ApiResult<T> {
     tokio::task::spawn_blocking(job).await.map_err(|e| ApiError::Internal(e.into()))
 }
 
 /// Выдаёт пару токенов и сохраняет хэш refresh-токена. Вызывается внутри транзакции вызывающего.
-async fn issue_tokens(state: &AppState, conn: &mut PgConnection, user: User) -> ApiResult<TokenResponse> {
+pub(super) async fn issue_tokens(state: &AppState, conn: &mut PgConnection, user: User) -> ApiResult<TokenResponse> {
     let access_token = auth::issue_access_token(&state.jwt_secret, user.id, auth::now_unix())?;
     let refresh_token = auth::generate_refresh_token()?;
     let expires_at = OffsetDateTime::now_utc() + Duration::days(auth::REFRESH_TTL_DAYS);

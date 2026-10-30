@@ -80,6 +80,11 @@ const ROUTES: &[(&str, &str, Of, Kind)] = &[
     ("POST",   "/auth/login",                          Nothing,      Public),
     ("POST",   "/auth/refresh",                        Nothing,      Public),
     ("POST",   "/auth/logout",                         Nothing,   Public), // выходит по refresh-токену из тела
+    ("GET",    "/auth/options",                        Nothing,      Public),
+    ("POST",   "/auth/register/code",                  Nothing,      Public), // у человека ещё нет входа: защищено кодом из письма
+    ("POST",   "/auth/register",                       Nothing,      Public),
+    ("POST",   "/auth/password-reset/code",            Nothing,      Public),
+    ("POST",   "/auth/password-reset",                 Nothing,      Public),
     ("POST",   "/auth/password",                       Nothing,      Open),
     // я сам и общие списки
     ("GET",    "/me",                                  Nothing,      Open),

@@ -11,6 +11,7 @@ const TABLES: &[&str] = &[
     "doc_objects",
     "doc_stars",
     "docs",
+    "email_codes",
     "files",
     "folders",
     "link_groups",

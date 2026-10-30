@@ -45,7 +45,11 @@ async fn right_code_matches_and_stays_until_consumed(pool: PgPool) {
     let mut tx = pool.begin().await.unwrap();
     email_codes::consume(&mut tx, Purpose::Register, EMAIL).await.unwrap();
     tx.commit().await.unwrap();
-    assert_eq!(check(&pool, Purpose::Register, EMAIL, "h1").await, Check::Gone, "использованный код больше не подходит");
+    assert_eq!(
+        check(&pool, Purpose::Register, EMAIL, "h1").await,
+        Check::Gone,
+        "использованный код больше не подходит"
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -66,7 +70,11 @@ async fn five_wrong_guesses_burn_the_code_even_for_the_right_one(pool: PgPool) {
     for left in (0..MAX_CODE_ATTEMPTS).rev() {
         assert_eq!(check(&pool, Purpose::Reset, EMAIL, "wrong").await, Check::Wrong { left }, "осталось {left}");
     }
-    assert_eq!(check(&pool, Purpose::Reset, EMAIL, "right").await, Check::Gone, "после пяти ошибок верный код не принимается");
+    assert_eq!(
+        check(&pool, Purpose::Reset, EMAIL, "right").await,
+        Check::Gone,
+        "после пяти ошибок верный код не принимается"
+    );
     assert_eq!(count(&pool).await, 0, "сгоревший код удалён");
 }
 
@@ -89,10 +97,11 @@ async fn expired_code_is_gone(pool: PgPool) {
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn code_lives_fifteen_minutes(pool: PgPool) {
     issue(&pool, Purpose::Register, EMAIL, "h1", 30).await;
-    let minutes: f64 = sqlx::query_scalar("select (extract(epoch from (expires_at - created_at)) / 60)::float8 from email_codes")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let minutes: f64 =
+        sqlx::query_scalar("select (extract(epoch from (expires_at - created_at)) / 60)::float8 from email_codes")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!((minutes - 15.0).abs() < 0.1, "{minutes}");
 }
 
@@ -101,7 +110,10 @@ async fn second_letter_to_the_same_address_waits_a_minute(pool: PgPool) {
     assert!(matches!(issue(&pool, Purpose::Register, EMAIL, "h1", 30).await, Issue::Issued(_)));
     assert_eq!(issue(&pool, Purpose::Register, EMAIL, "h2", 30).await, Issue::TooSoon);
     assert_eq!(count(&pool).await, 1, "отказ ничего не записал");
-    assert!(matches!(issue(&pool, Purpose::Register, "other@example.com", "h3", 30).await, Issue::Issued(_)), "другой адрес можно");
+    assert!(
+        matches!(issue(&pool, Purpose::Register, "other@example.com", "h3", 30).await, Issue::Issued(_)),
+        "другой адрес можно"
+    );
     assert!(matches!(issue(&pool, Purpose::Reset, EMAIL, "h4", 30).await, Issue::Issued(_)), "другое назначение можно");
 
     age(&pool, "61 seconds").await;
@@ -114,7 +126,11 @@ async fn newest_code_replaces_the_older_one(pool: PgPool) {
     age(&pool, "2 minutes").await;
     issue(&pool, Purpose::Register, EMAIL, "new", 30).await;
 
-    assert_eq!(check(&pool, Purpose::Register, EMAIL, "old").await, Check::Wrong { left: MAX_CODE_ATTEMPTS - 1 }, "прежний код не подходит");
+    assert_eq!(
+        check(&pool, Purpose::Register, EMAIL, "old").await,
+        Check::Wrong { left: MAX_CODE_ATTEMPTS - 1 },
+        "прежний код не подходит"
+    );
     assert_eq!(check(&pool, Purpose::Register, EMAIL, "new").await, Check::Match);
 
     // после использования прежний код не оживает
@@ -132,10 +148,17 @@ async fn server_wide_limit_per_hour(pool: PgPool) {
         assert!(matches!(r, Issue::Issued(_)), "письмо {i}");
     }
     assert_eq!(issue(&pool, Purpose::Register, "user3@example.com", "h", 3).await, Issue::TooMany);
-    assert_eq!(issue(&pool, Purpose::Reset, "someone@example.com", "h", 3).await, Issue::TooMany, "лимит общий для обоих назначений");
+    assert_eq!(
+        issue(&pool, Purpose::Reset, "someone@example.com", "h", 3).await,
+        Issue::TooMany,
+        "лимит общий для обоих назначений"
+    );
 
     age(&pool, "61 minutes").await;
-    assert!(matches!(issue(&pool, Purpose::Register, "user3@example.com", "h", 3).await, Issue::Issued(_)), "через час можно");
+    assert!(
+        matches!(issue(&pool, Purpose::Register, "user3@example.com", "h", 3).await, Issue::Issued(_)),
+        "через час можно"
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -152,7 +175,10 @@ async fn removing_an_issued_code_frees_the_address_at_once(pool: PgPool) {
     let Issue::Issued(id) = issue(&pool, Purpose::Register, EMAIL, "h1", 30).await else { panic!("не выдан") };
     email_codes::remove(&pool, id).await.unwrap();
     assert_eq!(check(&pool, Purpose::Register, EMAIL, "h1").await, Check::Gone);
-    assert!(matches!(issue(&pool, Purpose::Register, EMAIL, "h2", 30).await, Issue::Issued(_)), "письмо не ушло — ждать минуту не нужно");
+    assert!(
+        matches!(issue(&pool, Purpose::Register, EMAIL, "h2", 30).await, Issue::Issued(_)),
+        "письмо не ушло — ждать минуту не нужно"
+    );
 }
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
@@ -168,13 +194,17 @@ async fn two_simultaneous_requests_send_only_one_letter(pool: PgPool) {
 
 #[sqlx::test(migrator = "db::MIGRATOR")]
 async fn table_checks_purpose_and_lowercase_email(pool: PgPool) {
-    let bad_purpose = sqlx::query("insert into email_codes (purpose, email, code_hash, expires_at) values ('login', 'a@b.c', 'h', now())")
-        .execute(&pool)
-        .await;
+    let bad_purpose = sqlx::query(
+        "insert into email_codes (purpose, email, code_hash, expires_at) values ('login', 'a@b.c', 'h', now())",
+    )
+    .execute(&pool)
+    .await;
     assert!(bad_purpose.is_err(), "назначение только register и reset");
-    let bad_email = sqlx::query("insert into email_codes (purpose, email, code_hash, expires_at) values ('reset', 'A@B.C', 'h', now())")
-        .execute(&pool)
-        .await;
+    let bad_email = sqlx::query(
+        "insert into email_codes (purpose, email, code_hash, expires_at) values ('reset', 'A@B.C', 'h', now())",
+    )
+    .execute(&pool)
+    .await;
     assert!(bad_email.is_err(), "адрес только в нижнем регистре");
 }
 
@@ -182,9 +212,10 @@ async fn table_checks_purpose_and_lowercase_email(pool: PgPool) {
 async fn down_migration_drops_the_table(pool: PgPool) {
     issue(&pool, Purpose::Register, EMAIL, "h1", 30).await;
     sqlx::raw_sql(sqlx::AssertSqlSafe(DOWN.to_owned())).execute(&pool).await.expect("обратная миграция выполняется");
-    let tables: i64 = sqlx::query_scalar("select count(*) from information_schema.tables where table_name = 'email_codes'")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let tables: i64 =
+        sqlx::query_scalar("select count(*) from information_schema.tables where table_name = 'email_codes'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(tables, 0);
 }

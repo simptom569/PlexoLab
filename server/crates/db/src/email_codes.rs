@@ -80,6 +80,13 @@ pub async fn issue(
     Ok(Issue::Issued(id))
 }
 
+/// Сколько писем с кодами заведено за последний час (все адреса и оба назначения)
+pub async fn sent_last_hour(pool: &PgPool) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("select count(*) from email_codes where created_at > now() - interval '1 hour'")
+        .fetch_one(pool)
+        .await
+}
+
 /// Убирает только что заведённый код, если письмо отправить не удалось: иначе человек ждал бы минуту до новой попытки
 pub async fn remove(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("delete from email_codes where id = $1").bind(id).execute(pool).await?;
@@ -117,7 +124,11 @@ pub async fn check(
     if attempts >= MAX_CODE_ATTEMPTS {
         sqlx::query("delete from email_codes where id = $1").bind(id).execute(&mut *conn).await?;
     } else {
-        sqlx::query("update email_codes set attempts = $2 where id = $1").bind(id).bind(attempts).execute(&mut *conn).await?;
+        sqlx::query("update email_codes set attempts = $2 where id = $1")
+            .bind(id)
+            .bind(attempts)
+            .execute(&mut *conn)
+            .await?;
     }
     Ok(Check::Wrong { left: MAX_CODE_ATTEMPTS - attempts })
 }

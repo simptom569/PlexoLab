@@ -41,6 +41,12 @@ macro_rules! select_user {
 }
 
 pub async fn create(pool: &PgPool, u: &NewUser) -> Result<User, CreateUserError> {
+    let mut conn = pool.acquire().await?;
+    create_in(&mut conn, u).await
+}
+
+/// То же внутри чужой транзакции: регистрация создаёт аккаунт вместе с погашением кода и выдачей токенов
+pub async fn create_in(conn: &mut PgConnection, u: &NewUser) -> Result<User, CreateUserError> {
     sqlx::query_as::<_, User>(
         "insert into users (email, name, role, tone, is_admin, password_hash) \
          values ($1, $2, $3, $4, $5, $6) \
@@ -52,7 +58,7 @@ pub async fn create(pool: &PgPool, u: &NewUser) -> Result<User, CreateUserError>
     .bind(u.tone)
     .bind(u.is_admin)
     .bind(&u.password_hash)
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await
     .map_err(|e| match &e {
         sqlx::Error::Database(d) if d.is_unique_violation() => CreateUserError::EmailTaken,

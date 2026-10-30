@@ -18,6 +18,7 @@ pub mod project_dto;
 pub mod projects;
 pub mod releases;
 pub mod search;
+pub mod signup;
 pub mod tags;
 pub mod tasks;
 pub mod team_invites;
@@ -29,6 +30,7 @@ pub mod wiki;
 pub fn v1() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .merge(auth::router())
+        .merge(signup::router())
         .merge(users::router())
         .merge(projects::router())
         .merge(invites::router())
