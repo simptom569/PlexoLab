@@ -170,7 +170,10 @@ test.describe('перетаскивание', () => {
     const id = await openDocByTitle(page, 'Схема сервисов')
     const saves = countCanvasSaves(page)
     const grip = page.locator('.note-grip')
-    const from = await center(grip)
+    // точку захвата берём по целым пикселям: на Linux центр полоски выпадает на дробную координату, и карточка
+    // уезжала на 67.8px вместо 68px
+    const c = await center(grip)
+    const from = { x: Math.round(c.x), y: Math.round(c.y) }
     await page.mouse.move(from.x, from.y)
     await page.mouse.down()
     await page.mouse.move(from.x + 80, from.y + 40, { steps: 6 })

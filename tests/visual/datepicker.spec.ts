@@ -255,8 +255,9 @@ test.describe('ввод даты цифрами с клавиатуры', () => 
   test('Enter заканчивает ввод и сохраняет дату вехи', async ({ page }) => {
     await openApp(page, { settings: { page: 'releases' } })
     const field = row(page, 'Релиз 2.9.0').getByLabel('Дата вехи')
-    await clickDay(page, field)
-    await page.keyboard.type('15')
+    // дату записываем целиком: порядок частей в поле зависит от языка браузера (день первый в русском Windows, месяц первый
+    // в английском Chromium на Linux), и набор цифр в «первую часть» попадал бы то в день, то в месяц. Здесь проверяется Enter.
+    await field.fill('2026-11-15')
     await expect.poll(() => raw(field)).toEqual({ value: '2026-11-15', incomplete: false })
     expect((await milestones(page)).map((m) => m.due_date)).not.toContain('2026-11-15')
     await page.keyboard.press('Enter')
