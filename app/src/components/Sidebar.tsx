@@ -74,6 +74,9 @@ type SidebarProps = {
   onOpenNotifications?: () => void
   /** Окно поиска (Ctrl+K). Пункта нет, если не задано (витрина). */
   onOpenSearch?: () => void
+  /** Найдена новая версия приложения: точка у имени и пункт «Доступна версия …», он открывает «О программе». Нет версии — нет и пункта. */
+  updateVersion?: string | null
+  onOpenUpdate?: (trigger: HTMLElement | null) => void
   onOpenArchive: () => void
   /** Переключатель команды (вариант Б): название текущей команды вместо подписи «Рабочее пространство». Не задано — подпись как в макете (витрина). */
   teams?: {
@@ -97,9 +100,17 @@ type SidebarProps = {
 }
 
 /** Подпись точки у имени: что ждёт человека */
-function attentionLabel(invites: number, notifications: number): string {
-  if (invites > 0 && notifications > 0) return 'Есть приглашения и непрочитанные уведомления'
-  return invites > 0 ? 'Есть приглашения' : 'Есть непрочитанные уведомления'
+function attentionLabel(invites: number, notifications: number, update: boolean): string {
+  const base =
+    invites > 0 && notifications > 0
+      ? 'Есть приглашения и непрочитанные уведомления'
+      : invites > 0
+        ? 'Есть приглашения'
+        : notifications > 0
+          ? 'Есть непрочитанные уведомления'
+          : ''
+  if (!update) return base
+  return base ? `${base}, есть новая версия приложения` : 'Есть новая версия приложения'
 }
 
 /**
@@ -185,6 +196,8 @@ export function Sidebar({
   notificationsCount = 0,
   onOpenNotifications,
   onOpenSearch,
+  updateVersion,
+  onOpenUpdate,
   onOpenArchive,
   teams,
   canCreateProject = true,
@@ -281,8 +294,8 @@ export function Sidebar({
             <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
               <strong style={{ fontSize: 14 }}>
                 {user.name}
-                {invitesCount + notificationsCount > 0 && (
-                  <span className="invite-dot" role="img" aria-label={attentionLabel(invitesCount, notificationsCount)} />
+                {(invitesCount + notificationsCount > 0 || Boolean(updateVersion)) && (
+                  <span className="invite-dot" role="img" aria-label={attentionLabel(invitesCount, notificationsCount, Boolean(updateVersion))} />
                 )}
               </strong>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{user.role}</span>
@@ -307,6 +320,12 @@ export function Sidebar({
                 )}
               </div>
               <div role="separator" style={{ height: 1, margin: '2px 0', background: 'var(--line)' }} />
+              {updateVersion && onOpenUpdate && (
+                <MenuItem onClick={() => onOpenUpdate(userButton.current)}>
+                  <Icon name="upload" sm />
+                  Доступна версия {updateVersion}
+                </MenuItem>
+              )}
               <MenuItem onClick={() => onOpenSettings(userButton.current)}>
                 <Icon name="gear" sm />
                 Настройки

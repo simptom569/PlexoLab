@@ -18,6 +18,9 @@ import { useSearchShortcut } from '../../lib/useSearchShortcut'
 import { useLinkWatch } from '../../lib/useLinkWatch'
 import { SettingsModal } from '../settings/SettingsModal'
 import { useDesktopNotifications } from '../notifications/useDesktopNotifications'
+import { pendingVersion } from '../updates/logic'
+import { useUpdates } from '../updates/store'
+import { useUpdateCheck } from '../updates/useUpdateCheck'
 import { CloseAskDialog } from './CloseAskDialog'
 import { ActivityPage } from '../activity/ActivityPage'
 import { BacklogPage } from '../backlog/BacklogPage'
@@ -80,6 +83,9 @@ export function Workspace() {
   useLinkWatch()
   // Ctrl+K: поиск по названиям
   useSearchShortcut()
+  // новая версия приложения: фоновая проверка (только в приложении), точка у имени и пункт в меню пользователя
+  useUpdateCheck()
+  const updateVersion = useUpdates((s) => pendingVersion(s.phase))
   // карточка пользователя, из меню которой открыли настройки: туда вернётся фокус
   const settingsOpener = useRef<HTMLElement | null>(null)
 
@@ -180,6 +186,11 @@ export function Workspace() {
           onOpenSettings={(trigger) => {
             settingsOpener.current = trigger
             openSettings()
+          }}
+          updateVersion={updateVersion}
+          onOpenUpdate={(trigger) => {
+            settingsOpener.current = trigger
+            openSettings('about')
           }}
           serverUrl={serverUrl}
           onNewProject={() => openProjectDialog({ kind: 'new' })}

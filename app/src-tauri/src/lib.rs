@@ -21,6 +21,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         // запуск вместе с Windows; по аргументу приложение понимает, что его запустила система
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![window::AUTOSTART_ARG])))
+        // обновления приложения: проверку и установку запускает клиент (app/src/lib/platform/updater.ts), адрес и ключ в tauri.conf.json
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             secrets::init();
             window::init_tray(app.handle())?;

@@ -1,8 +1,15 @@
 import { Button } from '../../../components'
 import { BrandIcon } from '../../../components/Brand'
+import { isTauri } from '../../../lib/platform/runtime'
+import { updateView } from '../../updates/logic'
+import { useUpdates } from '../../updates/store'
+import { Problem } from '../../projects/parts'
 import { SettingGroup, SettingRow } from '../SettingRow'
 
 export function AboutSection() {
+  const phase = useUpdates((s) => s.phase)
+  const view = updateView(phase, isTauri())
+
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -18,8 +25,22 @@ export function AboutSection() {
             {__APP_VERSION__}
           </span>
         </SettingRow>
-        <SettingRow soon label="Обновления" description="Приложение само проверит, вышла ли новая версия.">
-          <Button disabled>Проверить обновления</Button>
+        <SettingRow
+          label="Обновления"
+          description={
+            <>
+              {view.description}
+              {view.problem && <Problem>{view.problem}</Problem>}
+            </>
+          }
+        >
+          <Button
+            variant={view.button.primary ? 'primary' : undefined}
+            disabled={view.button.disabled}
+            onClick={() => void (view.button.action === 'install' ? useUpdates.getState().install() : useUpdates.getState().check())}
+          >
+            {view.button.label}
+          </Button>
         </SettingRow>
       </SettingGroup>
     </>

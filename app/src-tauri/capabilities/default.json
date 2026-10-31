@@ -11,6 +11,7 @@
     "store:default",
     "opener:default",
     "notification:default",
+    "updater:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
