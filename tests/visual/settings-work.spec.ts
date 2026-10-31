@@ -261,3 +261,13 @@ test('«О программе» показывает версию из tauri.con
   await pickTab(dialog, 'О программе')
   await expect(dialog.getByText(tauriVersion, { exact: true })).toBeVisible()
 })
+
+test('«О программе»: в браузере проверка обновлений выключена и объясняет почему (проверять умеет только приложение)', async ({ page }) => {
+  await openApp(page)
+  const dialog = await openSettings(page)
+  await pickTab(dialog, 'О программе')
+  await expect(dialog.getByRole('button', { name: 'Проверить обновления' })).toBeDisabled()
+  await expect(dialog.getByText('Проверка обновлений работает только в приложении для Windows.')).toBeVisible()
+  // настройка уже не «скоро»: метки «Скоро» у строки нет
+  await expect(dialog.getByText('Скоро')).toHaveCount(0)
+})
