@@ -58,20 +58,26 @@ jobs:
           workspaces: app/src-tauri
       - run: npm ci --prefix app
 
-      # Сборка и, если это тег, выкладка в Releases. targets=nsis задан в tauri.conf.json.
+      # Сборка и, если это тег, выкладка в Releases. targets=nsis и createUpdaterArtifacts заданы в tauri.conf.json.
+      # Ключ подписи обновлений (секреты репозитория): без него сборка с createUpdaterArtifacts останавливается.
+      # tauri-action сам кладёт в релиз подпись установщика и latest.json, из которого приложения узнают о новой версии.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: PlexoLab ${{ github.ref_name }}
           releaseBody: |
-            Установщик PlexoLab для Windows.
+            Установщик PlexoLab для Windows. Если PlexoLab уже стоит, он сам предложит обновиться: «Настройки», «О программе».
 
             Установщик не подписан сертификатом, поэтому при первом запуске Windows SmartScreen покажет «Неизвестный издатель». Нажмите «Подробнее», затем «Выполнить в любом случае».
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
 
       # Установщик и отдельным артефактом запуска: так его можно скачать и без релиза (запуск вручную)
       - uses: actions/upload-artifact@v4
