@@ -15,6 +15,8 @@
   <img src="https://img.shields.io/badge/Rust-axum-000000?logo=rust&logoColor=white" alt="Rust и axum">
   <img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18">
   <img src="https://img.shields.io/badge/лицензия-AGPL--3.0-blue" alt="Лицензия AGPL-3.0">
+  <a href="https://github.com/simptom569/PlexoLab/releases/latest"><img src="https://img.shields.io/github/v/release/simptom569/PlexoLab?label=версия" alt="Последняя версия"></a>
+  <a href="https://github.com/simptom569/PlexoLab/actions/workflows/ci.yml"><img src="https://github.com/simptom569/PlexoLab/actions/workflows/ci.yml/badge.svg" alt="Проверки"></a>
 </p>
 
 <p align="center">
@@ -23,6 +25,12 @@
     <img src="docs/screenshots/board-light.png" alt="Доска PlexoLab" width="900">
   </picture>
 </p>
+
+## Скачать
+
+Установщик для Windows лежит на странице [Releases](https://github.com/simptom569/PlexoLab/releases/latest), файл `PlexoLab_<версия>_x64-setup.exe`. Он не подписан сертификатом, поэтому при первом запуске Windows покажет «Неизвестный издатель»: нажмите «Подробнее», затем «Выполнить в любом случае». Дальше приложение обновляется само: «Настройки», «О программе».
+
+Данные хранятся на сервере PlexoLab, адрес которого приложение спрашивает при первом запуске. Как поднять свой сервер, описано в [DEVELOPMENT.md](docs/DEVELOPMENT.md#сервер).
 
 ## Что умеет
 
@@ -178,7 +186,7 @@ deploy/        заготовка под развёртывание на сер�
 
 ## Статус
 
-Проект в разработке. Готовы все экраны макета с настоящим сервером, проекты и команды, регистрация по почте, обновления в реальном времени, работа без связи, уведомления и поиск. Впереди развёртывание сервера (скрипты, резервные копии, нагрузочная проверка). Установщик пока не подписан сертификатом: при первом запуске Windows покажет «Неизвестный издатель».
+Версия 1.0.0: установщик для Windows и автообновление работают. Готовы все экраны макета с настоящим сервером, проекты и команды, регистрация по почте, обновления в реальном времени, работа без связи, уведомления и поиск. Впереди развёртывание сервера (скрипты, резервные копии, нагрузочная проверка). Установщик пока не подписан сертификатом: при первом запуске Windows покажет «Неизвестный издатель».
 
 ## Лицензия
 
