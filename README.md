@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Rust-axum-000000?logo=rust&logoColor=white" alt="Rust и axum">
   <img src="https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 18">
   <img src="https://img.shields.io/badge/лицензия-AGPL--3.0-blue" alt="Лицензия AGPL-3.0">
-  <a href="https://github.com/simptom569/PlexoLab/releases/latest"><img src="https://img.shields.io/github/v/release/simptom569/PlexoLab?label=версия" alt="Последняя версия"></a>
+  <a href="https://github.com/simptom569/PlexoLab/releases/latest"><img src="https://img.shields.io/github/v/release/simptom569/PlexoLab?label=%D0%B2%D0%B5%D1%80%D1%81%D0%B8%D1%8F" alt="Последняя версия"></a>
   <a href="https://github.com/simptom569/PlexoLab/actions/workflows/ci.yml"><img src="https://github.com/simptom569/PlexoLab/actions/workflows/ci.yml/badge.svg" alt="Проверки"></a>
 </p>
 
